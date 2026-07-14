@@ -5,4 +5,16 @@ export const strings = {
   home: {
     placeholder: 'App shell is up. Features arrive in later tasks.',
   },
+  auth: {
+    loginTitle: 'Admin Login',
+    emailLabel: 'Email address',
+    sendLink: 'Send magic link',
+    sending: 'Sending…',
+    checkEmail: 'Check your email for a login link.',
+    loading: 'Loading…',
+  },
+  admin: {
+    dashboardTitle: 'Admin Dashboard',
+    dashboardPlaceholder: 'Dashboard content arrives in a later task.',
+  },
 }

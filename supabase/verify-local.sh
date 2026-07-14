@@ -25,6 +25,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATION_FILE="$SCRIPT_DIR/migrations/20260714111950_schema_and_rls.sql"
+MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -70,7 +71,7 @@ createdb -h localhost -p "$PORT" -U "$PGUSER" "$DB_NAME"
 echo "== stubbing auth schema =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 create schema if not exists auth;
-create table if not exists auth.users (id uuid primary key);
+create table if not exists auth.users (id uuid primary key, email text);
 create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -81,6 +82,9 @@ SQL
 
 echo "== applying migration =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE"
+
+echo "== applying migration (add_users_email) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_2"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -96,6 +100,58 @@ echo "== granting Supabase's platform-level default table privileges =="
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on all tables in schema public to anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
+SQL
+
+echo "== assertion: link_admin_account() links exactly the matching admin row =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Fresh admin row created specifically for this test; auth_user_id is still
+-- null (the seed admin, id ...001, is also still null at this point — its
+-- own backfill happens further below, unrelated to this test). Volunteer
+-- ...002 (straight from seed, email NULL) is the negative control proving
+-- link_admin_account() never touches a volunteer row, even one sharing no
+-- email with anyone (email is globally UNIQUE on this table, so a volunteer
+-- literally cannot share an admin's email — the `role = 'admin'` guard in
+-- the WHERE clause is what's actually relied on, not email uniqueness).
+insert into users (id, name, role, email, active) values
+  ('00000000-0000-0000-0000-000000000099', 'Link Test Admin', 'admin', 'linktest-admin@example.com', true);
+
+insert into auth.users (id, email) values
+  ('aaaaaaaa-0000-0000-0000-000000000099', 'linktest-admin@example.com');
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
+select link_admin_account();
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
+    = 'aaaaaaaa-0000-0000-0000-000000000099',
+    'FAIL: link_admin_account() did not link the matching admin row';
+
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
+    'FAIL: link_admin_account() linked a volunteer row with no email';
+
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000001') IS NULL,
+    'FAIL: link_admin_account() linked an unrelated admin row with a different email';
+
+  RAISE NOTICE 'PASS: link_admin_account() linked exactly the matching admin row, and only that row';
+END $$;
+
+-- Idempotency: re-running after already linked (e.g. a second app load)
+-- must be a silent no-op, not an error and not a re-link to a different id.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
+select link_admin_account();
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
+    = 'aaaaaaaa-0000-0000-0000-000000000099',
+    'FAIL: re-running link_admin_account() should be a harmless no-op';
+  RAISE NOTICE 'PASS: link_admin_account() is idempotent on repeat calls';
+END $$;
 SQL
 
 echo "== backfilling auth_user_id + seeding test donations =="

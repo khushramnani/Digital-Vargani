@@ -59,6 +59,7 @@ export type Database = {
           id: string
           name: string
           phone: string | null
+          email: string | null
           role: string
           invite_token: string | null
           auth_user_id: string | null
@@ -69,6 +70,7 @@ export type Database = {
           id?: string
           name: string
           phone?: string | null
+          email?: string | null
           role: string
           invite_token?: string | null
           auth_user_id?: string | null
@@ -79,6 +81,7 @@ export type Database = {
           id?: string
           name?: string
           phone?: string | null
+          email?: string | null
           role?: string
           invite_token?: string | null
           auth_user_id?: string | null
@@ -295,6 +298,10 @@ export type Database = {
           voided: boolean
           void_reason: string | null
         }[]
+      }
+      link_admin_account: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
     }
     Enums: Record<string, never>
