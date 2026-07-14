@@ -105,6 +105,7 @@ export type Database = {
           void_reason: string | null
           voided_by: string | null
           voided_at: string | null
+          sms_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -120,6 +121,7 @@ export type Database = {
           void_reason?: string | null
           voided_by?: string | null
           voided_at?: string | null
+          sms_sent_at?: string | null
         }
         Update: {
           id?: string
@@ -135,6 +137,7 @@ export type Database = {
           void_reason?: string | null
           voided_by?: string | null
           voided_at?: string | null
+          sms_sent_at?: string | null
         }
         Relationships: [
           {

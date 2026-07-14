@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { createDonation } from '../../lib/db/donations'
+import { createDonation, type Donation } from '../../lib/db/donations'
 import { validateDonationInput, type DonationMode, type DonationValidationErrors } from '../../lib/validation/donation'
 import { toPaise } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { sendReceiptSms } from './send'
 
 const t = strings.collection
 
@@ -27,12 +29,12 @@ export function CollectionForm() {
   const [errors, setErrors] = useState<DonationValidationErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [lastReceiptNo, setLastReceiptNo] = useState<number | null>(null)
+  const [lastDonation, setLastDonation] = useState<Donation | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    setLastReceiptNo(null)
+    setLastDonation(null)
 
     const result = validateDonationInput({ donorName, donorPhone, amountRupees, mode })
     setErrors(result.errors)
@@ -49,7 +51,14 @@ export function CollectionForm() {
         mode: mode as DonationMode,
         collectedBy: appUser.id,
       })
-      setLastReceiptNo(donation.receipt_no)
+      setLastDonation(donation)
+      // Attempt to open the volunteer's native SMS composer immediately.
+      // Per the brief: some browsers block non-http navigation that isn't
+      // a direct synchronous consequence of a user gesture, and this runs
+      // after an `await`, so it may silently no-op — the always-rendered
+      // "Send Receipt" button below is the required fallback, not an
+      // extra affordance.
+      sendReceiptSms(donation)
       // Reset for the next entry — a volunteer logs many donations in a
       // row, so this form never navigates away on success.
       setDonorName('')
@@ -66,7 +75,12 @@ export function CollectionForm() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
+        <Link to="/volunteer/pending" className="text-sm text-orange-700 underline">
+          {t.pendingSendLink}
+        </Link>
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded border border-stone-300 p-4">
         <label htmlFor="donor-name" className="text-sm text-stone-600">
@@ -150,11 +164,25 @@ export function CollectionForm() {
           {submitting ? t.submitting : t.submitButton}
         </button>
 
-        {lastReceiptNo !== null && (
-          <p className="text-sm text-green-700">
-            {t.successPrefix}
-            {lastReceiptNo} — {t.nextDonation}
-          </p>
+        {lastDonation && (
+          <>
+            <p className="text-sm text-green-700">
+              {t.successPrefix}
+              {lastDonation.receipt_no} — {t.nextDonation}
+            </p>
+            {/* Always rendered alongside the auto-redirect attempt above,
+                not only when it fails — some browsers block the
+                non-http navigation because it follows an `await`, and
+                this is the volunteer's explicit-tap fallback for that
+                case (Task 8 brief's ≤3-taps acceptance criterion). */}
+            <button
+              type="button"
+              onClick={() => sendReceiptSms(lastDonation)}
+              className="rounded border border-orange-700 px-3 py-3 text-orange-700"
+            >
+              {t.sendReceiptButton}
+            </button>
+          </>
         )}
         {error && (
           <p role="alert" className="text-sm text-red-700">

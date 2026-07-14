@@ -28,6 +28,7 @@ MIGRATION_FILE="$SCRIPT_DIR/migrations/20260714111950_schema_and_rls.sql"
 MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
 MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
 MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sql"
+MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -119,6 +120,9 @@ SQL
 
 echo "== applying migration (mandal_assets_storage) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_4"
+
+echo "== applying migration (donations_sms_sent) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_5"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -295,6 +299,40 @@ BEGIN
     'FAIL: voiding a donation (an allowed field) should still succeed';
 END $$;
 UPDATE donations SET voided = false, void_reason = null WHERE donor_name = 'Vol2 Donor';
+SQL
+
+echo "== assertion: Task 8 sms_sent_at is updatable and does not loosen the append-only guard =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Updating only sms_sent_at on an own row must succeed (it's not in
+-- forbid_financial_edit()'s guarded column list, and the existing
+-- donations_volunteer_update/donations_admin_update RLS policies already
+-- permit this).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+UPDATE donations SET sms_sent_at = now() WHERE donor_name = 'Vol1 Donor';
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT sms_sent_at FROM donations WHERE donor_name = 'Vol1 Donor') IS NOT NULL,
+    'FAIL: sms_sent_at update on an own row should have succeeded';
+  RAISE NOTICE 'PASS: sms_sent_at update on an own row succeeded';
+END $$;
+
+-- Regression: a protected field on the very same row must still be blocked
+-- — proves the new column didn't accidentally loosen the append-only guard.
+DO $$
+BEGIN
+  BEGIN
+    UPDATE donations SET amount_paise = amount_paise + 1 WHERE donor_name = 'Vol1 Donor';
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: amount_paise update succeeded but should have been blocked (sms_sent_at regression)';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: adding sms_sent_at did not loosen the append-only guard on amount_paise (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
 SQL
 
 echo "== assertion: receipt_no unique constraint + insert-time forgery override =="

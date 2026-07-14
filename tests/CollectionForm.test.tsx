@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import { CollectionForm } from '../src/features/collection/CollectionForm'
 
@@ -7,13 +8,16 @@ import { CollectionForm } from '../src/features/collection/CollectionForm'
 // Supabase client) — this is a component test of the form's behavior, and
 // mock useAuth so appUser is a fixed, non-editable session identity, the
 // same way every prior screen's tests mock only what the component itself
-// calls.
-const { createDonation } = vi.hoisted(() => ({
+// calls. Task 8 adds markSmsSent (send.ts's markSmsSent is re-exported from
+// this module) since CollectionForm now fires the SMS-send flow on submit.
+const { createDonation, markSmsSent } = vi.hoisted(() => ({
   createDonation: vi.fn(),
+  markSmsSent: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/donations', () => ({
   createDonation,
+  markSmsSent,
 }))
 
 const volunteer: Tables<'users'> = {
@@ -51,6 +55,15 @@ const createdDonation: Tables<'donations'> = {
   void_reason: null,
   voided_by: null,
   voided_at: null,
+  sms_sent_at: null,
+}
+
+function renderForm() {
+  render(
+    <MemoryRouter>
+      <CollectionForm />
+    </MemoryRouter>,
+  )
 }
 
 function fillValidForm() {
@@ -60,14 +73,31 @@ function fillValidForm() {
   fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
 }
 
+// window.location.href can't actually be assigned in jsdom without either
+// throwing ("Not implemented: navigation") or leaving the test process on a
+// different page — replace it with a plain writable stand-in so
+// send.ts's `window.location.href = buildSmsLink(...)` is just a normal
+// property write we can assert against, same idea as mocking any other
+// browser API a unit under test calls but doesn't own.
+const realLocation = window.location
+
 beforeEach(() => {
   vi.clearAllMocks()
   createDonation.mockResolvedValue(createdDonation)
+  markSmsSent.mockResolvedValue(undefined)
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { origin: 'https://vinayak-mandal.example', href: 'https://vinayak-mandal.example/volunteer' },
+  })
+})
+
+afterEach(() => {
+  Object.defineProperty(window, 'location', { configurable: true, value: realLocation })
 })
 
 describe('CollectionForm', () => {
   it('blocks submission and shows inline errors when the form is empty', () => {
-    render(<CollectionForm />)
+    renderForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
@@ -76,7 +106,7 @@ describe('CollectionForm', () => {
   })
 
   it('converts rupees to paise and sends collectedBy from the session, never receipt_no/public_token', async () => {
-    render(<CollectionForm />)
+    renderForm()
     fillValidForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
@@ -95,7 +125,7 @@ describe('CollectionForm', () => {
   })
 
   it('shows the returned receipt number and resets the form after a successful submit', async () => {
-    render(<CollectionForm />)
+    renderForm()
     fillValidForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
@@ -108,12 +138,55 @@ describe('CollectionForm', () => {
 
   it('shows an error instead of a success confirmation when createDonation rejects', async () => {
     createDonation.mockRejectedValue(new Error('network error'))
-    render(<CollectionForm />)
+    renderForm()
     fillValidForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network error'))
     expect(screen.queryByText(/Receipt #/)).not.toBeInTheDocument()
+  })
+
+  it('auto-attempts the SMS composer with the correct phone/message/receipt link right after a successful submit', async () => {
+    renderForm()
+    fillValidForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+
+    await waitFor(() => expect(createDonation).toHaveBeenCalledTimes(1))
+    // jsdom's default UA isn't an iOS one, so this exercises the Android/
+    // default `?body=` branch of buildSmsLink.
+    const expectedMessage = encodeURIComponent(
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+    )
+    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+  })
+
+  it('always renders a fallback "Send Receipt" button after submit, which re-fires the same SMS link when tapped', async () => {
+    renderForm()
+    fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    await waitFor(() => expect(createDonation).toHaveBeenCalledTimes(1))
+
+    // Simulate the auto-redirect having been blocked (some browsers refuse
+    // non-http navigation after an `await`) by resetting href, then tap the
+    // always-visible fallback button and confirm it fires the identical link.
+    window.location.href = 'https://vinayak-mandal.example/volunteer'
+    markSmsSent.mockClear()
+
+    const sendButton = screen.getByRole('button', { name: 'Send Receipt' })
+    fireEvent.click(sendButton)
+
+    const expectedMessage = encodeURIComponent(
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+    )
+    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+  })
+
+  it('links to the Pending Send tray', () => {
+    renderForm()
+    expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/volunteer/pending')
   })
 })

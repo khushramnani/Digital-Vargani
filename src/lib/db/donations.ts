@@ -35,3 +35,30 @@ export async function createDonation(input: CreateDonationInput): Promise<Donati
   if (error) throw error
   return data
 }
+
+// Task 8: `sms:` links have no delivery confirmation, so this only records
+// that the volunteer's device was told to open the SMS composer — same
+// optimistic, trust-based pattern as the rest of the app. Not guarded by
+// forbid_financial_edit() (see the donations_sms_sent migration), and the
+// existing donations_volunteer_update/donations_admin_update RLS policies
+// already permit it.
+export async function markSmsSent(donationId: string): Promise<void> {
+  const { error } = await supabase
+    .from('donations')
+    .update({ sms_sent_at: new Date().toISOString() })
+    .eq('id', donationId)
+  if (error) throw error
+}
+
+// Task 8's "Pending send" tray: the given volunteer's own donations that
+// haven't had an SMS sent yet, most recent first.
+export async function getPendingSendDonations(collectedBy: string): Promise<Donation[]> {
+  const { data, error } = await supabase
+    .from('donations')
+    .select('*')
+    .eq('collected_by', collectedBy)
+    .is('sms_sent_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}

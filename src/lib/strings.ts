@@ -62,11 +62,24 @@ export const strings = {
     submitting: 'Recording…',
     successPrefix: 'Receipt #',
     nextDonation: 'Ready for the next donation.',
+    sendReceiptButton: 'Send Receipt',
+    pendingSendLink: 'Pending sends',
+    // Kept short (SMS length matters). {amountRupees} is a plain number
+    // (no thousands separator, no repeated ₹) so the message stays short.
+    smsMessage: (amountRupees: number, receiptLink: string): string =>
+      `Thank you for your ₹${amountRupees} contribution. View your official receipt here: ${receiptLink}`,
     errors: {
       donorName: "Enter the donor's name.",
       donorPhone: 'Enter a valid phone number.',
       amountRupees: 'Enter an amount greater than zero.',
       mode: 'Select a payment mode.',
     },
+  },
+  pendingSend: {
+    title: 'Pending Send',
+    backLink: 'Back to collection',
+    empty: 'No pending receipts to send.',
+    sendButton: 'Send',
+    sent: 'Sent!',
   },
 }

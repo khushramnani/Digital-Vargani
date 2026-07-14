@@ -6,6 +6,7 @@ import { RequireRole } from '../features/auth/RequireRole'
 import { VolunteersScreen } from '../features/settings/volunteers'
 import { MandalConfigScreen } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
+import { PendingSend } from '../features/collection/PendingSend'
 
 function HomePage() {
   return (
@@ -70,6 +71,14 @@ export function AppRoutes() {
         element={
           <RequireRole role="volunteer">
             <CollectionForm />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer/pending"
+        element={
+          <RequireRole role="volunteer">
+            <PendingSend />
           </RequireRole>
         }
       />
