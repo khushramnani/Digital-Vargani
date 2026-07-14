@@ -49,8 +49,24 @@ export const strings = {
     copyLink: 'Copy invite link',
     copied: 'Copied!',
   },
-  volunteerHome: {
-    title: 'Volunteer',
-    placeholder: 'Collection tools arrive in a later task.',
+  collection: {
+    title: 'Collect Donation',
+    donorNameLabel: 'Donor Name',
+    donorPhoneLabel: 'Phone',
+    amountLabel: 'Amount (₹)',
+    modeLabel: 'Mode',
+    modeCash: 'Cash',
+    modeUpi: 'UPI',
+    modeBank: 'Bank',
+    submitButton: 'Record Donation',
+    submitting: 'Recording…',
+    successPrefix: 'Receipt #',
+    nextDonation: 'Ready for the next donation.',
+    errors: {
+      donorName: "Enter the donor's name.",
+      donorPhone: 'Enter a valid phone number.',
+      amountRupees: 'Enter an amount greater than zero.',
+      mode: 'Select a payment mode.',
+    },
   },
 }

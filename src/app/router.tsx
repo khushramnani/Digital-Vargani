@@ -5,6 +5,7 @@ import { InviteRedeem } from '../features/auth/InviteRedeem'
 import { RequireRole } from '../features/auth/RequireRole'
 import { VolunteersScreen } from '../features/settings/volunteers'
 import { MandalConfigScreen } from '../features/settings/MandalConfig'
+import { CollectionForm } from '../features/collection/CollectionForm'
 
 function HomePage() {
   return (
@@ -30,18 +31,6 @@ function AdminDashboardPage() {
       <Link to="/admin/settings" className="text-orange-700 underline">
         {strings.admin.settingsLink}
       </Link>
-    </main>
-  )
-}
-
-// Landing route for a redeemed volunteer session. Task 7+ builds the real
-// collection tools; this is just something real to redirect to for the
-// "volunteer session established" acceptance criterion.
-function VolunteerHomePage() {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-2 px-4 text-center">
-      <h1 className="text-2xl font-semibold text-stone-900">{strings.volunteerHome.title}</h1>
-      <p className="text-sm text-stone-400">{strings.volunteerHome.placeholder}</p>
     </main>
   )
 }
@@ -80,7 +69,7 @@ export function AppRoutes() {
         path="/volunteer"
         element={
           <RequireRole role="volunteer">
-            <VolunteerHomePage />
+            <CollectionForm />
           </RequireRole>
         }
       />
