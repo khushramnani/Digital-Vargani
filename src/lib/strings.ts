@@ -82,4 +82,16 @@ export const strings = {
     sendButton: 'Send',
     sent: 'Sent!',
   },
+  receipt: {
+    notFound: 'Receipt not found.',
+    donorLabel: 'Donor',
+    amountLabel: 'Amount',
+    receiptNoLabel: 'Receipt No.',
+    dateLabel: 'Date',
+    stampCash: 'RECEIVED: CASH',
+    stampOnline: 'RECEIVED: ONLINE',
+    voidedBanner: 'This entry has been voided',
+    voidedReasonPrefix: 'Reason: ',
+    signatureLabel: 'President',
+  },
 }

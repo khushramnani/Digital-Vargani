@@ -7,6 +7,7 @@ import { VolunteersScreen } from '../features/settings/volunteers'
 import { MandalConfigScreen } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
+import { ReceiptPage } from '../features/receipt/ReceiptPage'
 
 function HomePage() {
   return (
@@ -42,6 +43,8 @@ export function AppRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<AdminLogin />} />
       <Route path="/invite/:token" element={<InviteRedeem />} />
+      {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
+      <Route path="/r/:public_token" element={<ReceiptPage />} />
       <Route
         path="/admin"
         element={
