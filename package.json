@@ -10,9 +10,11 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:types": "supabase gen types typescript --linked > src/lib/db/database.types.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.1"
