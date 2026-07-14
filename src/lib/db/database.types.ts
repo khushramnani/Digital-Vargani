@@ -303,6 +303,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      redeem_invite: {
+        Args: { token: string }
+        Returns: undefined
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

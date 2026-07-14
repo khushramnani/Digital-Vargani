@@ -4,13 +4,14 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import type { Tables } from '../src/lib/db/database.types'
 import { AuthProvider } from '../src/features/auth/AuthProvider'
-import { ProtectedAdminRoute } from '../src/features/auth/ProtectedAdminRoute'
+import { RequireRole } from '../src/features/auth/RequireRole'
 
-// No live Supabase project exists yet, so the actual magic-link round trip
-// can't be tested. This proves the guard logic itself instead: given a
-// mocked session + mocked `users` row, does ProtectedAdminRoute render its
-// children or redirect? (The unauthenticated-redirect case is covered for
-// real, with no mocking needed, by e2e/admin-auth.spec.ts.)
+// No live Supabase project exists yet, so the actual magic-link/invite-link
+// round trips can't be tested here. This proves the guard logic itself
+// instead: given a mocked session + mocked `users` row, does RequireRole
+// render its children or redirect for a given required role? (The
+// no-session redirect is also covered for real, with no mocking needed, by
+// e2e/admin-auth.spec.ts.)
 const { getSession, onAuthStateChange, rpc, maybeSingle, from } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
   return {
@@ -46,17 +47,17 @@ const adminUser: Tables<'users'> = {
 
 const volunteerUser: Tables<'users'> = { ...adminUser, id: 'user-2', role: 'volunteer' }
 
-function renderGuardedAdminRoute() {
+function renderGuardedRoute(requiredRole: 'admin' | 'volunteer') {
   render(
-    <MemoryRouter initialEntries={['/admin']}>
+    <MemoryRouter initialEntries={['/guarded']}>
       <AuthProvider>
         <Routes>
           <Route
-            path="/admin"
+            path="/guarded"
             element={
-              <ProtectedAdminRoute>
-                <div>Admin Content</div>
-              </ProtectedAdminRoute>
+              <RequireRole role={requiredRole}>
+                <div>Guarded Content</div>
+              </RequireRole>
             }
           />
           <Route path="/login" element={<div>Login Page</div>} />
@@ -73,33 +74,43 @@ beforeEach(() => {
   from.mockImplementation(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }))
 })
 
-describe('ProtectedAdminRoute', () => {
-  it('renders its children for an authenticated session resolving to an admin appUser', async () => {
+describe('RequireRole', () => {
+  it('renders its children for an authenticated session resolving to a matching-role appUser', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
     maybeSingle.mockResolvedValue({ data: adminUser, error: null })
 
-    renderGuardedAdminRoute()
+    renderGuardedRoute('admin')
 
-    await waitFor(() => expect(screen.getByText('Admin Content')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Guarded Content')).toBeInTheDocument())
     expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
   })
 
   it('redirects to /login when there is no session at all', async () => {
     getSession.mockResolvedValue({ data: { session: null }, error: null })
 
-    renderGuardedAdminRoute()
+    renderGuardedRoute('admin')
 
     await waitFor(() => expect(screen.getByText('Login Page')).toBeInTheDocument())
-    expect(screen.queryByText('Admin Content')).not.toBeInTheDocument()
+    expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
   })
 
-  it('redirects to /login when the session resolves to a non-admin appUser', async () => {
+  it('blocks a volunteer appUser from an admin-gated route', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
     maybeSingle.mockResolvedValue({ data: volunteerUser, error: null })
 
-    renderGuardedAdminRoute()
+    renderGuardedRoute('admin')
 
     await waitFor(() => expect(screen.getByText('Login Page')).toBeInTheDocument())
-    expect(screen.queryByText('Admin Content')).not.toBeInTheDocument()
+    expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
+  })
+
+  it('blocks an admin appUser from a volunteer-gated route (vice versa)', async () => {
+    getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
+    maybeSingle.mockResolvedValue({ data: adminUser, error: null })
+
+    renderGuardedRoute('volunteer')
+
+    await waitFor(() => expect(screen.getByText('Login Page')).toBeInTheDocument())
+    expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
   })
 })

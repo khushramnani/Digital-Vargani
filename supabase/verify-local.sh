@@ -26,6 +26,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATION_FILE="$SCRIPT_DIR/migrations/20260714111950_schema_and_rls.sql"
 MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
+MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -85,6 +86,9 @@ echo "== applying migration =="
 
 echo "== applying migration (add_users_email) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_2"
+
+echo "== applying migration (redeem_invite) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_3"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -151,6 +155,65 @@ BEGIN
     = 'aaaaaaaa-0000-0000-0000-000000000099',
     'FAIL: re-running link_admin_account() should be a harmless no-op';
   RAISE NOTICE 'PASS: link_admin_account() is idempotent on repeat calls';
+END $$;
+SQL
+
+echo "== assertion: redeem_invite() links exactly the matching volunteer row and is single-use =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Fresh volunteer row + fresh anonymous auth identity, isolated from the
+-- seed volunteers (002/003) and their later backfill/RLS assertions below.
+insert into users (id, name, role, invite_token, active) values
+  ('00000000-0000-0000-0000-000000000098', 'Redeem Test Volunteer', 'volunteer', 'redeem-test-token', true);
+
+insert into auth.users (id) values
+  ('aaaaaaaa-0000-0000-0000-000000000098');
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000098';
+select redeem_invite('redeem-test-token');
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
+    = 'aaaaaaaa-0000-0000-0000-000000000098',
+    'FAIL: redeem_invite() did not link the matching volunteer row';
+
+  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000098') IS NULL,
+    'FAIL: redeem_invite() did not clear invite_token after redemption';
+
+  RAISE NOTICE 'PASS: redeem_invite() linked the matching volunteer row and cleared invite_token';
+END $$;
+
+-- Single-use: the token is now null on that row. Simulate a second person
+-- (a brand-new anonymous identity) opening the same already-shared link —
+-- this must fail loudly, not silently no-op and not re-link a second
+-- identity to the same row.
+insert into auth.users (id) values
+  ('aaaaaaaa-0000-0000-0000-000000000097');
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000097';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM redeem_invite('redeem-test-token');
+    RAISE EXCEPTION 'SECURITY HOLE: redeem_invite() succeeded a second time on an already-redeemed token';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or already-used invite link%' THEN
+      RAISE NOTICE 'PASS: redeem_invite() rejects replay of an already-used (now-null) token (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
+    = 'aaaaaaaa-0000-0000-0000-000000000098',
+    'FAIL: rejected replay must not have changed the already-linked auth_user_id';
 END $$;
 SQL
 

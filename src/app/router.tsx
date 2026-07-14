@@ -1,7 +1,9 @@
-import { Routes, Route } from 'react-router-dom'
+import { Link, Routes, Route } from 'react-router-dom'
 import { strings } from '../lib/strings'
 import { AdminLogin } from '../features/auth/AdminLogin'
-import { ProtectedAdminRoute } from '../features/auth/ProtectedAdminRoute'
+import { InviteRedeem } from '../features/auth/InviteRedeem'
+import { RequireRole } from '../features/auth/RequireRole'
+import { VolunteersScreen } from '../features/settings/volunteers'
 
 function HomePage() {
   return (
@@ -21,6 +23,21 @@ function AdminDashboardPage() {
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-2 px-4 text-center">
       <h1 className="text-2xl font-semibold text-stone-900">{strings.admin.dashboardTitle}</h1>
       <p className="text-sm text-stone-400">{strings.admin.dashboardPlaceholder}</p>
+      <Link to="/admin/volunteers" className="text-orange-700 underline">
+        {strings.admin.volunteersLink}
+      </Link>
+    </main>
+  )
+}
+
+// Landing route for a redeemed volunteer session. Task 7+ builds the real
+// collection tools; this is just something real to redirect to for the
+// "volunteer session established" acceptance criterion.
+function VolunteerHomePage() {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-2 px-4 text-center">
+      <h1 className="text-2xl font-semibold text-stone-900">{strings.volunteerHome.title}</h1>
+      <p className="text-sm text-stone-400">{strings.volunteerHome.placeholder}</p>
     </main>
   )
 }
@@ -30,12 +47,29 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<AdminLogin />} />
+      <Route path="/invite/:token" element={<InviteRedeem />} />
       <Route
         path="/admin"
         element={
-          <ProtectedAdminRoute>
+          <RequireRole role="admin">
             <AdminDashboardPage />
-          </ProtectedAdminRoute>
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/volunteers"
+        element={
+          <RequireRole role="admin">
+            <VolunteersScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer"
+        element={
+          <RequireRole role="volunteer">
+            <VolunteerHomePage />
+          </RequireRole>
         }
       />
     </Routes>

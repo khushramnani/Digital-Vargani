@@ -11,6 +11,12 @@ export type AuthContextValue = {
   session: Session | null
   appUser: AppUser | null
   loading: boolean
+  // Re-runs the `users` lookup for the current session on demand. Needed
+  // after a redeem-style RPC (e.g. Task 5's redeem_invite) links a row that
+  // didn't exist yet when the session listener last resolved appUser —
+  // there's no auth-state-change event to react to for that, since the
+  // session itself doesn't change, only the `users` row it points at.
+  refreshAppUser: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

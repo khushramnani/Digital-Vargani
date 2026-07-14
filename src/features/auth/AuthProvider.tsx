@@ -1,12 +1,30 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../../lib/db/client'
 import { AuthContext, type AppUser } from './useAuth'
+
+// Shared by the session-listener resolution below and refreshAppUser() —
+// the "look up my users row" query has exactly one implementation.
+async function fetchAppUser(authUserId: string): Promise<AppUser | null> {
+  try {
+    const { data } = await supabase.from('users').select('*').eq('auth_user_id', authUserId).maybeSingle()
+    return data ?? null
+  } catch {
+    return null
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const refreshAppUser = useCallback(async () => {
+    const { data } = await supabase.auth.getSession()
+    const nextSession = data.session
+    setSession(nextSession)
+    setAppUser(nextSession ? await fetchAppUser(nextSession.user.id) : null)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -33,17 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // null below, which every route guard already treats as "no role".
       }
 
-      try {
-        const { data } = await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_user_id', nextSession.user.id)
-          .maybeSingle()
-        if (active) setAppUser(data ?? null)
-      } catch {
-        if (active) setAppUser(null)
-      }
-
+      const user = await fetchAppUser(nextSession.user.id)
+      if (active) setAppUser(user)
       if (active) setLoading(false)
     }
 
@@ -66,5 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  return <AuthContext.Provider value={{ session, appUser, loading }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ session, appUser, loading, refreshAppUser }}>{children}</AuthContext.Provider>
+  )
 }
