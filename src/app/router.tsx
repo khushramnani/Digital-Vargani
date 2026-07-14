@@ -4,6 +4,7 @@ import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
 import { RequireRole } from '../features/auth/RequireRole'
 import { VolunteersScreen } from '../features/settings/volunteers'
+import { MandalConfigScreen } from '../features/settings/MandalConfig'
 
 function HomePage() {
   return (
@@ -25,6 +26,9 @@ function AdminDashboardPage() {
       <p className="text-sm text-stone-400">{strings.admin.dashboardPlaceholder}</p>
       <Link to="/admin/volunteers" className="text-orange-700 underline">
         {strings.admin.volunteersLink}
+      </Link>
+      <Link to="/admin/settings" className="text-orange-700 underline">
+        {strings.admin.settingsLink}
       </Link>
     </main>
   )
@@ -61,6 +65,14 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <VolunteersScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/settings"
+        element={
+          <RequireRole role="admin">
+            <MandalConfigScreen />
           </RequireRole>
         }
       />

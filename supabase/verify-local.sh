@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATION_FILE="$SCRIPT_DIR/migrations/20260714111950_schema_and_rls.sql"
 MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
 MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
+MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -90,6 +91,35 @@ echo "== applying migration (add_users_email) =="
 echo "== applying migration (redeem_invite) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_3"
 
+echo "== stubbing storage schema (Task 6) =="
+# storage.buckets/storage.objects are part of Supabase's Storage extension
+# schema, which this scratch cluster doesn't have. Rebuilding Storage's
+# real internals (ownership, metadata, folder-path helpers, etc.) would be
+# disproportionate for what this migration actually needs verified: that
+# its RLS policies gate insert/update to is_admin() and leave select open.
+# This stub is exactly that minimal shape — just enough columns for the
+# migration's own policies (which only reference bucket_id) to be
+# meaningfully exercised, not a Storage reimplementation.
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+create schema if not exists storage;
+create table if not exists storage.buckets (
+  id     text primary key,
+  name   text not null,
+  public boolean not null default false
+);
+create table if not exists storage.objects (
+  id         uuid primary key default gen_random_uuid(),
+  bucket_id  text references storage.buckets(id),
+  name       text,
+  owner      uuid,
+  created_at timestamptz not null default now()
+);
+alter table storage.objects enable row level security;
+SQL
+
+echo "== applying migration (mandal_assets_storage) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_4"
+
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
 
@@ -104,6 +134,10 @@ echo "== granting Supabase's platform-level default table privileges =="
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on all tables in schema public to anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
+
+grant usage on schema storage to anon, authenticated;
+grant select on storage.buckets to anon, authenticated;
+grant select, insert, update on storage.objects to anon, authenticated;
 SQL
 
 echo "== assertion: link_admin_account() links exactly the matching admin row =="
@@ -503,5 +537,59 @@ if [ "$ANON_DONOR" != "Vol1 Donor" ]; then
   exit 1
 fi
 echo "PASS: anon sees 0 rows via bulk select, exactly 1 correct row via get_public_receipt()"
+
+echo "== assertion: mandal-assets storage RLS — admin can insert/update =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
+
+insert into storage.objects (bucket_id, name) values ('mandal-assets', 'logo-test.png');
+
+DO $$
+BEGIN
+  ASSERT (SELECT count(*) FROM storage.objects WHERE name = 'logo-test.png') = 1,
+    'FAIL: admin insert into mandal-assets storage.objects should have succeeded';
+END $$;
+
+update storage.objects set name = 'logo-test-renamed.png' where name = 'logo-test.png';
+
+DO $$
+BEGIN
+  ASSERT (SELECT count(*) FROM storage.objects WHERE name = 'logo-test-renamed.png') = 1,
+    'FAIL: admin update of mandal-assets storage.objects should have succeeded';
+END $$;
+
+reset role;
+SQL
+
+echo "== assertion: mandal-assets storage RLS — non-admin insert is rejected =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One (non-admin)
+
+DO $$
+BEGIN
+  BEGIN
+    insert into storage.objects (bucket_id, name) values ('mandal-assets', 'should-be-rejected.png');
+    RAISE EXCEPTION 'SECURITY HOLE: non-admin insert into mandal-assets succeeded without error';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE = '42501' THEN
+      RAISE NOTICE 'PASS: non-admin insert into mandal-assets rejected (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+
+reset role;
+SQL
+
+echo "== assertion: mandal-assets storage RLS — read is open to anon =="
+ANON_OBJ_COUNT=$("${PSQL[@]}" -d "$DB_NAME" -tAc "set role anon; select count(*) from storage.objects where bucket_id = 'mandal-assets';")
+if [ "$ANON_OBJ_COUNT" -lt 1 ]; then
+  echo "FAIL: anon should be able to read at least 1 mandal-assets object, saw $ANON_OBJ_COUNT" >&2
+  exit 1
+fi
+echo "PASS: anon read $ANON_OBJ_COUNT mandal-assets object(s) (public read policy works)"
 
 echo "== all assertions passed =="
