@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/db/client'
 import { useAuth } from './useAuth'
@@ -19,12 +19,28 @@ export function InviteRedeem() {
   const { refreshAppUser } = useAuth()
   const [status, setStatus] = useState<'redeeming' | 'error'>('redeeming')
 
+  // startedRef ensures the actual redeem network calls (getSession /
+  // signInAnonymously / redeem_invite) fire only once per component
+  // instance, even though StrictMode's dev-only double-invoke runs this
+  // effect's body twice (mount -> cleanup -> mount again). Without it, both
+  // invocations race to redeem the same one-time-use token.
+  //
+  // activeRef is a separate concern: whether it's still safe to apply the
+  // result (setStatus/navigate) once redeem() resolves. It's set true at
+  // the top of every effect invocation and false in its cleanup, so
+  // StrictMode's synthetic cleanup-then-remount flips it back to true
+  // before redeem() resolves (the component is genuinely still mounted),
+  // while a real unmount — with no remount after — correctly leaves it
+  // false so a late-resolving redeem() doesn't touch unmounted state.
+  const startedRef = useRef(false)
+  const activeRef = useRef(true)
+
   useEffect(() => {
-    let active = true
+    activeRef.current = true
 
     async function redeem() {
       if (!token) {
-        if (active) setStatus('error')
+        if (activeRef.current) setStatus('error')
         return
       }
 
@@ -35,24 +51,27 @@ export function InviteRedeem() {
 
       const { error: signInError } = await supabase.auth.signInAnonymously()
       if (signInError) {
-        if (active) setStatus('error')
+        if (activeRef.current) setStatus('error')
         return
       }
 
       const { error: redeemError } = await supabase.rpc('redeem_invite', { token })
       if (redeemError) {
-        if (active) setStatus('error')
+        if (activeRef.current) setStatus('error')
         return
       }
 
       await refreshAppUser()
-      if (active) navigate('/volunteer', { replace: true })
+      if (activeRef.current) navigate('/volunteer', { replace: true })
     }
 
-    redeem()
+    if (!startedRef.current) {
+      startedRef.current = true
+      redeem()
+    }
 
     return () => {
-      active = false
+      activeRef.current = false
     }
   }, [token, navigate, refreshAppUser])
 

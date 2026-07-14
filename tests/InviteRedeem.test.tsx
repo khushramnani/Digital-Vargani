@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
@@ -55,6 +56,24 @@ function renderInviteRedeem(token: string) {
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
+  )
+}
+
+// Same as renderInviteRedeem, but wrapped in StrictMode to reproduce the
+// dev-only double-invoke (mount -> cleanup -> mount again, same component
+// instance) that src/main.tsx's real <StrictMode> root triggers.
+function renderInviteRedeemStrict(token: string) {
+  render(
+    <StrictMode>
+      <MemoryRouter initialEntries={[`/invite/${token}`]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/invite/:token" element={<InviteRedeem />} />
+            <Route path="/volunteer" element={<div>Volunteer Home</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </StrictMode>,
   )
 }
 
@@ -125,5 +144,24 @@ describe('InviteRedeem', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/invalid or has already been used/i))
     expect(screen.queryByText('Volunteer Home')).not.toBeInTheDocument()
+  })
+
+  // Regression test for the StrictMode double-invoke race: dev builds run
+  // this component's mount effect twice (mount -> cleanup -> mount again,
+  // same instance). Without the startedRef guard, both invocations fire
+  // signInAnonymously()/redeem_invite() against the same one-time-use
+  // token, and whichever reaches Postgres second gets the "already used"
+  // error — even if it's the "real" invocation. This wraps the render in
+  // an actual <StrictMode> (matching src/main.tsx) to reproduce that.
+  it('calls redeem_invite exactly once under StrictMode double-invoke', async () => {
+    succeedAnonymousSignIn()
+    rpc.mockResolvedValue({ data: null, error: null })
+    maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
+
+    renderInviteRedeemStrict('good-token')
+
+    await waitFor(() => expect(screen.getByText('Volunteer Home')).toBeInTheDocument())
+    expect(signInAnonymously).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledTimes(1)
   })
 })
