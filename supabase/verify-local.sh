@@ -144,6 +144,164 @@ END $$;
 UPDATE donations SET voided = false, void_reason = null WHERE donor_name = 'Vol2 Donor';
 SQL
 
+echo "== assertion: receipt_no unique constraint + insert-time forgery override =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+DECLARE
+  dup_receipt_no bigint;
+BEGIN
+  SELECT receipt_no INTO dup_receipt_no FROM donations WHERE donor_name = 'Vol1 Donor';
+
+  -- The insert-time trigger overrides whatever receipt_no the client sends
+  -- with a fresh nextval(), so this insert must succeed (no unique violation
+  -- bubbles up) AND must not actually reuse the duplicate value supplied.
+  -- Attributed to the admin (not a volunteer) so it doesn't skew the
+  -- per-volunteer row-count assertions later in this script.
+  INSERT INTO donations (donor_name, amount_paise, mode, collected_by, receipt_no)
+    VALUES ('Forged Receipt No', 100, 'cash', '00000000-0000-0000-0000-000000000001', dup_receipt_no);
+
+  ASSERT (SELECT count(*) FROM donations WHERE receipt_no = dup_receipt_no) = 1,
+    'FAIL: two donations ended up sharing the same receipt_no';
+  ASSERT (SELECT receipt_no FROM donations WHERE donor_name = 'Forged Receipt No') <> dup_receipt_no,
+    'FAIL: forged duplicate receipt_no was not overridden by the insert trigger';
+
+  RAISE NOTICE 'PASS: receipt_no never collides — insert trigger overrides client-supplied duplicates before uniqueness even matters';
+END $$;
+
+-- Belt-and-suspenders: the UNIQUE constraint itself must still exist and
+-- reject a raw duplicate if something ever bypassed the trigger.
+DO $$
+DECLARE
+  dup_receipt_no bigint;
+BEGIN
+  SELECT receipt_no INTO dup_receipt_no FROM donations WHERE donor_name = 'Vol1 Donor';
+  BEGIN
+    -- Disable the insert trigger just for this probe so the raw constraint
+    -- is what's being exercised, not the trigger papering over it.
+    ALTER TABLE donations DISABLE TRIGGER donations_enforce_insert;
+    INSERT INTO donations (donor_name, amount_paise, mode, collected_by, receipt_no)
+      VALUES ('Should Violate Unique', 100, 'cash', '00000000-0000-0000-0000-000000000001', dup_receipt_no);
+    ALTER TABLE donations ENABLE TRIGGER donations_enforce_insert;
+    RAISE EXCEPTION 'FAIL: duplicate receipt_no was accepted with the insert trigger disabled — UNIQUE constraint missing';
+  EXCEPTION WHEN unique_violation THEN
+    ALTER TABLE donations ENABLE TRIGGER donations_enforce_insert;
+    RAISE NOTICE 'PASS: receipt_no UNIQUE constraint independently rejects duplicates (%)', SQLERRM;
+  END;
+END $$;
+SQL
+
+echo "== assertion: insert-time trigger overrides client-forged financial fields =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+DECLARE
+  forged_row donations%ROWTYPE;
+BEGIN
+  -- Attributed to the admin (not a volunteer) so it doesn't skew the
+  -- per-volunteer row-count assertions later in this script.
+  INSERT INTO donations (
+    donor_name, amount_paise, mode, collected_by,
+    receipt_no, public_token, voided, void_reason, voided_by, voided_at
+  ) VALUES (
+    'Forged Fields Donor', 100, 'cash', '00000000-0000-0000-0000-000000000001',
+    999999, 'client-forged-token', true, 'client forged void', '00000000-0000-0000-0000-000000000002', now()
+  ) RETURNING * INTO forged_row;
+
+  ASSERT forged_row.receipt_no <> 999999,
+    'FAIL: client-supplied receipt_no (999999) was not overridden';
+  ASSERT forged_row.public_token <> 'client-forged-token',
+    'FAIL: client-supplied public_token was not overridden';
+  ASSERT forged_row.voided = false,
+    'FAIL: client-supplied voided=true was not overridden to false';
+  ASSERT forged_row.void_reason IS NULL,
+    'FAIL: client-supplied void_reason was not cleared';
+  ASSERT forged_row.voided_by IS NULL,
+    'FAIL: client-supplied voided_by was not cleared';
+  ASSERT forged_row.voided_at IS NULL,
+    'FAIL: client-supplied voided_at was not cleared';
+
+  RAISE NOTICE 'PASS: insert trigger overrode all forged fields (receipt_no=%, public_token=%, voided=%)',
+    forged_row.receipt_no, forged_row.public_token, forged_row.voided;
+END $$;
+SQL
+
+echo "== assertion: handovers.note is append-only (asymmetry fix) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+DECLARE
+  h_id uuid;
+BEGIN
+  INSERT INTO handovers (volunteer_id, amount_paise, received_by, note)
+    VALUES ('00000000-0000-0000-0000-000000000002', 500, '00000000-0000-0000-0000-000000000001', 'original note')
+    RETURNING id INTO h_id;
+
+  BEGIN
+    UPDATE handovers SET note = 'edited note' WHERE id = h_id;
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: handovers.note update succeeded but should have been blocked';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: trigger blocked handovers.note edit (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+SQL
+
+echo "== assertion: created_at is append-only on all three tables =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+BEGIN
+  BEGIN
+    UPDATE donations SET created_at = now() - interval '1 day' WHERE donor_name = 'Vol1 Donor';
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: donations.created_at update succeeded but should have been blocked';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: trigger blocked donations.created_at edit (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+
+DO $$
+DECLARE
+  e_id uuid;
+BEGIN
+  INSERT INTO expenses (category, amount_paise, paid_by, paid_from)
+    VALUES ('Misc', 500, '00000000-0000-0000-0000-000000000001', 'cash')
+    RETURNING id INTO e_id;
+  BEGIN
+    UPDATE expenses SET created_at = now() - interval '1 day' WHERE id = e_id;
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: expenses.created_at update succeeded but should have been blocked';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: trigger blocked expenses.created_at edit (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+
+DO $$
+DECLARE
+  h_id uuid;
+BEGIN
+  INSERT INTO handovers (volunteer_id, amount_paise, received_by)
+    VALUES ('00000000-0000-0000-0000-000000000002', 500, '00000000-0000-0000-0000-000000000001')
+    RETURNING id INTO h_id;
+  BEGIN
+    UPDATE handovers SET created_at = now() - interval '1 day' WHERE id = h_id;
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: handovers.created_at update succeeded but should have been blocked';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: trigger blocked handovers.created_at edit (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+SQL
+
 echo "== assertion: volunteer RLS (select + insert) =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role authenticated;
@@ -193,8 +351,11 @@ DO $$
 DECLARE
   v_count int;
 BEGIN
+  -- 2 seed donations + 'Forged Receipt No' + 'Forged Fields Donor' (both
+  -- admin-attributed, inserted by the Fix 1/2 assertions above) + 'Vol1
+  -- Self Insert' (from the volunteer-insert assertion above) = 5.
   SELECT count(*) INTO v_count FROM donations;
-  ASSERT v_count = 3, format('FAIL: admin should see all 3 donations, saw %s', v_count);
+  ASSERT v_count = 5, format('FAIL: admin should see all 5 donations, saw %s', v_count);
 END $$;
 
 reset role;

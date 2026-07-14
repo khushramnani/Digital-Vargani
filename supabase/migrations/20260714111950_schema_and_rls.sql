@@ -29,7 +29,7 @@ create sequence receipt_no_seq start 1;
 
 create table donations (
   id            uuid primary key default gen_random_uuid(),
-  receipt_no    bigint not null default nextval('receipt_no_seq'),
+  receipt_no    bigint not null unique default nextval('receipt_no_seq'),
   public_token  text not null unique default encode(gen_random_bytes(16), 'hex'),
   donor_name    text not null,
   donor_phone   text,
@@ -86,7 +86,8 @@ begin
        or new.mode <> old.mode
        or new.collected_by <> old.collected_by
        or new.receipt_no <> old.receipt_no
-       or new.public_token <> old.public_token then
+       or new.public_token <> old.public_token
+       or new.created_at <> old.created_at then
       raise exception 'donations rows are append-only; void and re-enter instead of editing';
     end if;
   elsif TG_TABLE_NAME = 'expenses' then
@@ -94,13 +95,16 @@ begin
        or new.amount_paise <> old.amount_paise
        or new.description is distinct from old.description
        or new.paid_by <> old.paid_by
-       or new.paid_from <> old.paid_from then
+       or new.paid_from <> old.paid_from
+       or new.created_at <> old.created_at then
       raise exception 'expenses rows are append-only; void and re-enter instead of editing';
     end if;
   elsif TG_TABLE_NAME = 'handovers' then
     if new.volunteer_id <> old.volunteer_id
        or new.amount_paise <> old.amount_paise
-       or new.received_by <> old.received_by then
+       or new.received_by <> old.received_by
+       or new.note is distinct from old.note
+       or new.created_at <> old.created_at then
       raise exception 'handovers rows are append-only; void and re-enter instead of editing';
     end if;
   end if;
@@ -114,6 +118,28 @@ create trigger expenses_forbid_edit before update on expenses
   for each row execute function forbid_financial_edit();
 create trigger handovers_forbid_edit before update on handovers
   for each row execute function forbid_financial_edit();
+
+create or replace function enforce_insert_defaults() returns trigger
+language plpgsql as $$
+begin
+  if TG_TABLE_NAME = 'donations' then
+    new.receipt_no := nextval('receipt_no_seq');
+    new.public_token := encode(gen_random_bytes(16), 'hex');
+  end if;
+  new.voided := false;
+  new.void_reason := null;
+  new.voided_by := null;
+  new.voided_at := null;
+  return new;
+end;
+$$;
+
+create trigger donations_enforce_insert before insert on donations
+  for each row execute function enforce_insert_defaults();
+create trigger expenses_enforce_insert before insert on expenses
+  for each row execute function enforce_insert_defaults();
+create trigger handovers_enforce_insert before insert on handovers
+  for each row execute function enforce_insert_defaults();
 
 -- ── RLS helper functions ───────────────────────────────────────────────
 
