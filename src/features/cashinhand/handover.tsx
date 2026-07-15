@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { createHandover, getAdmins, getHandovers, voidHandover, type Admin, type Handover } from '../../lib/db/handovers'
+import { createHandover, getAdmins, getHandovers, type Admin, type Handover } from '../../lib/db/handovers'
+import { voidRow } from '../../lib/db/void'
 import { validateHandoverInput, type HandoverValidationErrors } from '../../lib/validation/handover'
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { VoidButton } from '../../components/VoidButton'
 
 const t = strings.handovers
 
@@ -76,17 +78,10 @@ export function HandoverScreen() {
     }
   }
 
-  // A native prompt for the required reason, not a polished dialog — Task
-  // 14 ("Shared void flow") generalizes this across donations/expenses/
-  // handovers later; this is intentionally the simplest thing that
-  // satisfies this task's own "void-to-correct" acceptance criterion.
-  async function handleVoid(handover: Handover) {
+  async function handleVoid(handover: Handover, reason: string) {
     if (!appUser) return
-    const reason = window.prompt(t.voidPrompt)
-    if (!reason?.trim()) return
-
     try {
-      await voidHandover(handover.id, reason.trim(), appUser.id)
+      await voidRow('handovers', handover.id, reason, appUser.id)
       setHandovers(await getHandovers())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -190,13 +185,7 @@ export function HandoverScreen() {
                   {handover.void_reason}
                 </p>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleVoid(handover)}
-                  className="mt-2 rounded border border-red-700 px-2 py-1 text-sm text-red-700"
-                >
-                  {t.voidButton}
-                </button>
+                <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(handover, reason)} />
               )}
             </li>
           ))}

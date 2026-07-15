@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { createExpense, getExpenses, voidExpense, type Expense } from '../../lib/db/expenses'
+import { createExpense, getExpenses, type Expense } from '../../lib/db/expenses'
 import { getMandalConfig } from '../../lib/db/config'
+import { voidRow } from '../../lib/db/void'
 import { validateExpenseInput, type PaidFrom, type ExpenseValidationErrors } from '../../lib/validation/expense'
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { VoidButton } from '../../components/VoidButton'
 
 const t = strings.expenses
 
@@ -81,17 +83,10 @@ export function ExpensesScreen() {
     }
   }
 
-  // A native prompt for the required reason, not a polished dialog — Task
-  // 14 ("Shared void flow") generalizes this across donations/expenses/
-  // handovers later; this is intentionally the simplest thing that
-  // satisfies this task's own "void-to-correct" acceptance criterion.
-  async function handleVoid(expense: Expense) {
+  async function handleVoid(expense: Expense, reason: string) {
     if (!appUser) return
-    const reason = window.prompt(t.voidPrompt)
-    if (!reason?.trim()) return
-
     try {
-      await voidExpense(expense.id, reason.trim(), appUser.id)
+      await voidRow('expenses', expense.id, reason, appUser.id)
       setExpenses(await getExpenses())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -217,13 +212,7 @@ export function ExpensesScreen() {
                   {expense.void_reason}
                 </p>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleVoid(expense)}
-                  className="mt-2 rounded border border-red-700 px-2 py-1 text-sm text-red-700"
-                >
-                  {t.voidButton}
-                </button>
+                <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(expense, reason)} />
               )}
             </li>
           ))}

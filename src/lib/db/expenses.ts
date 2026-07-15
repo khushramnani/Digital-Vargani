@@ -3,10 +3,8 @@
 // server-side — admin sees/writes every row, a volunteer only rows where
 // paid_by = app_user_id() — so a single plain `select *` (see getExpenses)
 // returns the right rows for either caller with no client-side role
-// branching. The append-only trigger (forbid_financial_edit) blocks editing
-// category/amount_paise/description/paid_by/paid_from/created_at post-
-// creation, but voided/void_reason/voided_by/voided_at aren't in that
-// guarded list, so voidExpense's update is allowed through.
+// branching. Voiding goes through lib/db/void.ts's shared voidRow (Task 14)
+// rather than a copy of the update here.
 import { supabase } from './client'
 import type { Tables } from './database.types'
 import type { PaidFrom } from '../validation/expense'
@@ -56,17 +54,4 @@ export async function getExpenses(): Promise<Expense[]> {
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
-}
-
-export async function voidExpense(id: string, reason: string, voidedBy: string): Promise<void> {
-  const { error } = await supabase
-    .from('expenses')
-    .update({
-      voided: true,
-      void_reason: reason,
-      voided_by: voidedBy,
-      voided_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-  if (error) throw error
 }

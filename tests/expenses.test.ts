@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createExpense, getExpenses, voidExpense } from '../src/lib/db/expenses'
+import { createExpense, getExpenses } from '../src/lib/db/expenses'
 import type { Tables } from '../src/lib/db/database.types'
 
 // No live Supabase project exists (same constraint as every prior task's
@@ -101,31 +101,5 @@ describe('getExpenses', () => {
     from.mockReturnValue({ select: () => ({ order }) })
 
     await expect(getExpenses()).rejects.toThrow('boom')
-  })
-})
-
-describe('voidExpense', () => {
-  it('sets exactly voided/void_reason/voided_by/voided_at, filtered by id', async () => {
-    const eq = vi.fn(() => Promise.resolve({ error: null }))
-    const update = vi.fn(() => ({ eq }))
-    from.mockReturnValue({ update })
-
-    await voidExpense('expense-1', 'Wrong category', 'admin-1')
-
-    expect(from).toHaveBeenCalledWith('expenses')
-    expect(update).toHaveBeenCalledWith({
-      voided: true,
-      void_reason: 'Wrong category',
-      voided_by: 'admin-1',
-      voided_at: expect.any(String),
-    })
-    expect(eq).toHaveBeenCalledWith('id', 'expense-1')
-  })
-
-  it('throws when the update errors', async () => {
-    const eq = vi.fn(() => Promise.resolve({ error: new Error('permission denied') }))
-    from.mockReturnValue({ update: () => ({ eq }) })
-
-    await expect(voidExpense('expense-1', 'reason', 'admin-1')).rejects.toThrow('permission denied')
   })
 })

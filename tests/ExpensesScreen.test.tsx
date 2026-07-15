@@ -4,21 +4,23 @@ import type { Tables } from '../src/lib/db/database.types'
 import type { Expense } from '../src/lib/db/expenses'
 import { ExpensesScreen } from '../src/features/expenses/ExpensesScreen'
 
-// Per the brief's testing section: mock src/lib/db/expenses.ts and
-// src/lib/db/config.ts directly (not the raw Supabase client) — this is a
-// component test of the screen's behavior, same pattern as
-// CollectionForm.test.tsx / MandalConfig.test.tsx.
-const { createExpense, getExpenses, voidExpense } = vi.hoisted(() => ({
+// Per the brief's testing section: mock src/lib/db/expenses.ts,
+// src/lib/db/config.ts, and src/lib/db/void.ts directly (not the raw
+// Supabase client) — this is a component test of the screen's behavior,
+// same pattern as CollectionForm.test.tsx / MandalConfig.test.tsx.
+const { createExpense, getExpenses } = vi.hoisted(() => ({
   createExpense: vi.fn(),
   getExpenses: vi.fn(),
-  voidExpense: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/expenses', () => ({
   createExpense,
   getExpenses,
-  voidExpense,
 }))
+
+const { voidRow } = vi.hoisted(() => ({ voidRow: vi.fn() }))
+
+vi.mock('../src/lib/db/void', () => ({ voidRow }))
 
 const { getMandalConfig } = vi.hoisted(() => ({ getMandalConfig: vi.fn() }))
 
@@ -114,7 +116,7 @@ beforeEach(() => {
   getMandalConfig.mockResolvedValue(config)
   getExpenses.mockResolvedValue([activeExpense, voidedExpense])
   createExpense.mockResolvedValue(createdExpense)
-  voidExpense.mockResolvedValue(undefined)
+  voidRow.mockResolvedValue(undefined)
 })
 
 describe('ExpensesScreen', () => {
@@ -172,7 +174,7 @@ describe('ExpensesScreen', () => {
     expect(createExpense).not.toHaveBeenCalled()
   })
 
-  it('prompts for a required reason and calls voidExpense with it when Void is tapped', async () => {
+  it('prompts for a required reason and calls voidRow with it when Void is tapped', async () => {
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Wrong category')
     render(<ExpensesScreen />)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
@@ -180,16 +182,16 @@ describe('ExpensesScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))
 
     expect(promptSpy).toHaveBeenCalled()
-    await waitFor(() => expect(voidExpense).toHaveBeenCalledWith('expense-1', 'Wrong category', 'admin-1'))
+    await waitFor(() => expect(voidRow).toHaveBeenCalledWith('expenses', 'expense-1', 'Wrong category', 'admin-1'))
   })
 
-  it('does not call voidExpense when the reason prompt is cancelled', async () => {
+  it('does not call voidRow when the reason prompt is cancelled', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue(null)
     render(<ExpensesScreen />)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))
 
-    expect(voidExpense).not.toHaveBeenCalled()
+    expect(voidRow).not.toHaveBeenCalled()
   })
 })

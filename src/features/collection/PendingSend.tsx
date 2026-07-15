@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { getPendingSendDonations, type Donation } from '../../lib/db/donations'
+import { voidRow } from '../../lib/db/void'
 import { db, type OutboxDonation } from '../../lib/queue/db'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms } from './send'
+import { VoidButton } from '../../components/VoidButton'
 
 const t = strings.pendingSend
 
@@ -71,6 +73,16 @@ export function PendingSend() {
     setSentIds((current) => new Set(current).add(donation.id))
   }
 
+  // Task 14: voiding here (the volunteer's own not-yet-sent donations)
+  // is the one existing donations list this shared void flow has to wire
+  // into — there's no dedicated "my collections" screen in the numbered
+  // task list yet.
+  async function handleVoid(donation: Donation, reason: string) {
+    if (!appUser) return
+    await voidRow('donations', donation.id, reason, appUser.id)
+    setDonations(await getPendingSendDonations(appUser.id))
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between">
@@ -114,16 +126,31 @@ export function PendingSend() {
               className="flex items-center justify-between rounded border border-stone-200 p-3"
             >
               <div>
-                <p className="font-medium text-stone-900">{donation.donor_name}</p>
-                <p className="text-sm text-stone-600">{formatINR(donation.amount_paise)}</p>
+                <p className={`font-medium text-stone-900 ${donation.voided ? 'text-stone-400 line-through' : ''}`}>
+                  {donation.donor_name}
+                </p>
+                <p className={`text-sm text-stone-600 ${donation.voided ? 'line-through' : ''}`}>
+                  {formatINR(donation.amount_paise)}
+                </p>
+                {donation.voided && (
+                  <p className="text-sm text-red-700">
+                    {t.voidedPrefix}
+                    {donation.void_reason}
+                  </p>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => handleSend(donation)}
-                className="rounded border border-orange-700 px-3 py-2 text-orange-700"
-              >
-                {sentIds.has(donation.id) ? t.sent : t.sendButton}
-              </button>
+              {donation.voided ? null : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSend(donation)}
+                    className="rounded border border-orange-700 px-3 py-2 text-orange-700"
+                  >
+                    {sentIds.has(donation.id) ? t.sent : t.sendButton}
+                  </button>
+                  <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(donation, reason)} />
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -5,6 +5,10 @@ export const strings = {
   home: {
     placeholder: 'App shell is up. Features arrive in later tasks.',
   },
+  void: {
+    button: 'Void',
+    prompt: 'Reason for voiding this entry:',
+  },
   auth: {
     loginTitle: 'Admin Login',
     emailLabel: 'Email address',
@@ -89,6 +93,9 @@ export const strings = {
     sendButton: 'Send',
     sent: 'Sent!',
     waitingForSignal: 'Waiting for signal',
+    voidButton: 'Void',
+    voidPrompt: 'Reason for voiding this donation:',
+    voidedPrefix: 'Voided — ',
   },
   expenses: {
     title: 'Expenses',

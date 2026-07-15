@@ -3,11 +3,9 @@
 // server-side — admin sees/writes every row, a volunteer only rows where
 // volunteer_id = app_user_id() — so a single plain `select *` (see
 // getHandovers) returns the right rows for either caller with no
-// client-side role branching, same pattern as lib/db/expenses.ts. The
-// append-only trigger (forbid_financial_edit) blocks editing
-// volunteer_id/amount_paise/received_by/note/created_at post-creation, but
-// voided/void_reason/voided_by/voided_at aren't in that guarded list, so
-// voidHandover's update is allowed through.
+// client-side role branching, same pattern as lib/db/expenses.ts. Voiding
+// goes through lib/db/void.ts's shared voidRow (Task 14) rather than a
+// copy of the update here.
 import { supabase } from './client'
 import type { Tables } from './database.types'
 
@@ -67,17 +65,4 @@ export async function getHandovers(): Promise<Handover[]> {
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
-}
-
-export async function voidHandover(id: string, reason: string, voidedBy: string): Promise<void> {
-  const { error } = await supabase
-    .from('handovers')
-    .update({
-      voided: true,
-      void_reason: reason,
-      voided_by: voidedBy,
-      voided_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-  if (error) throw error
 }
