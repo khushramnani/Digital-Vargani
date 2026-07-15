@@ -108,6 +108,9 @@ export function CollectionForm() {
           <Link to="/volunteer/handover" className="text-sm text-orange-700 underline">
             {t.handoversLink}
           </Link>
+          <Link to="/volunteer/cash-in-hand" className="text-sm text-orange-700 underline">
+            {t.cashInHandLink}
+          </Link>
         </div>
       </div>
 

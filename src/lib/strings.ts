@@ -21,6 +21,7 @@ export const strings = {
     settingsLink: 'Mandal settings',
     expensesLink: 'Expenses',
     handoversLink: 'Handovers',
+    cashInHandLink: 'Cash in hand',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -68,6 +69,7 @@ export const strings = {
     pendingSendLink: 'Pending sends',
     expensesLink: 'Expenses',
     handoversLink: 'Handovers',
+    cashInHandLink: 'Cash in hand',
     savedOffline: "Saved — will send once you're back online.",
     // Kept short (SMS length matters). {amountRupees} is a plain number
     // (no thousands separator, no repeated ₹) so the message stays short.
@@ -130,6 +132,10 @@ export const strings = {
       amountRupees: 'Enter an amount greater than zero.',
       receivedBy: 'Select who received the cash.',
     },
+  },
+  cashInHand: {
+    title: 'Cash in Hand',
+    empty: 'No active volunteers yet.',
   },
   receipt: {
     notFound: 'Receipt not found.',

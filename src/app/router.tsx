@@ -10,6 +10,7 @@ import { PendingSend } from '../features/collection/PendingSend'
 import { ReceiptPage } from '../features/receipt/ReceiptPage'
 import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
 import { HandoverScreen } from '../features/cashinhand/handover'
+import { CashInHandScreen } from '../features/cashinhand/CashInHand'
 
 function HomePage() {
   return (
@@ -40,6 +41,9 @@ function AdminDashboardPage() {
       </Link>
       <Link to="/admin/handovers" className="text-orange-700 underline">
         {strings.admin.handoversLink}
+      </Link>
+      <Link to="/admin/cash-in-hand" className="text-orange-700 underline">
+        {strings.admin.cashInHandLink}
       </Link>
     </main>
   )
@@ -122,6 +126,22 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <HandoverScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer/cash-in-hand"
+        element={
+          <RequireRole role="volunteer">
+            <CashInHandScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/cash-in-hand"
+        element={
+          <RequireRole role="admin">
+            <CashInHandScreen />
           </RequireRole>
         }
       />
