@@ -7,6 +7,7 @@ import { VolunteersScreen } from '../features/settings/volunteers'
 import { MandalConfigScreen } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
+import { CollectionsScreen } from '../features/collection/Collections'
 import { ReceiptPage } from '../features/receipt/ReceiptPage'
 import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
 import { HandoverScreen } from '../features/cashinhand/handover'
@@ -128,6 +129,22 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <AdminTransparency />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer/collections"
+        element={
+          <RequireRole role="volunteer">
+            <CollectionsScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/collections"
+        element={
+          <RequireRole role="admin">
+            <CollectionsScreen />
           </RequireRole>
         }
       />

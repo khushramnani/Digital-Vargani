@@ -26,6 +26,7 @@ export const strings = {
     handoversLink: 'Handovers',
     cashInHandLink: 'Cash in hand',
     transparencyLink: 'Transparency report',
+    collectionsLink: 'All collections',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -74,6 +75,7 @@ export const strings = {
     expensesLink: 'Expenses',
     handoversLink: 'Handovers',
     cashInHandLink: 'Cash in hand',
+    collectionsLink: 'My collections',
     savedOffline: "Saved — will send once you're back online.",
     // Kept short (SMS length matters). {amountRupees} is a plain number
     // (no thousands separator, no repeated ₹) so the message stays short.
@@ -85,6 +87,14 @@ export const strings = {
       amountRupees: 'Enter an amount greater than zero.',
       mode: 'Select a payment mode.',
     },
+  },
+  collections: {
+    title: 'Collections',
+    empty: 'No donations recorded yet.',
+    receiptPrefix: 'Receipt #',
+    voidButton: 'Void',
+    voidPrompt: 'Reason for voiding this donation:',
+    voidedPrefix: 'Voided — ',
   },
   pendingSend: {
     title: 'Pending Send',

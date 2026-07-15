@@ -102,6 +102,9 @@ export function CollectionForm() {
           <Link to="/volunteer/pending" className="text-sm text-orange-700 underline">
             {t.pendingSendLink}
           </Link>
+          <Link to="/volunteer/collections" className="text-sm text-orange-700 underline">
+            {t.collectionsLink}
+          </Link>
           <Link to="/volunteer/expenses" className="text-sm text-orange-700 underline">
             {t.expensesLink}
           </Link>

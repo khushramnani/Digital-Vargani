@@ -86,3 +86,18 @@ export async function getPendingSendDonations(collectedBy: string): Promise<Dona
   if (error) throw error
   return data ?? []
 }
+
+// The "my collections" (volunteer) / "all collections" (admin) list SPEC.md
+// names — every donation, not just the not-yet-sent subset
+// getPendingSendDonations returns. RLS (donations_volunteer_select /
+// donations_admin_select, Task 2 migration) already scopes rows per-role
+// server-side, same transparent pattern as getExpenses/getHandovers, so
+// this one query works unmodified for either caller.
+export async function getDonations(): Promise<Donation[]> {
+  const { data, error } = await supabase
+    .from('donations')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
