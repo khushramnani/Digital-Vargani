@@ -8,6 +8,7 @@ import { MandalConfigScreen } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
 import { ReceiptPage } from '../features/receipt/ReceiptPage'
+import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
 
 function HomePage() {
   return (
@@ -32,6 +33,9 @@ function AdminDashboardPage() {
       </Link>
       <Link to="/admin/settings" className="text-orange-700 underline">
         {strings.admin.settingsLink}
+      </Link>
+      <Link to="/admin/expenses" className="text-orange-700 underline">
+        {strings.admin.expensesLink}
       </Link>
     </main>
   )
@@ -82,6 +86,22 @@ export function AppRoutes() {
         element={
           <RequireRole role="volunteer">
             <PendingSend />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer/expenses"
+        element={
+          <RequireRole role="volunteer">
+            <ExpensesScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/expenses"
+        element={
+          <RequireRole role="admin">
+            <ExpensesScreen />
           </RequireRole>
         }
       />

@@ -19,6 +19,7 @@ export const strings = {
     dashboardPlaceholder: 'Dashboard content arrives in a later task.',
     volunteersLink: 'Manage volunteers',
     settingsLink: 'Mandal settings',
+    expensesLink: 'Expenses',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -64,6 +65,7 @@ export const strings = {
     nextDonation: 'Ready for the next donation.',
     sendReceiptButton: 'Send Receipt',
     pendingSendLink: 'Pending sends',
+    expensesLink: 'Expenses',
     savedOffline: "Saved — will send once you're back online.",
     // Kept short (SMS length matters). {amountRupees} is a plain number
     // (no thousands separator, no repeated ₹) so the message stays short.
@@ -83,6 +85,29 @@ export const strings = {
     sendButton: 'Send',
     sent: 'Sent!',
     waitingForSignal: 'Waiting for signal',
+  },
+  expenses: {
+    title: 'Expenses',
+    categoryLabel: 'Category',
+    categoryPlaceholder: 'Select a category',
+    descriptionLabel: 'Description',
+    amountLabel: 'Amount (₹)',
+    paidFromLabel: 'Paid from',
+    paidFromCash: 'Cash',
+    paidFromBank: 'Bank',
+    submitButton: 'Log Expense',
+    submitting: 'Logging…',
+    empty: 'No expenses yet.',
+    paidByPrefix: 'Paid by ',
+    unknownUser: 'Unknown',
+    voidedPrefix: 'Voided — ',
+    voidButton: 'Void',
+    voidPrompt: 'Reason for voiding this expense:',
+    errors: {
+      category: 'Select a valid category.',
+      amountRupees: 'Enter an amount greater than zero.',
+      paidFrom: 'Select cash or bank.',
+    },
   },
   receipt: {
     notFound: 'Receipt not found.',

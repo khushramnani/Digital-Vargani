@@ -98,9 +98,14 @@ export function CollectionForm() {
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
-        <Link to="/volunteer/pending" className="text-sm text-orange-700 underline">
-          {t.pendingSendLink}
-        </Link>
+        <div className="flex gap-4">
+          <Link to="/volunteer/pending" className="text-sm text-orange-700 underline">
+            {t.pendingSendLink}
+          </Link>
+          <Link to="/volunteer/expenses" className="text-sm text-orange-700 underline">
+            {t.expensesLink}
+          </Link>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded border border-stone-300 p-4">
