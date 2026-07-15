@@ -95,6 +95,9 @@ export function MasterLedgerScreen() {
         <Link to="/admin/cash-in-hand" className="text-orange-700 underline">
           {strings.admin.cashInHandLink}
         </Link>
+        <Link to="/admin/transparency" className="text-orange-700 underline">
+          {strings.admin.transparencyLink}
+        </Link>
       </div>
     </main>
   )

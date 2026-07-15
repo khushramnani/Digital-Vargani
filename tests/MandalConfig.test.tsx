@@ -29,6 +29,7 @@ const existingConfig: Tables<'mandal_config'> = {
   receipt_prefix: 'VM',
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 500000, // ₹5000
+  transparency_published: false,
 }
 
 beforeEach(() => {

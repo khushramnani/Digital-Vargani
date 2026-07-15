@@ -12,6 +12,8 @@ import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
 import { HandoverScreen } from '../features/cashinhand/handover'
 import { CashInHandScreen } from '../features/cashinhand/CashInHand'
 import { MasterLedgerScreen } from '../features/ledger/MasterLedger'
+import { PublicTransparency } from '../features/transparency/PublicTransparency'
+import { AdminTransparency } from '../features/transparency/AdminTransparency'
 
 function HomePage() {
   return (
@@ -31,6 +33,8 @@ export function AppRoutes() {
       <Route path="/invite/:token" element={<InviteRedeem />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />
+      {/* Public, unauthenticated — community transparency report, no RequireRole guard. */}
+      <Route path="/transparency" element={<PublicTransparency />} />
       <Route
         path="/admin"
         element={
@@ -116,6 +120,14 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <CashInHandScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/transparency"
+        element={
+          <RequireRole role="admin">
+            <AdminTransparency />
           </RequireRole>
         }
       />

@@ -57,6 +57,7 @@ const config: Tables<'mandal_config'> = {
   receipt_prefix: 'VM',
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 0,
+  transparency_published: false,
 }
 
 const activeExpense: Expense = {

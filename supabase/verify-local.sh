@@ -31,6 +31,7 @@ MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sq
 MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
 MIGRATION_FILE_6="$SCRIPT_DIR/migrations/20260714140000_donations_idempotency_key.sql"
 MIGRATION_FILE_7="$SCRIPT_DIR/migrations/20260714150000_list_admins.sql"
+MIGRATION_FILE_8="$SCRIPT_DIR/migrations/20260714160000_transparency_report.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -131,6 +132,9 @@ echo "== applying migration (donations_idempotency_key) =="
 
 echo "== applying migration (list_admins) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_7"
+
+echo "== applying migration (transparency_report) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_8"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -718,6 +722,81 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'PASS: anon is rejected from calling list_admins() (%)', SQLERRM;
   END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: Task 16 transparency report is gated on transparency_published; admin previews regardless =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Own isolated expense rows (a fresh category), so the category breakdown
+-- assertion below has a known, exact expected row rather than depending on
+-- whatever earlier assertions left behind.
+insert into expenses (category, amount_paise, paid_by, paid_from) values
+  ('Transparency Test', 12345, '00000000-0000-0000-0000-000000000001', 'cash');
+
+-- enforce_insert_defaults (Task 2 migration) unconditionally forces
+-- voided=false on INSERT regardless of what's sent — void via UPDATE
+-- after the fact, same as every other voided-row fixture in this script.
+insert into expenses (category, amount_paise, paid_by, paid_from) values
+  ('Transparency Test', 99999999, '00000000-0000-0000-0000-000000000001', 'cash');
+update expenses set voided = true, void_reason = 'test row, must be excluded',
+    voided_by = '00000000-0000-0000-0000-000000000001', voided_at = now()
+  where amount_paise = 99999999 and category = 'Transparency Test';
+
+set role anon;
+DO $$
+DECLARE
+  row_count int;
+BEGIN
+  SELECT count(*) INTO row_count FROM get_transparency_report();
+  ASSERT row_count = 0, format('FAIL: unpublished report should return 0 rows to anon, saw %s', row_count);
+
+  SELECT count(*) INTO row_count FROM get_transparency_categories();
+  ASSERT row_count = 0, format('FAIL: unpublished categories should return 0 rows to anon, saw %s', row_count);
+
+  RAISE NOTICE 'PASS: anon sees 0 rows from both transparency RPCs before publish';
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
+DO $$
+DECLARE
+  row_count int;
+  category_amount bigint;
+BEGIN
+  SELECT count(*) INTO row_count FROM get_transparency_report();
+  ASSERT row_count = 1, format('FAIL: admin preview of the report should return 1 row even unpublished, saw %s', row_count);
+
+  SELECT amount_paise INTO category_amount FROM get_transparency_categories() WHERE category = 'Transparency Test';
+  ASSERT category_amount = 12345,
+    format('FAIL: admin preview category total should be 12345 (voided row excluded), saw %s', category_amount);
+
+  RAISE NOTICE 'PASS: admin preview bypasses the publish gate and excludes the voided expense from the category sum';
+END $$;
+SQL
+
+echo "== assertion: Task 16 publishing (via the admin RLS update policy) makes the report visible to anon =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
+update mandal_config set transparency_published = true where id = true;
+reset role;
+
+set role anon;
+DO $$
+DECLARE
+  row_count int;
+  category_amount bigint;
+BEGIN
+  SELECT count(*) INTO row_count FROM get_transparency_report();
+  ASSERT row_count = 1, format('FAIL: published report should return 1 row to anon, saw %s', row_count);
+
+  SELECT amount_paise INTO category_amount FROM get_transparency_categories() WHERE category = 'Transparency Test';
+  ASSERT category_amount = 12345,
+    format('FAIL: published category total should be 12345 (voided row excluded), saw %s', category_amount);
+
+  RAISE NOTICE 'PASS: after publishing, anon sees the aggregate report and excludes the voided expense from the category sum';
 END $$;
 reset role;
 SQL

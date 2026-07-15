@@ -29,6 +29,7 @@ export type Database = {
           receipt_prefix: string
           expense_categories: string[]
           bank_opening_paise: number
+          transparency_published: boolean
         }
         Insert: {
           id?: boolean
@@ -40,6 +41,7 @@ export type Database = {
           receipt_prefix?: string
           expense_categories?: string[]
           bank_opening_paise?: number
+          transparency_published?: boolean
         }
         Update: {
           id?: boolean
@@ -51,6 +53,7 @@ export type Database = {
           receipt_prefix?: string
           expense_categories?: string[]
           bank_opening_paise?: number
+          transparency_published?: boolean
         }
         Relationships: []
       }
@@ -312,6 +315,14 @@ export type Database = {
       list_admins: {
         Args: Record<PropertyKey, never>
         Returns: { id: string; name: string }[]
+      }
+      get_transparency_report: {
+        Args: Record<PropertyKey, never>
+        Returns: { total_collected_paise: number; total_expenses_paise: number }[]
+      }
+      get_transparency_categories: {
+        Args: Record<PropertyKey, never>
+        Returns: { category: string; amount_paise: number }[]
       }
       redeem_invite: {
         Args: { token: string }

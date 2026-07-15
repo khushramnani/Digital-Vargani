@@ -25,6 +25,7 @@ export const strings = {
     expensesLink: 'Expenses',
     handoversLink: 'Handovers',
     cashInHandLink: 'Cash in hand',
+    transparencyLink: 'Transparency report',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -142,6 +143,17 @@ export const strings = {
   cashInHand: {
     title: 'Cash in Hand',
     empty: 'No active volunteers yet.',
+  },
+  transparency: {
+    title: 'Transparency Report',
+    totalCollectedLabel: 'Total Collected',
+    noExpenses: 'No expenses recorded yet.',
+    otherCategory: 'Other',
+    notPublished: 'The transparency report has not been published yet.',
+    publishButton: 'Publish',
+    unpublishButton: 'Unpublish',
+    publishedStatus: 'Visible to the public.',
+    unpublishedStatus: 'Not visible to the public yet.',
   },
   ledger: {
     totalCollectedLabel: 'Total Collected',
