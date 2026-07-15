@@ -64,6 +64,7 @@ export const strings = {
     nextDonation: 'Ready for the next donation.',
     sendReceiptButton: 'Send Receipt',
     pendingSendLink: 'Pending sends',
+    savedOffline: "Saved — will send once you're back online.",
     // Kept short (SMS length matters). {amountRupees} is a plain number
     // (no thousands separator, no repeated ₹) so the message stays short.
     smsMessage: (amountRupees: number, receiptLink: string): string =>
@@ -81,6 +82,7 @@ export const strings = {
     empty: 'No pending receipts to send.',
     sendButton: 'Send',
     sent: 'Sent!',
+    waitingForSignal: 'Waiting for signal',
   },
   receipt: {
     notFound: 'Receipt not found.',

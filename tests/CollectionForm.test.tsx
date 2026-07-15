@@ -10,14 +10,26 @@ import { CollectionForm } from '../src/features/collection/CollectionForm'
 // same way every prior screen's tests mock only what the component itself
 // calls. Task 8 adds markSmsSent (send.ts's markSmsSent is re-exported from
 // this module) since CollectionForm now fires the SMS-send flow on submit.
-const { createDonation, markSmsSent } = vi.hoisted(() => ({
-  createDonation: vi.fn(),
+// Task 10: CollectionForm no longer calls createDonation directly — it goes
+// through the offline queue (enqueueDonation/syncOutboxItem from
+// src/lib/queue/sync), which is mocked here instead so this test doesn't
+// need real IndexedDB (jsdom doesn't implement it).
+const { markSmsSent } = vi.hoisted(() => ({
   markSmsSent: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/donations', () => ({
-  createDonation,
   markSmsSent,
+}))
+
+const { enqueueDonation, syncOutboxItem } = vi.hoisted(() => ({
+  enqueueDonation: vi.fn(),
+  syncOutboxItem: vi.fn(),
+}))
+
+vi.mock('../src/lib/queue/sync', () => ({
+  enqueueDonation,
+  syncOutboxItem,
 }))
 
 const volunteer: Tables<'users'> = {
@@ -56,6 +68,7 @@ const createdDonation: Tables<'donations'> = {
   voided_by: null,
   voided_at: null,
   sms_sent_at: null,
+  client_idempotency_key: null,
 }
 
 function renderForm() {
@@ -83,7 +96,8 @@ const realLocation = window.location
 
 beforeEach(() => {
   vi.clearAllMocks()
-  createDonation.mockResolvedValue(createdDonation)
+  enqueueDonation.mockResolvedValue({ localId: 'local-id-1' })
+  syncOutboxItem.mockResolvedValue(createdDonation)
   markSmsSent.mockResolvedValue(undefined)
   Object.defineProperty(window, 'location', {
     configurable: true,
@@ -102,7 +116,7 @@ describe('CollectionForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
     expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(4)
-    expect(createDonation).not.toHaveBeenCalled()
+    expect(enqueueDonation).not.toHaveBeenCalled()
   })
 
   it('converts rupees to paise and sends collectedBy from the session, never receipt_no/public_token', async () => {
@@ -111,8 +125,8 @@ describe('CollectionForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
-    await waitFor(() => expect(createDonation).toHaveBeenCalledTimes(1))
-    const payload = createDonation.mock.calls[0][0]
+    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
+    const payload = enqueueDonation.mock.calls[0][0]
     expect(payload).toEqual({
       donorName: 'Ramesh Kulkarni',
       donorPhone: '9876543210',
@@ -122,6 +136,15 @@ describe('CollectionForm', () => {
     })
     expect(payload).not.toHaveProperty('receipt_no')
     expect(payload).not.toHaveProperty('public_token')
+  })
+
+  it('immediately attempts a sync after enqueueing, using the returned localId', async () => {
+    renderForm()
+    fillValidForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+
+    await waitFor(() => expect(syncOutboxItem).toHaveBeenCalledWith('local-id-1'))
   })
 
   it('shows the returned receipt number and resets the form after a successful submit', async () => {
@@ -136,8 +159,8 @@ describe('CollectionForm', () => {
     expect(screen.getByLabelText('Amount (₹)')).toHaveValue(null)
   })
 
-  it('shows an error instead of a success confirmation when createDonation rejects', async () => {
-    createDonation.mockRejectedValue(new Error('network error'))
+  it('shows an error instead of a success confirmation when enqueueDonation rejects', async () => {
+    enqueueDonation.mockRejectedValue(new Error('network error'))
     renderForm()
     fillValidForm()
 
@@ -147,13 +170,30 @@ describe('CollectionForm', () => {
     expect(screen.queryByText(/Receipt #/)).not.toBeInTheDocument()
   })
 
+  it('shows a "saved offline" confirmation (no receipt number, no SMS attempt) when syncOutboxItem returns null, and still resets the form', async () => {
+    syncOutboxItem.mockResolvedValue(null)
+    renderForm()
+    fillValidForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+
+    await waitFor(() =>
+      expect(screen.getByText("Saved — will send once you're back online.")).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Receipt #/)).not.toBeInTheDocument()
+    expect(markSmsSent).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Donor Name')).toHaveValue('')
+    expect(screen.getByLabelText('Phone')).toHaveValue('')
+    expect(screen.getByLabelText('Amount (₹)')).toHaveValue(null)
+  })
+
   it('auto-attempts the SMS composer with the correct phone/message/receipt link right after a successful submit', async () => {
     renderForm()
     fillValidForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
-    await waitFor(() => expect(createDonation).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
     // jsdom's default UA isn't an iOS one, so this exercises the Android/
     // default `?body=` branch of buildSmsLink.
     const expectedMessage = encodeURIComponent(
@@ -167,7 +207,7 @@ describe('CollectionForm', () => {
     renderForm()
     fillValidForm()
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
-    await waitFor(() => expect(createDonation).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
 
     // Simulate the auto-redirect having been blocked (some browsers refuse
     // non-http navigation after an `await`) by resetting href, then tap the

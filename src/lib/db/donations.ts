@@ -18,6 +18,12 @@ export type CreateDonationInput = {
   // Always the current session's acting user id (appUser.id from useAuth()),
   // never a value the form lets the user pick.
   collectedBy: string
+  // Task 10: the offline queue's Dexie `localId`, sent unchanged as
+  // `client_idempotency_key` — the dedup key a retried sync uses to
+  // recognize "this exact item already made it to the server" (see
+  // src/lib/queue/sync.ts). Left undefined (sent as null) for any insert
+  // that isn't going through the offline queue.
+  clientIdempotencyKey?: string
 }
 
 export async function createDonation(input: CreateDonationInput): Promise<Donation> {
@@ -29,9 +35,27 @@ export async function createDonation(input: CreateDonationInput): Promise<Donati
       amount_paise: input.amountPaise,
       mode: input.mode,
       collected_by: input.collectedBy,
+      client_idempotency_key: input.clientIdempotencyKey ?? null,
     })
     .select()
     .single()
+  if (error) throw error
+  return data
+}
+
+// Task 10: the offline queue's idempotency-recovery lookup — used when a
+// sync attempt gets a unique-violation on client_idempotency_key, meaning
+// this exact item already synced on a previous attempt (the app likely
+// closed/crashed after the server insert succeeded but before the local
+// outbox row was deleted). Returns null rather than throwing when no row
+// matches, since "not found" is an expected outcome for a fresh key, not
+// an error.
+export async function getDonationByIdempotencyKey(key: string): Promise<Donation | null> {
+  const { data, error } = await supabase
+    .from('donations')
+    .select('*')
+    .eq('client_idempotency_key', key)
+    .maybeSingle()
   if (error) throw error
   return data
 }

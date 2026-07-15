@@ -17,6 +17,14 @@ vi.mock('../src/lib/db/client', () => ({
   },
 }))
 
+// Task 10: App calls syncAllPending() on mount and on the `online` event.
+// It talks to real IndexedDB via Dexie, which jsdom doesn't implement —
+// mocked here the same way every other test in this file mocks exactly
+// what the component itself calls, not the internals underneath it.
+vi.mock('../src/lib/queue/sync', () => ({
+  syncAllPending: vi.fn(() => Promise.resolve()),
+}))
+
 describe('App', () => {
   it('renders the app shell home route', () => {
     render(<App />)

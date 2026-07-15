@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { createDonation, type Donation } from '../../lib/db/donations'
+import { type Donation } from '../../lib/db/donations'
 import { validateDonationInput, type DonationMode, type DonationValidationErrors } from '../../lib/validation/donation'
 import { toPaise } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms } from './send'
+import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 
 const t = strings.collection
 
@@ -18,8 +19,10 @@ const MODE_OPTIONS: { value: DonationMode; label: string }[] = [
 // Routed behind RequireRole role="volunteer" (see src/app/router.tsx), so
 // appUser is always the volunteer's own `users` row here. This is the
 // product's primary screen (SPEC.md): name/phone/amount/mode in, a donation
-// row out. No SMS deep link (Task 8), no receipt page (Task 9), no offline
-// queue (Task 10) — those build on top of this.
+// row out. Task 10 wraps the write in the offline queue (src/lib/queue) —
+// every submit lands in Dexie first, then an immediate sync attempt either
+// completes right away (online path, unchanged UX from Tasks 7-9) or leaves
+// the entry queued for later (offline path).
 export function CollectionForm() {
   const { appUser } = useAuth()
   const [donorName, setDonorName] = useState('')
@@ -30,11 +33,13 @@ export function CollectionForm() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastDonation, setLastDonation] = useState<Donation | null>(null)
+  const [savedOffline, setSavedOffline] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setLastDonation(null)
+    setSavedOffline(false)
 
     const result = validateDonationInput({ donorName, donorPhone, amountRupees, mode })
     setErrors(result.errors)
@@ -44,23 +49,39 @@ export function CollectionForm() {
 
     setSubmitting(true)
     try {
-      const donation = await createDonation({
+      // Always lands locally first (Dexie write, can't fail due to network)
+      // — this is what makes "no data loss with network off" true.
+      const { localId } = await enqueueDonation({
         donorName: donorName.trim(),
         donorPhone: donorPhone.trim(),
         amountPaise: toPaise(Number(amountRupees)),
         mode: mode as DonationMode,
         collectedBy: appUser.id,
       })
-      setLastDonation(donation)
-      // Attempt to open the volunteer's native SMS composer immediately.
-      // Per the brief: some browsers block non-http navigation that isn't
-      // a direct synchronous consequence of a user gesture, and this runs
-      // after an `await`, so it may silently no-op — the always-rendered
-      // "Send Receipt" button below is the required fallback, not an
-      // extra affordance.
-      sendReceiptSms(donation)
-      // Reset for the next entry — a volunteer logs many donations in a
-      // row, so this form never navigates away on success.
+      // Immediate sync attempt, right after enqueueing — on a working
+      // connection this completes in about the same time the old direct
+      // insert did, so the online-path UX is unchanged from Tasks 7-9.
+      const synced = await syncOutboxItem(localId)
+      if (synced) {
+        setLastDonation(synced)
+        // Attempt to open the volunteer's native SMS composer immediately.
+        // Per the brief: some browsers block non-http navigation that isn't
+        // a direct synchronous consequence of a user gesture, and this runs
+        // after an `await`, so it may silently no-op — the always-rendered
+        // "Send Receipt" button below is the required fallback, not an
+        // extra affordance.
+        sendReceiptSms(synced)
+      } else {
+        // Offline (or a transient failure) — the entry is safely queued in
+        // Dexie and will sync once connectivity returns (App.tsx's
+        // syncAllPending, run on mount and on the `online` event). No
+        // receipt number and no SMS attempt: there's no public_token until
+        // the row has actually synced.
+        setSavedOffline(true)
+      }
+      // Reset for the next entry in BOTH cases — a volunteer logs many
+      // donations in a row, and per SPEC.md the entry is never lost (it
+      // queues locally), so there's no reason to make them wait around.
       setDonorName('')
       setDonorPhone('')
       setAmountRupees('')
@@ -184,6 +205,7 @@ export function CollectionForm() {
             </button>
           </>
         )}
+        {savedOffline && <p className="text-sm text-amber-700">{t.savedOffline}</p>}
         {error && (
           <p role="alert" className="text-sm text-red-700">
             {error}

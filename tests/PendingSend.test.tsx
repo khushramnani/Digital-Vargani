@@ -19,6 +19,22 @@ vi.mock('../src/lib/db/donations', () => ({
   markSmsSent,
 }))
 
+// Task 10: PendingSend also queries the Dexie outbox table directly
+// (db.outbox.orderBy('queuedAt').toArray()) for still-queued items. Mocked
+// here rather than exercising real Dexie/IndexedDB, which jsdom doesn't
+// implement.
+const { outboxToArray } = vi.hoisted(() => ({
+  outboxToArray: vi.fn(),
+}))
+
+vi.mock('../src/lib/queue/db', () => ({
+  db: {
+    outbox: {
+      orderBy: () => ({ toArray: outboxToArray }),
+    },
+  },
+}))
+
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
   name: 'Sita Volunteer',
@@ -55,6 +71,7 @@ const pendingDonation: Tables<'donations'> = {
   voided_by: null,
   voided_at: null,
   sms_sent_at: null,
+  client_idempotency_key: null,
 }
 
 const realLocation = window.location
@@ -63,6 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   getPendingSendDonations.mockResolvedValue([pendingDonation])
   markSmsSent.mockResolvedValue(undefined)
+  outboxToArray.mockResolvedValue([])
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { origin: 'https://vinayak-mandal.example', href: 'https://vinayak-mandal.example/volunteer/pending' },
@@ -116,5 +134,73 @@ describe('PendingSend', () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'Back to collection' })).toHaveAttribute('href', '/volunteer')
+  })
+
+  it('shows the volunteer\'s own still-queued (not-yet-synced) outbox items with a "Waiting for signal" indicator and no Send button', async () => {
+    outboxToArray.mockResolvedValue([
+      {
+        localId: 'local-1',
+        donorName: 'Queued Donor',
+        donorPhone: '9998887777',
+        amountPaise: 20000,
+        mode: 'cash',
+        collectedBy: 'volunteer-1',
+        queuedAt: '2026-01-01T00:00:01Z',
+      },
+    ])
+    renderPendingSend()
+
+    await waitFor(() => expect(screen.getByText('Queued Donor')).toBeInTheDocument())
+    expect(screen.getByText('₹200')).toBeInTheDocument()
+    expect(screen.getByText('Waiting for signal')).toBeInTheDocument()
+    // The server-fetched row still gets its Send button — only the queued
+    // (not-yet-synced) row has none, since it has no public_token yet.
+    expect(screen.getAllByRole('button', { name: 'Send' })).toHaveLength(1)
+  })
+
+  it('does not show outbox items belonging to a different volunteer', async () => {
+    outboxToArray.mockResolvedValue([
+      {
+        localId: 'local-2',
+        donorName: 'Someone Elses Entry',
+        donorPhone: '111',
+        amountPaise: 100,
+        mode: 'cash',
+        collectedBy: 'a-different-volunteer',
+        queuedAt: '2026-01-01T00:00:01Z',
+      },
+    ])
+    renderPendingSend()
+
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+    expect(screen.queryByText('Someone Elses Entry')).not.toBeInTheDocument()
+  })
+
+  it('refetches the queued list when a queue:changed event fires', async () => {
+    outboxToArray.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        localId: 'local-3',
+        donorName: 'Late Arrival',
+        donorPhone: '222',
+        amountPaise: 5000,
+        mode: 'upi',
+        collectedBy: 'volunteer-1',
+        queuedAt: '2026-01-01T00:00:01Z',
+      },
+    ])
+    renderPendingSend()
+    await waitFor(() => expect(outboxToArray).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText('Late Arrival')).not.toBeInTheDocument()
+
+    window.dispatchEvent(new Event('queue:changed'))
+
+    await waitFor(() => expect(screen.getByText('Late Arrival')).toBeInTheDocument())
+  })
+
+  it('shows the empty state only when both the server list and the queued list are empty', async () => {
+    getPendingSendDonations.mockResolvedValue([])
+    outboxToArray.mockResolvedValue([])
+    renderPendingSend()
+    await waitFor(() => expect(screen.getByText('No pending receipts to send.')).toBeInTheDocument())
   })
 })

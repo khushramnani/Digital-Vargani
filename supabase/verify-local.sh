@@ -29,6 +29,7 @@ MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
 MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
 MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sql"
 MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
+MIGRATION_FILE_6="$SCRIPT_DIR/migrations/20260714140000_donations_idempotency_key.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -123,6 +124,9 @@ echo "== applying migration (mandal_assets_storage) =="
 
 echo "== applying migration (donations_sms_sent) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_5"
+
+echo "== applying migration (donations_idempotency_key) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_6"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -629,5 +633,41 @@ if [ "$ANON_OBJ_COUNT" -lt 1 ]; then
   exit 1
 fi
 echo "PASS: anon read $ANON_OBJ_COUNT mandal-assets object(s) (public read policy works)"
+
+echo "== assertion: Task 10 client_idempotency_key UNIQUE constraint rejects a duplicate key =="
+# Run last (after every earlier row-count assertion has already executed) so
+# these extra inserts can't skew the admin/volunteer row-count checks above.
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+BEGIN
+  INSERT INTO donations (donor_name, amount_paise, mode, collected_by, client_idempotency_key)
+    VALUES ('Idempotency Test Donor', 100, 'cash', '00000000-0000-0000-0000-000000000001', 'idem-test-key-1');
+
+  BEGIN
+    INSERT INTO donations (donor_name, amount_paise, mode, collected_by, client_idempotency_key)
+      VALUES ('Idempotency Test Donor 2', 200, 'cash', '00000000-0000-0000-0000-000000000001', 'idem-test-key-1');
+    RAISE EXCEPTION 'FAIL: duplicate client_idempotency_key was accepted — UNIQUE constraint missing';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE 'PASS: client_idempotency_key UNIQUE constraint rejects a duplicate key (%)', SQLERRM;
+  END;
+END $$;
+SQL
+
+echo "== assertion: Task 10 regression — client_idempotency_key is append-only after creation =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+BEGIN
+  BEGIN
+    UPDATE donations SET client_idempotency_key = 'changed-key' WHERE client_idempotency_key = 'idem-test-key-1';
+    RAISE EXCEPTION 'TRIGGER TEST FAILED: client_idempotency_key update succeeded but should have been blocked';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: trigger blocked donations.client_idempotency_key edit (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+SQL
 
 echo "== all assertions passed =="

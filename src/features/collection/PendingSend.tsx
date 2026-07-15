@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { getPendingSendDonations, type Donation } from '../../lib/db/donations'
+import { db, type OutboxDonation } from '../../lib/queue/db'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms } from './send'
@@ -14,11 +15,15 @@ const t = strings.pendingSend
 // the Task 8 brief's "Pending send" tray. "Send" reuses send.ts's
 // sendReceiptSms — the exact same flow CollectionForm's auto-send/
 // fallback button uses, so a retry here can't drift out of sync with it.
+// Task 10 adds a second, separate list above it: this volunteer's own
+// still-queued (not yet synced) Dexie outbox items, with no Send button —
+// there's no public_token to send until the row has actually synced.
 export function PendingSend() {
   const { appUser } = useAuth()
   const [donations, setDonations] = useState<Donation[]>([])
   const [loading, setLoading] = useState(true)
   const [sentIds, setSentIds] = useState<Set<string>>(new Set())
+  const [queuedItems, setQueuedItems] = useState<OutboxDonation[]>([])
 
   useEffect(() => {
     if (!appUser) return
@@ -36,6 +41,31 @@ export function PendingSend() {
     }
   }, [appUser])
 
+  useEffect(() => {
+    if (!appUser) return
+    const collectedBy = appUser.id
+    let active = true
+    function refetchQueued() {
+      db.outbox
+        .orderBy('queuedAt')
+        .toArray()
+        .then((items) => {
+          if (active) setQueuedItems(items.filter((item) => item.collectedBy === collectedBy))
+        })
+        .catch(() => {})
+    }
+    refetchQueued()
+    // sync.ts dispatches this after any successful sync (normal or
+    // idempotency-recovery) — the custom-event mechanism the brief uses in
+    // place of a dexie-react-hooks live query, so this tray drops a synced
+    // item off its "waiting for signal" list without a page reload.
+    window.addEventListener('queue:changed', refetchQueued)
+    return () => {
+      active = false
+      window.removeEventListener('queue:changed', refetchQueued)
+    }
+  }, [appUser])
+
   function handleSend(donation: Donation) {
     sendReceiptSms(donation)
     setSentIds((current) => new Set(current).add(donation.id))
@@ -50,10 +80,32 @@ export function PendingSend() {
         </Link>
       </div>
 
+      {/* Rendered independently of `loading` (which only tracks the
+          server-fetched list below) — this is a local, near-instant Dexie
+          read, so a volunteer with no signal still sees their own queued
+          entries immediately instead of waiting behind a server fetch
+          that may never resolve while offline. */}
+      {queuedItems.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {queuedItems.map((item) => (
+            <li
+              key={item.localId}
+              className="flex items-center justify-between rounded border border-dashed border-stone-300 p-3"
+            >
+              <div>
+                <p className="font-medium text-stone-900">{item.donorName}</p>
+                <p className="text-sm text-stone-600">{formatINR(item.amountPaise)}</p>
+              </div>
+              <span className="text-sm text-stone-500">{t.waitingForSignal}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : donations.length === 0 ? (
-        <p className="text-stone-400">{t.empty}</p>
+        queuedItems.length === 0 && <p className="text-stone-400">{t.empty}</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {donations.map((donation) => (

@@ -106,6 +106,7 @@ export type Database = {
           voided_by: string | null
           voided_at: string | null
           sms_sent_at: string | null
+          client_idempotency_key: string | null
         }
         Insert: {
           id?: string
@@ -122,6 +123,7 @@ export type Database = {
           voided_by?: string | null
           voided_at?: string | null
           sms_sent_at?: string | null
+          client_idempotency_key?: string | null
         }
         Update: {
           id?: string
@@ -138,6 +140,7 @@ export type Database = {
           voided_by?: string | null
           voided_at?: string | null
           sms_sent_at?: string | null
+          client_idempotency_key?: string | null
         }
         Relationships: [
           {
