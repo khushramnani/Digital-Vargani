@@ -32,6 +32,7 @@ MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
 MIGRATION_FILE_6="$SCRIPT_DIR/migrations/20260714140000_donations_idempotency_key.sql"
 MIGRATION_FILE_7="$SCRIPT_DIR/migrations/20260714150000_list_admins.sql"
 MIGRATION_FILE_8="$SCRIPT_DIR/migrations/20260714160000_transparency_report.sql"
+MIGRATION_FILE_9="$SCRIPT_DIR/migrations/20260714170000_expense_categories_rpc.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -135,6 +136,9 @@ echo "== applying migration (list_admins) =="
 
 echo "== applying migration (transparency_report) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_8"
+
+echo "== applying migration (expense_categories_rpc) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_9"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -797,6 +801,42 @@ BEGIN
     format('FAIL: published category total should be 12345 (voided row excluded), saw %s', category_amount);
 
   RAISE NOTICE 'PASS: after publishing, anon sees the aggregate report and excludes the voided expense from the category sum';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: a volunteer can read expense_categories via RPC even though mandal_config itself is admin-only =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+DECLARE
+  categories text[];
+BEGIN
+  -- Confirms the gap this migration fixes: mandal_config has no
+  -- volunteer-facing RLS policy, so a direct select returns nothing even
+  -- for this same volunteer session.
+  ASSERT NOT EXISTS (SELECT 1 FROM mandal_config), 'FAIL: expected mandal_config direct select to be empty for a volunteer';
+
+  SELECT get_expense_categories() INTO categories;
+  ASSERT categories IS NOT NULL AND array_length(categories, 1) > 0,
+    'FAIL: get_expense_categories() should return the mandal''s categories to a volunteer';
+  RAISE NOTICE 'PASS: a volunteer session reads expense_categories via RPC (% categories) despite mandal_config RLS being admin-only', array_length(categories, 1);
+END $$;
+reset role;
+SQL
+
+echo "== assertion: get_expense_categories() is not exposed to anon =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM get_expense_categories();
+    RAISE EXCEPTION 'SECURITY HOLE: anon was able to call get_expense_categories() without error';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: anon is rejected from calling get_expense_categories() (%)', SQLERRM;
+  END;
 END $$;
 reset role;
 SQL

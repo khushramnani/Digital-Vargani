@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getMandalConfig, updateMandalConfig, uploadMandalAsset } from '../src/lib/db/config'
+import { getMandalConfig, getExpenseCategories, updateMandalConfig, uploadMandalAsset } from '../src/lib/db/config'
 import type { Tables } from '../src/lib/db/database.types'
 
 // No live Supabase project exists (same constraint as every prior task's
-// tests) — mock the client's `from`/`storage.from` chains directly to
+// tests) — mock the client's `from`/`rpc`/`storage.from` chains directly to
 // prove config.ts builds the right query/upload shape.
-const { from, upload, getPublicUrl, storageFrom } = vi.hoisted(() => ({
+const { from, rpc, upload, getPublicUrl, storageFrom } = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   upload: vi.fn(),
   getPublicUrl: vi.fn(),
   storageFrom: vi.fn(),
@@ -15,6 +16,7 @@ const { from, upload, getPublicUrl, storageFrom } = vi.hoisted(() => ({
 vi.mock('../src/lib/db/client', () => ({
   supabase: {
     from,
+    rpc,
     storage: { from: storageFrom },
   },
 }))
@@ -53,6 +55,29 @@ describe('getMandalConfig', () => {
     from.mockReturnValue({ select: () => ({ single }) })
 
     await expect(getMandalConfig()).rejects.toThrow('boom')
+  })
+})
+
+describe('getExpenseCategories', () => {
+  it('calls the get_expense_categories RPC (readable by a volunteer session, unlike mandal_config directly)', async () => {
+    rpc.mockResolvedValue({ data: ['Mandap', 'Prasad'], error: null })
+
+    const result = await getExpenseCategories()
+
+    expect(rpc).toHaveBeenCalledWith('get_expense_categories')
+    expect(result).toEqual(['Mandap', 'Prasad'])
+  })
+
+  it('returns an empty array (not null) when the RPC returns null', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+
+    expect(await getExpenseCategories()).toEqual([])
+  })
+
+  it('throws when the RPC errors', async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error('permission denied') })
+
+    await expect(getExpenseCategories()).rejects.toThrow('permission denied')
   })
 })
 

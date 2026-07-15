@@ -22,9 +22,9 @@ const { voidRow } = vi.hoisted(() => ({ voidRow: vi.fn() }))
 
 vi.mock('../src/lib/db/void', () => ({ voidRow }))
 
-const { getMandalConfig } = vi.hoisted(() => ({ getMandalConfig: vi.fn() }))
+const { getExpenseCategories } = vi.hoisted(() => ({ getExpenseCategories: vi.fn() }))
 
-vi.mock('../src/lib/db/config', () => ({ getMandalConfig }))
+vi.mock('../src/lib/db/config', () => ({ getExpenseCategories }))
 
 const admin: Tables<'users'> = {
   id: 'admin-1',
@@ -47,18 +47,7 @@ vi.mock('../src/features/auth/useAuth', () => ({
   }),
 }))
 
-const config: Tables<'mandal_config'> = {
-  id: true,
-  name: 'Vinayak Mitra Mandal',
-  logo_url: null,
-  signature_url: null,
-  upi_vpa: null,
-  upi_qr_url: null,
-  receipt_prefix: 'VM',
-  expense_categories: ['Mandap', 'Prasad'],
-  bank_opening_paise: 0,
-  transparency_published: false,
-}
+const categories = ['Mandap', 'Prasad']
 
 const activeExpense: Expense = {
   id: 'expense-1',
@@ -114,7 +103,7 @@ function fillValidForm() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getMandalConfig.mockResolvedValue(config)
+  getExpenseCategories.mockResolvedValue(categories)
   getExpenses.mockResolvedValue([activeExpense, voidedExpense])
   createExpense.mockResolvedValue(createdExpense)
   voidRow.mockResolvedValue(undefined)

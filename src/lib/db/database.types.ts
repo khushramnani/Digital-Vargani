@@ -324,6 +324,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { category: string; amount_paise: number }[]
       }
+      get_expense_categories: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
       redeem_invite: {
         Args: { token: string }
         Returns: undefined

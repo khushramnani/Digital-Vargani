@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { createExpense, getExpenses, type Expense } from '../../lib/db/expenses'
-import { getMandalConfig } from '../../lib/db/config'
+import { getExpenseCategories } from '../../lib/db/config'
 import { voidRow } from '../../lib/db/void'
 import { validateExpenseInput, type PaidFrom, type ExpenseValidationErrors } from '../../lib/validation/expense'
 import { toPaise, formatINR } from '../../lib/money'
@@ -19,6 +19,9 @@ const PAID_FROM_OPTIONS: { value: PaidFrom; label: string }[] = [
 // role="volunteer") and /admin/expenses (RequireRole role="admin") — RLS on
 // `expenses` already scopes createExpense/getExpenses per-role server-side
 // (see src/lib/db/expenses.ts), so this component never branches on role.
+// Categories come from getExpenseCategories() (the get_expense_categories
+// RPC), not getMandalConfig() directly — mandal_config's RLS is admin-only,
+// which would otherwise 0-row a volunteer session here.
 export function ExpensesScreen() {
   const { appUser } = useAuth()
   const [categories, setCategories] = useState<string[]>([])
@@ -34,10 +37,10 @@ export function ExpensesScreen() {
 
   useEffect(() => {
     let active = true
-    Promise.all([getMandalConfig(), getExpenses()])
-      .then(([config, expenseRows]) => {
+    Promise.all([getExpenseCategories(), getExpenses()])
+      .then(([categoryList, expenseRows]) => {
         if (!active) return
-        setCategories(config.expense_categories)
+        setCategories(categoryList)
         setExpenses(expenseRows)
       })
       .catch((err: unknown) => {

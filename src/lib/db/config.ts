@@ -17,6 +17,18 @@ export async function getMandalConfig(): Promise<MandalConfig> {
   return data
 }
 
+// mandal_config only has an admin-only RLS select policy — a volunteer
+// session gets zero rows from getMandalConfig(). This goes through the
+// get_expense_categories() RPC (this task's migration) instead, which is
+// grant-to-authenticated and exposes only the one column any session
+// (admin or volunteer) actually needs for the expense form's category
+// dropdown.
+export async function getExpenseCategories(): Promise<string[]> {
+  const { data, error } = await supabase.rpc('get_expense_categories')
+  if (error) throw error
+  return data ?? []
+}
+
 // id is the boolean PK that's always `true` (single-row table, see Task 2's
 // migration) — filtering by it is how the one row gets targeted.
 export async function updateMandalConfig(patch: TablesUpdate<'mandal_config'>): Promise<void> {
