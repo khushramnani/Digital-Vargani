@@ -20,6 +20,7 @@ export const strings = {
     volunteersLink: 'Manage volunteers',
     settingsLink: 'Mandal settings',
     expensesLink: 'Expenses',
+    handoversLink: 'Handovers',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -66,6 +67,7 @@ export const strings = {
     sendReceiptButton: 'Send Receipt',
     pendingSendLink: 'Pending sends',
     expensesLink: 'Expenses',
+    handoversLink: 'Handovers',
     savedOffline: "Saved — will send once you're back online.",
     // Kept short (SMS length matters). {amountRupees} is a plain number
     // (no thousands separator, no repeated ₹) so the message stays short.
@@ -107,6 +109,26 @@ export const strings = {
       category: 'Select a valid category.',
       amountRupees: 'Enter an amount greater than zero.',
       paidFrom: 'Select cash or bank.',
+    },
+  },
+  handovers: {
+    title: 'Handovers',
+    amountLabel: 'Amount (₹)',
+    receivedByLabel: 'Received by',
+    receivedByPlaceholder: 'Select an admin',
+    noteLabel: 'Note',
+    submitButton: 'Log Handover',
+    submitting: 'Logging…',
+    empty: 'No handovers yet.',
+    volunteerPrefix: 'From ',
+    receivedByPrefix: 'To ',
+    unknownUser: 'Unknown',
+    voidedPrefix: 'Voided — ',
+    voidButton: 'Void',
+    voidPrompt: 'Reason for voiding this handover:',
+    errors: {
+      amountRupees: 'Enter an amount greater than zero.',
+      receivedBy: 'Select who received the cash.',
     },
   },
   receipt: {

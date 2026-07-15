@@ -309,6 +309,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      list_admins: {
+        Args: Record<PropertyKey, never>
+        Returns: { id: string; name: string }[]
+      }
       redeem_invite: {
         Args: { token: string }
         Returns: undefined

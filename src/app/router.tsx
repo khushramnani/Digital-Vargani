@@ -9,6 +9,7 @@ import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
 import { ReceiptPage } from '../features/receipt/ReceiptPage'
 import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
+import { HandoverScreen } from '../features/cashinhand/handover'
 
 function HomePage() {
   return (
@@ -36,6 +37,9 @@ function AdminDashboardPage() {
       </Link>
       <Link to="/admin/expenses" className="text-orange-700 underline">
         {strings.admin.expensesLink}
+      </Link>
+      <Link to="/admin/handovers" className="text-orange-700 underline">
+        {strings.admin.handoversLink}
       </Link>
     </main>
   )
@@ -102,6 +106,22 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <ExpensesScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/volunteer/handover"
+        element={
+          <RequireRole role="volunteer">
+            <HandoverScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/handovers"
+        element={
+          <RequireRole role="admin">
+            <HandoverScreen />
           </RequireRole>
         }
       />

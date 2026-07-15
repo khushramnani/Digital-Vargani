@@ -30,6 +30,7 @@ MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
 MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sql"
 MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
 MIGRATION_FILE_6="$SCRIPT_DIR/migrations/20260714140000_donations_idempotency_key.sql"
+MIGRATION_FILE_7="$SCRIPT_DIR/migrations/20260714150000_list_admins.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -127,6 +128,9 @@ echo "== applying migration (donations_sms_sent) =="
 
 echo "== applying migration (donations_idempotency_key) =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_6"
+
+echo "== applying migration (list_admins) =="
+"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_7"
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -668,6 +672,54 @@ BEGIN
     END IF;
   END;
 END $$;
+SQL
+
+echo "== assertion: Task 12 list_admins() is callable by a volunteer, hides inactive admins, and never leaks volunteer rows =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Inactive admin: proves "active admins only" is enforced, not just
+-- "role = 'admin'". A fresh row/identity, isolated from the seed admin.
+insert into users (id, name, role, email, active) values
+  ('00000000-0000-0000-0000-000000000096', 'Inactive Admin', 'admin', 'inactive-admin@example.com', false);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+DECLARE
+  leaked_volunteer_count int;
+BEGIN
+  -- Not asserting an exact total count: earlier assertions in this script
+  -- (e.g. link_admin_account's "Link Test Admin") already added active
+  -- admin rows, so the table isn't in a pristine seed-only state here.
+  -- Instead assert on presence/absence of specific named rows.
+  ASSERT EXISTS (SELECT 1 FROM list_admins() WHERE name = 'Admin Treasurer'),
+    'FAIL: list_admins() did not return the seeded active admin';
+
+  SELECT count(*) INTO leaked_volunteer_count
+  FROM list_admins() WHERE name IN ('Volunteer One', 'Volunteer Two');
+  ASSERT leaked_volunteer_count = 0,
+    'FAIL: list_admins() leaked a volunteer row';
+
+  ASSERT NOT EXISTS (SELECT 1 FROM list_admins() WHERE name = 'Inactive Admin'),
+    'FAIL: list_admins() returned an inactive admin';
+
+  RAISE NOTICE 'PASS: a volunteer session can call list_admins(), sees the active admin(s), and no volunteer/inactive-admin rows leak through';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: Task 12 list_admins() is not exposed to anon =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM * FROM list_admins();
+    RAISE EXCEPTION 'SECURITY HOLE: anon was able to call list_admins() without error';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: anon is rejected from calling list_admins() (%)', SQLERRM;
+  END;
+END $$;
+reset role;
 SQL
 
 echo "== all assertions passed =="
