@@ -20,7 +20,6 @@ export const strings = {
   },
   admin: {
     dashboardTitle: 'Admin Dashboard',
-    dashboardPlaceholder: 'Dashboard content arrives in a later task.',
     volunteersLink: 'Manage volunteers',
     settingsLink: 'Mandal settings',
     expensesLink: 'Expenses',
@@ -143,6 +142,13 @@ export const strings = {
   cashInHand: {
     title: 'Cash in Hand',
     empty: 'No active volunteers yet.',
+  },
+  ledger: {
+    totalCollectedLabel: 'Total Collected',
+    totalExpensesLabel: 'Total Expenses',
+    netBalanceLabel: 'Net Balance',
+    balanced: 'Books balanced',
+    discrepancyPrefix: 'Discrepancy: ',
   },
   receipt: {
     notFound: 'Receipt not found.',

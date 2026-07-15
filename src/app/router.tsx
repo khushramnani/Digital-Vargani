@@ -1,4 +1,4 @@
-import { Link, Routes, Route } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import { strings } from '../lib/strings'
 import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
@@ -11,6 +11,7 @@ import { ReceiptPage } from '../features/receipt/ReceiptPage'
 import { ExpensesScreen } from '../features/expenses/ExpensesScreen'
 import { HandoverScreen } from '../features/cashinhand/handover'
 import { CashInHandScreen } from '../features/cashinhand/CashInHand'
+import { MasterLedgerScreen } from '../features/ledger/MasterLedger'
 
 function HomePage() {
   return (
@@ -18,33 +19,6 @@ function HomePage() {
       <h1 className="text-2xl font-semibold text-stone-900">{strings.appName}</h1>
       <p className="text-stone-600">{strings.appTagline}</p>
       <p className="text-sm text-stone-400">{strings.home.placeholder}</p>
-    </main>
-  )
-}
-
-// Task 15 builds the real dashboard content; this is just something real to
-// redirect to and land on for the "session -> acting user id" acceptance
-// criterion.
-function AdminDashboardPage() {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-2 px-4 text-center">
-      <h1 className="text-2xl font-semibold text-stone-900">{strings.admin.dashboardTitle}</h1>
-      <p className="text-sm text-stone-400">{strings.admin.dashboardPlaceholder}</p>
-      <Link to="/admin/volunteers" className="text-orange-700 underline">
-        {strings.admin.volunteersLink}
-      </Link>
-      <Link to="/admin/settings" className="text-orange-700 underline">
-        {strings.admin.settingsLink}
-      </Link>
-      <Link to="/admin/expenses" className="text-orange-700 underline">
-        {strings.admin.expensesLink}
-      </Link>
-      <Link to="/admin/handovers" className="text-orange-700 underline">
-        {strings.admin.handoversLink}
-      </Link>
-      <Link to="/admin/cash-in-hand" className="text-orange-700 underline">
-        {strings.admin.cashInHandLink}
-      </Link>
     </main>
   )
 }
@@ -61,7 +35,7 @@ export function AppRoutes() {
         path="/admin"
         element={
           <RequireRole role="admin">
-            <AdminDashboardPage />
+            <MasterLedgerScreen />
           </RequireRole>
         }
       />
