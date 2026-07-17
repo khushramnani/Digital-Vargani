@@ -203,7 +203,7 @@ describe('CollectionForm', () => {
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 
-  it('always renders a fallback "Send Receipt" button after submit, which re-fires the same SMS link when tapped', async () => {
+  it('always renders a fallback "Send via SMS" button after submit, which re-fires the same SMS link when tapped', async () => {
     renderForm()
     fillValidForm()
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
@@ -215,7 +215,7 @@ describe('CollectionForm', () => {
     window.location.href = 'https://vinayak-mandal.example/volunteer'
     markSmsSent.mockClear()
 
-    const sendButton = screen.getByRole('button', { name: 'Send Receipt' })
+    const sendButton = screen.getByRole('button', { name: 'Send via SMS' })
     fireEvent.click(sendButton)
 
     const expectedMessage = encodeURIComponent(
@@ -223,6 +223,24 @@ describe('CollectionForm', () => {
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+  })
+
+  it('renders a "Send via WhatsApp" button after submit, which opens the wa.me link when tapped', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    renderForm()
+    fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
+    markSmsSent.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send via WhatsApp' }))
+
+    const expectedMessage = encodeURIComponent(
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+    )
+    expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank')
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+    openSpy.mockRestore()
   })
 
   it('links to the Pending Send tray', () => {

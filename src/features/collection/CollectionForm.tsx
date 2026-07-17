@@ -5,7 +5,7 @@ import { type Donation } from '../../lib/db/donations'
 import { validateDonationInput, type DonationMode, type DonationValidationErrors } from '../../lib/validation/donation'
 import { toPaise } from '../../lib/money'
 import { strings } from '../../lib/strings'
-import { sendReceiptSms } from './send'
+import { sendReceiptSms, sendReceiptWhatsApp } from './send'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 
 const t = strings.collection
@@ -209,14 +209,26 @@ export function CollectionForm() {
                 not only when it fails — some browsers block the
                 non-http navigation because it follows an `await`, and
                 this is the volunteer's explicit-tap fallback for that
-                case (Task 8 brief's ≤3-taps acceptance criterion). */}
-            <button
-              type="button"
-              onClick={() => sendReceiptSms(lastDonation)}
-              className="rounded border border-orange-700 px-3 py-3 text-orange-700"
-            >
-              {t.sendReceiptButton}
-            </button>
+                case (Task 8 brief's ≤3-taps acceptance criterion). Two
+                channels, volunteer picks: SMS auto-fires above already,
+                WhatsApp is opt-in only (opening a new tab isn't something
+                to do without a tap). */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => sendReceiptSms(lastDonation)}
+                className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
+              >
+                {t.sendReceiptSmsButton}
+              </button>
+              <button
+                type="button"
+                onClick={() => sendReceiptWhatsApp(lastDonation)}
+                className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
+              >
+                {t.sendReceiptWhatsAppButton}
+              </button>
+            </div>
           </>
         )}
         {savedOffline && <p className="text-sm text-amber-700">{t.savedOffline}</p>}
