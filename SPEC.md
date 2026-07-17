@@ -1,4 +1,4 @@
-# Spec: Vinayak Mandal — Digital Vargani & Fund Management System
+# Spec: Vinayak Yuvak Mandal (VYM) — Digital Vargani & Fund Management System
 
 > Single-mandal, zero-cost, mobile-first PWA that replaces a paper bill book for door-to-door
 > festival donation collection, receipt delivery, and fund/cash reconciliation.

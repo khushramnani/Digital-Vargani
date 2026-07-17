@@ -14,8 +14,8 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Vinayak Mandal',
-        short_name: 'Vinayak Mandal',
+        name: 'Vinayak Yuvak Mandal',
+        short_name: 'VYM',
         description: 'Digital Vargani & Fund Management System',
         theme_color: '#c2410c',
         background_color: '#ffffff',
