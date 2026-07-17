@@ -36,8 +36,49 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     smsMessage: (amountRupees, receiptLink) =>
       `Thank you for your ₹${amountRupees} contribution. View your official receipt here: ${receiptLink}`,
   },
-  // mr/hi/gu land in Task 2.
-} as Record<Lang, ReceiptStrings>
+  mr: {
+    notFound: 'पावती सापडली नाही.',
+    donorLabel: 'देणगीदार',
+    amountLabel: 'रक्कम',
+    receiptNoLabel: 'पावती क्र.',
+    dateLabel: 'दिनांक',
+    stampCash: 'मिळाले: रोख',
+    stampOnline: 'मिळाले: ऑनलाइन',
+    voidedBanner: 'ही नोंद रद्द करण्यात आली आहे',
+    voidedReasonPrefix: 'कारण: ',
+    signatureLabel: 'अध्यक्ष',
+    smsMessage: (amountRupees, receiptLink) =>
+      `तुमच्या ₹${amountRupees} वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: ${receiptLink}`,
+  },
+  hi: {
+    notFound: 'रसीद नहीं मिली.',
+    donorLabel: 'दानदाता',
+    amountLabel: 'राशि',
+    receiptNoLabel: 'रसीद सं.',
+    dateLabel: 'दिनांक',
+    stampCash: 'प्राप्त: नकद',
+    stampOnline: 'प्राप्त: ऑनलाइन',
+    voidedBanner: 'यह प्रविष्टि रद्द कर दी गई है',
+    voidedReasonPrefix: 'कारण: ',
+    signatureLabel: 'अध्यक्ष',
+    smsMessage: (amountRupees, receiptLink) =>
+      `आपके ₹${amountRupees} के योगदान के लिए धन्यवाद. अपनी आधिकारिक रसीद यहाँ देखें: ${receiptLink}`,
+  },
+  gu: {
+    notFound: 'રસીદ મળી નથી.',
+    donorLabel: 'દાતા',
+    amountLabel: 'રકમ',
+    receiptNoLabel: 'રસીદ નં.',
+    dateLabel: 'તારીખ',
+    stampCash: 'મળ્યું: રોકડ',
+    stampOnline: 'મળ્યું: ઓનલાઈન',
+    voidedBanner: 'આ નોંધ રદ કરવામાં આવી છે',
+    voidedReasonPrefix: 'કારણ: ',
+    signatureLabel: 'પ્રમુખ',
+    smsMessage: (amountRupees, receiptLink) =>
+      `તમારા ₹${amountRupees} ના યોગદાન બદલ આભાર. તમારી અધિકૃત રસીદ અહીં જુઓ: ${receiptLink}`,
+  },
+}
 
 // Resolves a ?lang= query param. Unknown, absent, or hostile values fall back
 // to English rather than throwing — this reads a URL a donor could have

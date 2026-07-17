@@ -30,3 +30,21 @@ describe('receiptStrings', () => {
     )
   })
 })
+
+describe('every language is complete', () => {
+  it.each(LANGS)('%s has every receipt string, non-empty', (lang) => {
+    const s = receiptStrings[lang]
+    expect(s).toBeDefined()
+    const keys: (keyof typeof s)[] = [
+      'notFound', 'donorLabel', 'amountLabel', 'receiptNoLabel', 'dateLabel',
+      'stampCash', 'stampOnline', 'voidedBanner', 'voidedReasonPrefix', 'signatureLabel',
+    ]
+    for (const key of keys) {
+      expect(typeof s[key], `${lang}.${String(key)}`).toBe('string')
+      expect((s[key] as string).length, `${lang}.${String(key)}`).toBeGreaterThan(0)
+    }
+    const msg = s.smsMessage(500, 'https://x.test/r/abc')
+    expect(msg).toContain('500')
+    expect(msg).toContain('https://x.test/r/abc')
+  })
+})
