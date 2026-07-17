@@ -1137,7 +1137,10 @@ insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-0000000000c2', 'devanagari@example.com'),
   ('aaaaaaaa-0000-0000-0000-0000000000c3', 'dupname@example.com'),
   ('aaaaaaaa-0000-0000-0000-0000000000c4', 'hint@example.com'),
-  ('aaaaaaaa-0000-0000-0000-0000000000c5', 'collide@example.com')
+  ('aaaaaaaa-0000-0000-0000-0000000000c5', 'collide@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c6', 'shortname@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c7', 'longname@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c8', 'longname2@example.com')
 on conflict (id) do nothing;
 
 set role authenticated;
@@ -1244,6 +1247,60 @@ BEGIN
   ASSERT v_slug = 'shivaji-nagar-mandal-2',
     format('FAIL: duplicate mandal name should get -2 suffix, got %s', v_slug);
   RAISE NOTICE 'PASS: duplicate mandal name resolved to %', v_slug;
+END $$;
+reset role;
+
+-- Slug length bounds: the check constraint demands 2..40 chars. A name that
+-- slugifies to a single character, and a long name whose collision suffix
+-- would push it past 40, both have to work — a founder must never see a raw
+-- check_violation from a legal mandal name.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c6';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('A', 'Short Name Founder');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug ~ '^[a-z0-9][a-z0-9-]{1,39}$',
+    format('FAIL: single-character name produced an invalid slug: %s', v_slug);
+  RAISE NOTICE 'PASS: single-character mandal name produced slug %', v_slug;
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c7';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  -- 46 chars: slugifies past the 40-char bound, so it gets truncated.
+  v_id := create_mandal('Shri Ganesh Mitra Mandal Sarvajanik Trust Pune', 'Long Name Founder');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT length(v_slug) <= 40, format('FAIL: slug exceeded 40 chars: %s', v_slug);
+  RAISE NOTICE 'PASS: long name truncated to %', v_slug;
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c8';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  -- The SAME long name again: the collision suffix must not push the slug
+  -- past the constraint's 40-char ceiling.
+  v_id := create_mandal('Shri Ganesh Mitra Mandal Sarvajanik Trust Pune', 'Long Name Founder Two');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug ~ '^[a-z0-9][a-z0-9-]{1,39}$',
+    format('FAIL: colliding long name produced an invalid slug: %s', v_slug);
+  RAISE NOTICE 'PASS: colliding long name resolved to %', v_slug;
 END $$;
 reset role;
 
