@@ -77,6 +77,14 @@ createdb -h localhost -p "$PORT" -U "$PGUSER" "$DB_NAME"
 
 echo "== stubbing auth schema =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Supabase installs pgcrypto into a dedicated `extensions` schema, which is
+-- why the migrations qualify their calls as extensions.gen_random_bytes().
+-- A bare `create extension pgcrypto` on a stock cluster lands in public, so
+-- without this the very first migration fails on "schema extensions does not
+-- exist" — mirror Supabase's layout instead.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text);
 create or replace function auth.uid() returns uuid
@@ -152,6 +160,11 @@ echo "== granting Supabase's platform-level default table privileges =="
 # meaningless (they'd "pass" for the wrong reason).
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 grant usage on schema public to anon, authenticated;
+
+-- Supabase grants this at the platform level too. enforce_insert_defaults()
+-- is not SECURITY DEFINER, so it runs as the caller and needs USAGE on
+-- extensions to reach gen_random_bytes() when generating public_token.
+grant usage on schema extensions to anon, authenticated;
 grant select, insert, update on all tables in schema public to anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
 
