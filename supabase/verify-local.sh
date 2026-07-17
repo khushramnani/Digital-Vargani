@@ -378,8 +378,12 @@ BEGIN
   INSERT INTO donations (donor_name, amount_paise, mode, collected_by, receipt_no)
     VALUES ('Forged Receipt No', 100, 'cash', '00000000-0000-0000-0000-000000000001', dup_receipt_no);
 
-  ASSERT (SELECT count(*) FROM donations WHERE receipt_no = dup_receipt_no) = 1,
-    'FAIL: two donations ended up sharing the same receipt_no';
+  -- Scoped to the mandal: receipt_no is only unique WITHIN one now, so a
+  -- global count would be inflated by any other mandal's identical number.
+  ASSERT (SELECT count(*) FROM donations
+           WHERE receipt_no = dup_receipt_no
+             AND mandal_id = '11111111-1111-1111-1111-000000000001') = 1,
+    'FAIL: two donations in the same mandal ended up sharing a receipt_no';
   ASSERT (SELECT receipt_no FROM donations WHERE donor_name = 'Forged Receipt No') <> dup_receipt_no,
     'FAIL: forged duplicate receipt_no was not overridden by the insert trigger';
 
@@ -1042,14 +1046,51 @@ END $$;
 reset role;
 
 -- Both mandals now legitimately own a receipt #1 — the composite unique
--- constraint must permit exactly that.
+-- constraint must permit exactly that. Asserted per-mandal rather than as a
+-- global count(*), which any additional seeded mandal would inflate.
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM donations
+                  WHERE mandal_id = '11111111-1111-1111-1111-000000000001' AND receipt_no = 1),
+    'FAIL: mandal one has no receipt #1';
+  ASSERT EXISTS (SELECT 1 FROM donations
+                  WHERE mandal_id = '22222222-2222-2222-2222-000000000002' AND receipt_no = 1),
+    'FAIL: mandal two has no receipt #1';
+  RAISE NOTICE 'PASS: two mandals can each hold receipt #1 (unique is per-mandal)';
+END $$;
+SQL
+
+echo "== assertion: the demo mandal's report is publicly readable =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- The landing page's "See a sample report" CTA points at /transparency/demo
+-- for an anonymous visitor. If this returns nothing, that CTA renders "not
+-- published yet" to every prospect who clicks it.
+set request.jwt.claim.sub = '';
+set role anon;
 DO $$
 DECLARE
-  v_count int;
+  v_total bigint;
+  v_cats  int;
 BEGIN
-  SELECT count(*) INTO v_count FROM donations WHERE receipt_no = 1;
-  ASSERT v_count = 2, format('FAIL: expected both mandals to hold a receipt #1, saw %s', v_count);
-  RAISE NOTICE 'PASS: two mandals can each hold receipt #1 (unique is per-mandal)';
+  SELECT total_collected_paise INTO v_total FROM get_transparency_report('demo');
+  ASSERT v_total > 0, 'FAIL: demo mandal report is empty or unpublished to anon';
+
+  SELECT count(*) INTO v_cats FROM get_transparency_categories('demo');
+  ASSERT v_cats >= 3, format('FAIL: demo spend breakdown needs enough categories to chart, saw %s', v_cats);
+  RAISE NOTICE 'PASS: anon sees the demo report (₹% collected, % categories)', v_total / 100, v_cats;
+END $$;
+reset role;
+
+-- The demo mandal must not be loggable-into: its team rows exist only to
+-- satisfy collected_by/paid_by foreign keys.
+DO $$
+BEGIN
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM users
+     WHERE mandal_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+       AND (auth_user_id IS NOT NULL OR email IS NOT NULL OR invite_token IS NOT NULL)
+  ), 'SECURITY HOLE: a demo mandal user has a way to authenticate';
+  RAISE NOTICE 'PASS: demo mandal has no authenticatable users';
 END $$;
 SQL
 
