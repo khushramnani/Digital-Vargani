@@ -9,10 +9,12 @@ import { strings } from '../../lib/strings'
 type Role = 'admin' | 'volunteer'
 
 // Generalized from Task 4's ProtectedAdminRoute: any route can require any
-// single role by passing it in, instead of each route reimplementing the
-// same loading/redirect guard logic.
-export function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
+// single role, or any one of several roles (e.g. a volunteer-flow route an
+// admin should also be able to use), by passing either a single Role or a
+// Role[].
+export function RequireRole({ role, children }: { role: Role | Role[]; children: ReactNode }) {
   const { loading, session, appUser } = useAuth()
+  const allowedRoles = Array.isArray(role) ? role : [role]
 
   if (loading) {
     return (
@@ -20,7 +22,7 @@ export function RequireRole({ role, children }: { role: Role; children: ReactNod
     )
   }
 
-  if (!session || appUser?.role !== role) {
+  if (!session || !appUser || !allowedRoles.includes(appUser.role as Role)) {
     return <Navigate to="/login" replace />
   }
 

@@ -47,7 +47,7 @@ const adminUser: Tables<'users'> = {
 
 const volunteerUser: Tables<'users'> = { ...adminUser, id: 'user-2', role: 'volunteer' }
 
-function renderGuardedRoute(requiredRole: 'admin' | 'volunteer') {
+function renderGuardedRoute(requiredRole: 'admin' | 'volunteer' | ('admin' | 'volunteer')[]) {
   render(
     <MemoryRouter initialEntries={['/guarded']}>
       <AuthProvider>
@@ -112,5 +112,25 @@ describe('RequireRole', () => {
 
     await waitFor(() => expect(screen.getByText('Login Page')).toBeInTheDocument())
     expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
+  })
+
+  it('renders its children for an admin when the route allows either admin or volunteer', async () => {
+    getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
+    maybeSingle.mockResolvedValue({ data: adminUser, error: null })
+
+    renderGuardedRoute(['admin', 'volunteer'])
+
+    await waitFor(() => expect(screen.getByText('Guarded Content')).toBeInTheDocument())
+    expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
+  })
+
+  it('renders its children for a volunteer when the route allows either admin or volunteer', async () => {
+    getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
+    maybeSingle.mockResolvedValue({ data: volunteerUser, error: null })
+
+    renderGuardedRoute(['admin', 'volunteer'])
+
+    await waitFor(() => expect(screen.getByText('Guarded Content')).toBeInTheDocument())
+    expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
   })
 })
