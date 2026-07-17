@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { buildSmsLink, buildWhatsAppLink } from '../src/features/collection/send'
+import { buildSmsLink, buildWhatsAppLink, receiptUrl } from '../src/features/collection/send'
+import { LANGS } from '../src/lib/i18n/receipt'
 
 function stubUserAgent(userAgent: string) {
   vi.stubGlobal('navigator', { ...navigator, userAgent })
@@ -7,6 +8,14 @@ function stubUserAgent(userAgent: string) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('receiptUrl', () => {
+  // lang is a required parameter — a default is how a caller silently sends
+  // English forever.
+  it.each(LANGS)('carries lang=%s on the link', (lang) => {
+    expect(receiptUrl('tok123', lang)).toBe(`${window.location.origin}/r/tok123?lang=${lang}`)
+  })
 })
 
 describe('buildSmsLink', () => {

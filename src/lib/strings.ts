@@ -103,6 +103,7 @@ export const strings = {
     modeCash: 'Cash',
     modeUpi: 'UPI',
     modeBank: 'Bank',
+    languageLabel: 'Receipt language',
     submitButton: 'Record Donation',
     submitting: 'Recording…',
     successPrefix: 'Receipt #',

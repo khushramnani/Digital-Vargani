@@ -35,6 +35,17 @@ vi.mock('../src/lib/queue/db', () => ({
   },
 }))
 
+// PendingSend presets its own language picker from the mandal default.
+// Mock it so the test never touches the real supabase client (this file
+// doesn't mock ../src/lib/db/client), and so the preset is deterministic.
+const { getMandalDefaultLang } = vi.hoisted(() => ({
+  getMandalDefaultLang: vi.fn(),
+}))
+
+vi.mock('../src/lib/db/config', () => ({
+  getMandalDefaultLang,
+}))
+
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
   mandal_id: '11111111-1111-1111-1111-000000000001',
@@ -83,6 +94,7 @@ beforeEach(() => {
   getPendingSendDonations.mockResolvedValue([pendingDonation])
   markSmsSent.mockResolvedValue(undefined)
   outboxToArray.mockResolvedValue([])
+  getMandalDefaultLang.mockResolvedValue('en')
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { origin: 'https://vinayak-mandal.example', href: 'https://vinayak-mandal.example/volunteer/pending' },
@@ -126,7 +138,7 @@ describe('PendingSend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SMS' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -140,7 +152,7 @@ describe('PendingSend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
     )
     expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank', 'noopener')
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -220,5 +232,23 @@ describe('PendingSend', () => {
     outboxToArray.mockResolvedValue([])
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('No pending receipts to send.')).toBeInTheDocument())
+  })
+
+  // An offline donation reaches this tray with no collection-time language,
+  // so the tray's own picker (preset from the mandal default) is what decides
+  // the send language.
+  it('presets its own picker from the mandal default and sends in it', async () => {
+    getMandalDefaultLang.mockResolvedValue('mr')
+    renderPendingSend()
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'मराठी' })).toBeChecked())
+
+    fireEvent.click(screen.getByRole('button', { name: 'SMS' }))
+
+    const expectedMessage = encodeURIComponent(
+      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/tok-abc?lang=mr',
+    )
+    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 })

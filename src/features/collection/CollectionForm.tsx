@@ -6,6 +6,8 @@ import { validateDonationInput, type DonationMode, type DonationValidationErrors
 import { toPaise } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms, sendReceiptWhatsApp } from './send'
+import { LanguagePicker } from './LanguagePicker'
+import { useReceiptLang } from './useReceiptLang'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 
 const t = strings.collection
@@ -34,6 +36,7 @@ export function CollectionForm() {
   const [error, setError] = useState<string | null>(null)
   const [lastDonation, setLastDonation] = useState<Donation | null>(null)
   const [savedOffline, setSavedOffline] = useState(false)
+  const [lang, setLang] = useReceiptLang()
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -70,7 +73,7 @@ export function CollectionForm() {
         // after an `await`, so it may silently no-op — the always-rendered
         // "Send Receipt" button below is the required fallback, not an
         // extra affordance.
-        sendReceiptSms(synced)
+        sendReceiptSms(synced, lang)
       } else {
         // Offline (or a transient failure) — the entry is safely queued in
         // Dexie and will sync once connectivity returns (App.tsx's
@@ -191,6 +194,8 @@ export function CollectionForm() {
           </p>
         )}
 
+        <LanguagePicker lang={lang} onChange={setLang} label={t.languageLabel} />
+
         <button
           type="submit"
           disabled={submitting}
@@ -216,14 +221,14 @@ export function CollectionForm() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => sendReceiptSms(lastDonation)}
+                onClick={() => sendReceiptSms(lastDonation, lang)}
                 className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
               >
                 {t.sendReceiptSmsButton}
               </button>
               <button
                 type="button"
-                onClick={() => sendReceiptWhatsApp(lastDonation)}
+                onClick={() => sendReceiptWhatsApp(lastDonation, lang)}
                 className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
               >
                 {t.sendReceiptWhatsAppButton}

@@ -118,6 +118,30 @@ describe('ReceiptPage', () => {
     expect(screen.queryByRole('img', { name: 'RECEIVED: ONLINE' })).not.toBeInTheDocument()
   })
 
+  it('renders Marathi copy for ?lang=mr', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    render(
+      <MemoryRouter initialEntries={['/r/tok-abc?lang=mr']}>
+        <Routes>
+          <Route path="/r/:public_token" element={<ReceiptPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('देणगीदार')).toBeInTheDocument()
+  })
+
+  it('falls back to English for an unknown ?lang=', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    render(
+      <MemoryRouter initialEntries={['/r/tok-abc?lang=xx']}>
+        <Routes>
+          <Route path="/r/:public_token" element={<ReceiptPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Donor')).toBeInTheDocument()
+  })
+
   it('never requests or renders donor_phone in any form', async () => {
     getPublicReceipt.mockResolvedValue(cashReceipt)
     renderReceiptPage('tok-abc')

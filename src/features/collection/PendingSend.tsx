@@ -7,6 +7,8 @@ import { db, type OutboxDonation } from '../../lib/queue/db'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms, sendReceiptWhatsApp } from './send'
+import { LanguagePicker } from './LanguagePicker'
+import { useReceiptLang } from './useReceiptLang'
 import { VoidButton } from '../../components/VoidButton'
 
 const t = strings.pendingSend
@@ -26,6 +28,11 @@ export function PendingSend() {
   const [loading, setLoading] = useState(true)
   const [sentIds, setSentIds] = useState<Set<string>>(new Set())
   const [queuedItems, setQueuedItems] = useState<OutboxDonation[]>([])
+  // Its own picker, preset the same way: an offline donation arrives here
+  // with no collection-time language (threading it through the Dexie outbox
+  // is the rejected stored-per-donation design), so it defaults to the
+  // mandal's language unless re-picked here.
+  const [lang, setLang] = useReceiptLang()
 
   useEffect(() => {
     if (!appUser) return
@@ -69,12 +76,12 @@ export function PendingSend() {
   }, [appUser])
 
   function handleSendSms(donation: Donation) {
-    sendReceiptSms(donation)
+    sendReceiptSms(donation, lang)
     setSentIds((current) => new Set(current).add(donation.id))
   }
 
   function handleSendWhatsApp(donation: Donation) {
-    sendReceiptWhatsApp(donation)
+    sendReceiptWhatsApp(donation, lang)
     setSentIds((current) => new Set(current).add(donation.id))
   }
 
@@ -96,6 +103,8 @@ export function PendingSend() {
           {t.backLink}
         </Link>
       </div>
+
+      <LanguagePicker lang={lang} onChange={setLang} label={strings.collection.languageLabel} />
 
       {/* Rendered independently of `loading` (which only tracks the
           server-fetched list below) — this is a local, near-instant Dexie

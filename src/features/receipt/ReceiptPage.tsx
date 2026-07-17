@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { getPublicReceipt, type PublicReceipt } from '../../lib/db/receipt'
 import { StampGraphic } from '../../components/StampGraphic'
 import { formatINR } from '../../lib/money'
-import { receiptStrings } from '../../lib/i18n/receipt'
+import { receiptStrings, toLang } from '../../lib/i18n/receipt'
 import { strings } from '../../lib/strings'
-
-const t = receiptStrings.en
 
 type PageState =
   | { status: 'loading' }
@@ -44,6 +42,12 @@ function formatReceiptDate(iso: string): string {
 // intentionally different from the utilitarian volunteer/admin screens.
 export function ReceiptPage() {
   const { public_token } = useParams<{ public_token: string }>()
+  const [searchParams] = useSearchParams()
+  // The donor's language. toLang() falls back to English for anything
+  // unrecognised — this is a URL a donor could have mangled. Declared before
+  // the early returns because the not-found branch reads t.notFound too.
+  const lang = toLang(searchParams.get('lang'))
+  const t = receiptStrings[lang]
   // ponytail: initial value covers the mount case; a same-instance token
   // swap (e.g. an in-app link from one /r/:x to another /r/:y without a
   // full navigation) would show stale content until the new fetch
@@ -105,7 +109,10 @@ export function ReceiptPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-100 px-4 py-10">
-      <div className="relative w-full max-w-md overflow-hidden rounded-lg border-4 border-dashed border-amber-800/40 bg-gradient-to-br from-amber-50 to-amber-100 p-8 text-stone-800 shadow-md">
+      <div
+        lang={lang}
+        className="relative w-full max-w-md overflow-hidden rounded-lg border-4 border-dashed border-amber-800/40 bg-gradient-to-br from-amber-50 to-amber-100 p-8 text-stone-800 shadow-md"
+      >
         {receipt.logo_url ? (
           <img
             src={receipt.logo_url}

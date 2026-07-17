@@ -32,6 +32,17 @@ vi.mock('../src/lib/queue/sync', () => ({
   syncOutboxItem,
 }))
 
+// CollectionForm now presets the language picker from the mandal default.
+// Mock it so the test never touches the real supabase client (this file
+// doesn't mock ../src/lib/db/client), and so the preset is deterministic.
+const { getMandalDefaultLang } = vi.hoisted(() => ({
+  getMandalDefaultLang: vi.fn(),
+}))
+
+vi.mock('../src/lib/db/config', () => ({
+  getMandalDefaultLang,
+}))
+
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
   mandal_id: '11111111-1111-1111-1111-000000000001',
@@ -101,6 +112,7 @@ beforeEach(() => {
   enqueueDonation.mockResolvedValue({ localId: 'local-id-1' })
   syncOutboxItem.mockResolvedValue(createdDonation)
   markSmsSent.mockResolvedValue(undefined)
+  getMandalDefaultLang.mockResolvedValue('en')
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { origin: 'https://vinayak-mandal.example', href: 'https://vinayak-mandal.example/volunteer' },
@@ -199,7 +211,7 @@ describe('CollectionForm', () => {
     // jsdom's default UA isn't an iOS one, so this exercises the Android/
     // default `?body=` branch of buildSmsLink.
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -221,7 +233,7 @@ describe('CollectionForm', () => {
     fireEvent.click(sendButton)
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -238,7 +250,7 @@ describe('CollectionForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send via WhatsApp' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
     )
     expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank', 'noopener')
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -248,5 +260,23 @@ describe('CollectionForm', () => {
   it('links to the Pending Send tray', () => {
     renderForm()
     expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/volunteer/pending')
+  })
+
+  it('presets the language picker from the mandal default and sends the receipt in it', async () => {
+    getMandalDefaultLang.mockResolvedValue('mr')
+    renderForm()
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'मराठी' })).toBeChecked())
+
+    fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+
+    // The Marathi copy, and the link carries ?lang=mr so the receipt page
+    // reads the same language straight back out.
+    const expectedMessage = encodeURIComponent(
+      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/tok-abc?lang=mr',
+    )
+    await waitFor(() => expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`))
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 })
