@@ -63,7 +63,7 @@ Facts that already work in our favour and need no change:
 | Signup guard | One mandal per verified email | Enforced in the DB, not the UI. Junk signups cost one row each. |
 | Tenant key | `users.mandal_id`, via `app_mandal_id()` | Mirrors the existing `app_user_id()` helper. One place to reason about. |
 | Receipt numbers | `mandals.next_receipt_no` counter in the insert trigger | Row lock serializes concurrent volunteers; gapless per mandal. |
-| Public transparency URL | `/transparency/:mandal_id` (raw UUID) | No new column. Upgrade to a slug when someone complains about the URL. |
+| Public transparency URL | `/transparency/:slug` | Mandals paste this into WhatsApp groups; a UUID reads as a phishing link to a donor. One `text unique` column. |
 | Connection pooling | Not doing it | There is no server. Browser → PostgREST; Supabase already fronts Postgres with Supavisor. ~10 mandals × few volunteers ≈ 50 users. Not a scale problem. |
 
 ## Data Model
@@ -76,6 +76,7 @@ Replaces `mandal_config`. Same columns, real PK, plus the receipt counter.
 create table mandals (
   id                     uuid primary key default gen_random_uuid(),
   name                   text not null,
+  slug                   text not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{1,39}$'),
   logo_url               text,
   signature_url          text,
   upi_vpa                text,
@@ -90,6 +91,36 @@ create table mandals (
 ```
 
 `default_lang` is **not** added here — it belongs to Project B.
+
+### Slug generation
+
+The slug is derived from the mandal name at signup and **never changes afterwards**, even
+when the name is edited in settings. A live public link that rots because someone fixed a
+typo in their mandal name is worse than a slug that no longer matches.
+
+```sql
+create or replace function slugify(txt text) returns text
+language sql immutable as $$
+  select trim(both '-' from regexp_replace(lower(txt), '[^a-z0-9]+', '-', 'g'))
+$$;
+```
+
+**The Devanagari case is the normal case here, not an edge case.** A mandal named
+`गणेश मंडळ` has no `[a-z0-9]` characters at all, so `slugify()` returns an empty string —
+which fails the check constraint. Any mandal in this app's actual target market can hit
+this. So `create_mandal()` must:
+
+1. `base := slugify(mandal_name)`.
+2. If `base` is empty or shorter than 2 characters, `base := 'mandal'`.
+3. Try `base`; on unique violation try `base-2`, `base-3`, … until one succeeds. Bounded at
+   50 attempts, then fall back to `base || '-' || substr(gen_random_uuid()::text, 1, 6)`.
+
+The loop is inside `create_mandal()`'s transaction, so a concurrent signup racing for the
+same slug loses the insert, catches 23505, and retries the next candidate rather than
+producing a duplicate.
+
+Truncate `base` to 40 characters before the suffix so the check constraint's length bound
+can't be breached by a long mandal name.
 
 ### Changed: every other table
 
@@ -118,8 +149,11 @@ create index handovers_mandal_id_idx  on handovers(mandal_id);
 Order matters:
 
 1. `create table mandals (...)`.
-2. `insert into mandals (name, logo_url, signature_url, upi_vpa, upi_qr_url, receipt_prefix,
-   expense_categories, bank_opening_paise, transparency_published) select … from mandal_config;`
+2. `insert into mandals (name, slug, logo_url, signature_url, upi_vpa, upi_qr_url,
+   receipt_prefix, expense_categories, bank_opening_paise, transparency_published)
+   select name, coalesce(nullif(slugify(name), ''), 'mandal'), … from mandal_config;`
+   — the existing mandal's name may be non-ASCII, so the same empty-slug fallback as
+   `create_mandal()` applies. Only one row exists, so no dedup loop is needed here.
 3. Add `mandal_id uuid references mandals(id)` (nullable) to the four tables.
 4. `update <table> set mandal_id = (select id from mandals);` — safe: exactly one row exists
    at this point.
@@ -218,8 +252,8 @@ tables — re-published in full, since the existing triggers reference it by nam
 | `create_mandal(mandal_name, admin_name)` | **New.** See below. |
 | `list_admins()` | Add `and mandal_id = app_mandal_id()`. |
 | `get_expense_categories()` | Add `where id = app_mandal_id()`. |
-| `get_transparency_report(mandal uuid)` | Takes the mandal; filters both sums by it; gate becomes `(select transparency_published from mandals where id = mandal) or (is_admin() and app_mandal_id() = mandal)`. |
-| `get_transparency_categories(mandal uuid)` | Same treatment. |
+| `get_transparency_report(mandal_slug text)` | Resolves the slug to a mandal, filters both sums by it; gate becomes `published or (is_admin() and app_mandal_id() = <resolved id>)`. Unknown slug returns zero rows — same shape as "not published", so it leaks nothing about which slugs exist. |
+| `get_transparency_categories(mandal_slug text)` | Same treatment. |
 | `get_public_receipt(token)` | Drop the `public_mandal_branding` view; return the mandal's `name`, `logo_url`, `signature_url`, `receipt_prefix` joined onto the receipt row. |
 | `link_admin_account()` | **Unchanged** — `users.email` is globally unique, so the email match is unambiguous. |
 | `redeem_invite(token)` | **Unchanged** — `invite_token` is globally unique and the row already carries its `mandal_id`. |
@@ -268,8 +302,10 @@ CTA points here.
 - `RequireRole` — unchanged in shape; the no-role → `/signup` redirect lives with the router.
 - `MandalConfig` — reads/writes `mandals` (scoped by RLS) instead of the `mandal_config`
   singleton.
-- `PublicTransparency` — route becomes `/transparency/:mandal_id`, passes it to both RPCs.
-- `AdminTransparency` — passes the admin's own `mandal_id`.
+- `PublicTransparency` — route becomes `/transparency/:slug`, passes it to both RPCs.
+- `AdminTransparency` — passes its own mandal's slug, and shows the shareable public link so
+  an admin can copy it into a WhatsApp group. That link is the entire reason for the slug;
+  a slug with no visible copy affordance is a column nobody uses.
 - `src/lib/db/config.ts` — `getMandalConfig()` selects from `mandals`; `updateMandalConfig()`
   currently filters `.eq('id', true)` (the singleton key) and must filter by the caller's
   mandal id instead. RLS already scopes the row, so the filter is defence in depth, not the
@@ -287,8 +323,18 @@ needs a new query.
 
 ## Testing
 
-**The gate: `tests/tenant-isolation.test.ts`.** Seeds two mandals, each with an admin and a
-volunteer and a donation, then asserts from mandal A's admin session:
+**The gate: new assertion blocks in `supabase/verify-local.sh`.** This project already has
+the right tool and it is not Vitest. `verify-local.sh` spins up a throwaway Postgres cluster,
+stubs `auth`/`storage`, applies every migration, and asserts RLS with real
+`set role authenticated; set request.jwt.claim.sub = …` sessions. The Vitest suite mocks the
+Supabase client entirely, so it can prove a query's *shape* but can never prove a *policy* —
+tenant isolation is a policy property. It goes in `verify-local.sh`.
+
+The script's `auth` stub defines `auth.uid()` but **not** `auth.jwt()`, which
+`create_mandal()` needs for its anonymous-session guard. The stub gains it.
+
+Seeds two mandals, each with an admin and a volunteer and a donation, then asserts from
+mandal A's admin session:
 
 - `donations`, `expenses`, `handovers`, `users` — zero rows from B.
 - `list_admins()` — B's admins absent.
@@ -298,12 +344,10 @@ volunteer and a donation, then asserts from mandal A's admin session:
 - Direct insert with `mandal_id: B.id` in the payload — lands in A (trigger overwrites it),
   never in B.
 
-Runs against a local stack (`supabase start`); skips with a clear message when the env vars
-are absent, so CI without a database doesn't fail red.
-
-**Receipt numbering: `tests/receipt-numbering.test.ts`.** Two mandals inserting donations
-interleaved each get 1, 2, 3… of their own. Concurrent inserts within one mandal produce no
-duplicates and no gaps.
+**Receipt numbering: also `verify-local.sh`.** Two mandals inserting donations interleaved
+each get 1, 2, 3… of their own, and a client that forges `receipt_no` in the insert payload
+gets the trigger's number instead. The script already has a forgery-override assertion for
+`receipt_no`/`public_token` to model this on.
 
 **Regression:** `reconcile.ts` and `money.ts` unit tests must stay green and stay at 100% —
 they take a ledger and are tenant-agnostic by design, so they should need no edits. If they
@@ -348,7 +392,8 @@ Deferred deliberately, with the trigger for revisiting each:
 - **Receipt template editor** — user called it future work. Add when a mandal asks.
 - **One account in many mandals** — needs a memberships table, a mandal switcher, and an
   "active mandal" in every RLS helper. Add when someone actually runs two mandals.
-- **Transparency URL slugs** — raw UUID until someone complains about the URL.
+- **Admin-editable slugs** — generated once at signup, immutable after. Add when a mandal
+  asks, and only with a redirect story for the old link.
 - **Superadmin / cross-mandal console** — nothing needs it yet.
 - **Mandal deletion / offboarding** — no story yet; no-hard-delete makes it a soft-flag
   problem when it arrives.
@@ -363,7 +408,9 @@ Deferred deliberately, with the trigger for revisiting each:
 5. A second signup from the same email is refused by the database with a clear message.
 6. An anonymous (volunteer) session cannot call `create_mandal()`.
 7. Mandal A's admin cannot preview mandal B's unpublished transparency report.
-8. `/transparency/:mandal_id` shows only that mandal's totals; `/r/:token` shows that
-   receipt's own mandal branding.
-9. `tenant-isolation.test.ts` passes; `reconcile.ts` / `money.ts` stay at 100% coverage.
-10. Existing volunteer and admin sessions keep working across the migration.
+8. `/transparency/:slug` shows only that mandal's totals; `/r/:token` shows that receipt's
+   own mandal branding.
+9. A mandal named entirely in Devanagari gets a valid, unique, non-empty slug at signup, and
+   two mandals with the same name get different slugs.
+10. `tenant-isolation.test.ts` passes; `reconcile.ts` / `money.ts` stay at 100% coverage.
+11. Existing volunteer and admin sessions keep working across the migration.
