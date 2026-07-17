@@ -10,7 +10,33 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-17-multi-tenancy-design.md`
 
-## STATUS: Tasks 1–4 are DONE (dry-run complete, committed)
+## STATUS: COMPLETE — all tasks done, all gates green
+
+Every task (1–10) is implemented, verified, and committed; the migrations are applied to the
+live project. Final sweep: `verify-local.sh` PASS · `typecheck` 0 errors · `lint` clean ·
+`test` 180/180 across 24 files with `money.ts`/`reconcile.ts` at 100% · `test:e2e` 9/9.
+
+Changes forced during execution that this plan did not predict (the plan text below is left
+as written; where it disagrees with the repo, **the repo is right**):
+
+- `enforce_insert_defaults()` stamps `coalesce(app_mandal_id(), new.mandal_id)`, not a bare
+  `app_mandal_id()` — a bare stamp raised on any session-less insert.
+- `create_mandal` takes a third arg, `slug_hint`, and clamps slugs to the constraint's real
+  2–40 bounds (`20260717160000`). A mandal named `A`, and two mandals sharing a 40+ char name,
+  both raised a raw `check_violation` before that.
+- `mandal_id` needed `default app_mandal_id()` on all four tables (`20260717130000`), and
+  `receipt_no` needed its default restored (`20260717140000`) — without them the generated
+  Insert types demanded the very values the client must never send. For `users` it was
+  load-bearing: that table has no insert trigger, so invites had no mandal at all.
+- A published demo mandal (slug `demo`, `20260717150000`) exists because Task 7 silently broke
+  the landing page's "See a sample report →" CTA into a blank page.
+- 9 test files broke, not the 5 listed; `MandalConfig.tsx` and 5 insert call sites needed
+  changes the spec claimed were unnecessary.
+- `verify-local.sh` had never passed (missing `extensions` schema stub) and the e2e suite had
+  been red and aimed at the live project (`.env.local` drift vs. hardcoded stub origins). Both
+  fixed; neither was caused by this work.
+
+## Original status note: Tasks 1–4 (dry-run complete, committed)
 
 The SQL landed in `supabase/migrations/20260717120000_multi_tenancy.sql` and
 `bash supabase/verify-local.sh` exits 0 with every tenant-isolation assertion passing.

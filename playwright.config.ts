@@ -6,6 +6,11 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
+    // ponytail: reusing your already-running dev server keeps the local loop
+    // fast, but that server started from .env.local and so ignores the env
+    // pin below — the whole suite goes red in a way that looks like a code
+    // bug. If e2e is inexplicably red locally, stop your dev server and
+    // re-run. Set this to false if that trips anyone up more than once.
     reuseExistingServer: !process.env.CI,
     // Every spec that injects a session stubs Supabase at this exact origin
     // (page.route) and writes the session to the storage key supabase-js
