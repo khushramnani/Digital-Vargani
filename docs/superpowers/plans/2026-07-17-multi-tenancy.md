@@ -10,6 +10,25 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-17-multi-tenancy-design.md`
 
+## STATUS: Tasks 1–4 are DONE (dry-run complete, committed)
+
+The SQL landed in `supabase/migrations/20260717120000_multi_tenancy.sql` and
+`bash supabase/verify-local.sh` exits 0 with every tenant-isolation assertion passing.
+**Start at Task 5.** What changed from this plan during the dry run:
+
+1. **`enforce_insert_defaults()` stamps `coalesce(app_mandal_id(), new.mandal_id)`**, not a bare
+   `app_mandal_id()`. A bare stamp raised on any session-less insert, breaking table-owner
+   seeding. A real session still always wins (forgery override is asserted), and RLS rejects a
+   non-member caller before the fallback matters.
+2. **`create_mandal(mandal_name, admin_name, slug_hint text default null)`** — a third,
+   optional argument. `slugify()` is ASCII-only, so a Devanagari-named mandal fell back to
+   `mandal`/`mandal-2`/`mandal-3`, defeating the slug's purpose. The hint is slugified and
+   uniqueness-checked, never trusted raw. **Task 6 must add this field to the signup form.**
+3. **`verify-local.sh` was broken before this work began** and has been fixed separately: it
+   never stubbed the `extensions` schema that `extensions.gen_random_bytes()` needs, so it had
+   never run green. It now also loops over `migrations/*.sql` rather than listing each file.
+4. The live project has **not** been migrated yet — see Task 5 Step 1.
+
 ## Global Constraints
 
 - TypeScript strict. Run `npm run typecheck` and `npm run test -- --run` after every task, before committing.
@@ -1124,10 +1143,13 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Regenerate the database types**
 
-Run: `npm run db:types`
-Expected: `src/lib/db/database.types.ts` rewrites — `mandal_config` and `public_mandal_branding` disappear, `mandals` appears, the RPC signatures gain their new args.
+**Do NOT run `supabase db push` yourself.** The migration drops `mandal_config`, which holds
+the live mandal's real config row. The repo owner pushes it themselves after taking a
+snapshot. If `npm run db:types` below still emits `mandal_config`, the push has not happened
+yet — **stop and report that**, do not push it, and do not hand-edit the generated file.
 
-This requires the migration to be pushed to the linked project first (`supabase db push`). If the live project is not yet migrated, do that here — the rollout note in the spec applies: snapshot first.
+Run: `npm run db:types`
+Expected: `src/lib/db/database.types.ts` rewrites — `mandal_config` and `public_mandal_branding` disappear, `mandals` appears (with `slug` and `next_receipt_no`), `get_public_receipt` gains its branding columns, `get_transparency_report`/`get_transparency_categories` gain `mandal_slug`, and `create_mandal` appears with `mandal_name`/`admin_name`/`slug_hint`.
 
 - [ ] **Step 2: Run typecheck to see the full break surface**
 
@@ -1384,8 +1406,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **`AuthProvider.tsx` needs no change.** It already resolves `appUser` to `null` when the session has no `users` row, and `link_admin_account()` is already a documented no-op for a non-admin email. The "authed but no mandal" state is handled entirely in `RequireRole` (Step 11).
 
 **Interfaces:**
-- Consumes: `create_mandal(mandal_name, admin_name)` from Task 3; `useAuth()` → `{ session, appUser, loading, refreshAppUser }` from `src/features/auth/useAuth.ts`.
-- Produces: `createMandal(mandalName: string, adminName: string): Promise<string>` from `src/lib/db/mandals.ts`; `<Signup />` at route `/signup`.
+- Consumes: `create_mandal(mandal_name, admin_name, slug_hint)` from Task 3 — note the **third, optional** arg added during the dry run; `useAuth()` → `{ session, appUser, loading, refreshAppUser }` from `src/features/auth/useAuth.ts`.
+- Produces: `createMandal(mandalName: string, adminName: string, slugHint?: string): Promise<string>` from `src/lib/db/mandals.ts`; `<Signup />` at route `/signup`.
+
+**Slug field requirement (changed from the original plan).** The signup form has a third input: the mandal's public link. It is optional — leave it blank and the DB derives one from the name. It exists because `slugify()` is ASCII-only: a mandal named `गणेश मंडळ` gets `mandal`, then `mandal-2`, `mandal-3`, which makes the transparency link useless for exactly the mandals this app serves. Show the resulting URL inline (`/transparency/<slug>`) so the founder can see what they're choosing. Pass `undefined` (not `''`) when blank, so the RPC's `default null` applies.
 
 - [ ] **Step 1: Write the failing test for the RPC wrapper**
 
