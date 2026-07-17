@@ -30,7 +30,7 @@ create sequence receipt_no_seq start 1;
 create table donations (
   id            uuid primary key default gen_random_uuid(),
   receipt_no    bigint not null unique default nextval('receipt_no_seq'),
-  public_token  text not null unique default encode(gen_random_bytes(16), 'hex'),
+  public_token  text not null unique default encode(extensions.gen_random_bytes(16), 'hex'),
   donor_name    text not null,
   donor_phone   text,
   amount_paise  bigint not null check (amount_paise > 0),
@@ -124,7 +124,7 @@ language plpgsql as $$
 begin
   if TG_TABLE_NAME = 'donations' then
     new.receipt_no := nextval('receipt_no_seq');
-    new.public_token := encode(gen_random_bytes(16), 'hex');
+    new.public_token := encode(extensions.gen_random_bytes(16), 'hex');
   end if;
   new.voided := false;
   new.void_reason := null;

@@ -1,12 +1,3 @@
-// Hand-authored: no live Supabase project exists yet (see supabase/verify-local.sh
-// and .superpowers/sdd/task-2-brief.md). Once a project is connected, regenerate
-// with `npm run db:types` and diff the result against this file to catch drift.
-//
-// Shape mirrors `supabase gen types typescript` output. Note: `role`, `mode`,
-// and `paid_from` are plain `text` columns with CHECK constraints, not Postgres
-// enums — the real generator types those as `string`, not a literal union, so
-// this file does the same to stay diff-clean against a future real generation.
-
 export type Json =
   | string
   | number
@@ -16,351 +7,401 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
-      mandal_config: {
-        Row: {
-          id: boolean
-          name: string
-          logo_url: string | null
-          signature_url: string | null
-          upi_vpa: string | null
-          upi_qr_url: string | null
-          receipt_prefix: string
-          expense_categories: string[]
-          bank_opening_paise: number
-          transparency_published: boolean
-        }
-        Insert: {
-          id?: boolean
-          name: string
-          logo_url?: string | null
-          signature_url?: string | null
-          upi_vpa?: string | null
-          upi_qr_url?: string | null
-          receipt_prefix?: string
-          expense_categories?: string[]
-          bank_opening_paise?: number
-          transparency_published?: boolean
-        }
-        Update: {
-          id?: boolean
-          name?: string
-          logo_url?: string | null
-          signature_url?: string | null
-          upi_vpa?: string | null
-          upi_qr_url?: string | null
-          receipt_prefix?: string
-          expense_categories?: string[]
-          bank_opening_paise?: number
-          transparency_published?: boolean
-        }
-        Relationships: []
-      }
-      users: {
-        Row: {
-          id: string
-          name: string
-          phone: string | null
-          email: string | null
-          role: string
-          invite_token: string | null
-          auth_user_id: string | null
-          active: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          phone?: string | null
-          email?: string | null
-          role: string
-          invite_token?: string | null
-          auth_user_id?: string | null
-          active?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          phone?: string | null
-          email?: string | null
-          role?: string
-          invite_token?: string | null
-          auth_user_id?: string | null
-          active?: boolean
-          created_at?: string
-        }
-        Relationships: []
-      }
       donations: {
         Row: {
-          id: string
-          receipt_no: number
-          public_token: string
-          donor_name: string
-          donor_phone: string | null
           amount_paise: number
-          mode: string
+          client_idempotency_key: string | null
           collected_by: string
           created_at: string
-          voided: boolean
-          void_reason: string | null
-          voided_by: string | null
-          voided_at: string | null
+          donor_name: string
+          donor_phone: string | null
+          id: string
+          mode: string
+          public_token: string
+          receipt_no: number
           sms_sent_at: string | null
-          client_idempotency_key: string | null
+          void_reason: string | null
+          voided: boolean
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
-          id?: string
-          receipt_no?: number
-          public_token?: string
-          donor_name: string
-          donor_phone?: string | null
           amount_paise: number
-          mode: string
+          client_idempotency_key?: string | null
           collected_by: string
           created_at?: string
-          voided?: boolean
-          void_reason?: string | null
-          voided_by?: string | null
-          voided_at?: string | null
+          donor_name: string
+          donor_phone?: string | null
+          id?: string
+          mode: string
+          public_token?: string
+          receipt_no?: number
           sms_sent_at?: string | null
-          client_idempotency_key?: string | null
+          void_reason?: string | null
+          voided?: boolean
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
-          id?: string
-          receipt_no?: number
-          public_token?: string
-          donor_name?: string
-          donor_phone?: string | null
           amount_paise?: number
-          mode?: string
+          client_idempotency_key?: string | null
           collected_by?: string
           created_at?: string
-          voided?: boolean
-          void_reason?: string | null
-          voided_by?: string | null
-          voided_at?: string | null
+          donor_name?: string
+          donor_phone?: string | null
+          id?: string
+          mode?: string
+          public_token?: string
+          receipt_no?: number
           sms_sent_at?: string | null
-          client_idempotency_key?: string | null
+          void_reason?: string | null
+          voided?: boolean
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: 'donations_collected_by_fkey'
-            columns: ['collected_by']
+            foreignKeyName: "donations_collected_by_fkey"
+            columns: ["collected_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'donations_voided_by_fkey'
-            columns: ['voided_by']
+            foreignKeyName: "donations_voided_by_fkey"
+            columns: ["voided_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
       expenses: {
         Row: {
-          id: string
-          category: string
           amount_paise: number
+          category: string
+          created_at: string
           description: string | null
+          id: string
           paid_by: string
           paid_from: string
-          created_at: string
-          voided: boolean
           void_reason: string | null
-          voided_by: string | null
+          voided: boolean
           voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
-          id?: string
-          category: string
           amount_paise: number
+          category: string
+          created_at?: string
           description?: string | null
+          id?: string
           paid_by: string
           paid_from: string
-          created_at?: string
-          voided?: boolean
           void_reason?: string | null
-          voided_by?: string | null
+          voided?: boolean
           voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
-          id?: string
-          category?: string
           amount_paise?: number
+          category?: string
+          created_at?: string
           description?: string | null
+          id?: string
           paid_by?: string
           paid_from?: string
-          created_at?: string
-          voided?: boolean
           void_reason?: string | null
-          voided_by?: string | null
+          voided?: boolean
           voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: 'expenses_paid_by_fkey'
-            columns: ['paid_by']
+            foreignKeyName: "expenses_paid_by_fkey"
+            columns: ["paid_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'expenses_voided_by_fkey'
-            columns: ['voided_by']
+            foreignKeyName: "expenses_voided_by_fkey"
+            columns: ["voided_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
       handovers: {
         Row: {
-          id: string
-          volunteer_id: string
           amount_paise: number
-          received_by: string
-          note: string | null
           created_at: string
-          voided: boolean
+          id: string
+          note: string | null
+          received_by: string
           void_reason: string | null
-          voided_by: string | null
+          voided: boolean
           voided_at: string | null
+          voided_by: string | null
+          volunteer_id: string
         }
         Insert: {
-          id?: string
-          volunteer_id: string
           amount_paise: number
-          received_by: string
-          note?: string | null
           created_at?: string
-          voided?: boolean
+          id?: string
+          note?: string | null
+          received_by: string
           void_reason?: string | null
-          voided_by?: string | null
+          voided?: boolean
           voided_at?: string | null
+          voided_by?: string | null
+          volunteer_id: string
         }
         Update: {
-          id?: string
-          volunteer_id?: string
           amount_paise?: number
-          received_by?: string
-          note?: string | null
           created_at?: string
-          voided?: boolean
+          id?: string
+          note?: string | null
+          received_by?: string
           void_reason?: string | null
-          voided_by?: string | null
+          voided?: boolean
           voided_at?: string | null
+          voided_by?: string | null
+          volunteer_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: 'handovers_volunteer_id_fkey'
-            columns: ['volunteer_id']
+            foreignKeyName: "handovers_received_by_fkey"
+            columns: ["received_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'handovers_received_by_fkey'
-            columns: ['received_by']
+            foreignKeyName: "handovers_voided_by_fkey"
+            columns: ["voided_by"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'handovers_voided_by_fkey'
-            columns: ['voided_by']
+            foreignKeyName: "handovers_volunteer_id_fkey"
+            columns: ["volunteer_id"]
             isOneToOne: false
-            referencedRelation: 'users'
-            referencedColumns: ['id']
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
+      mandal_config: {
+        Row: {
+          bank_opening_paise: number
+          expense_categories: string[]
+          id: boolean
+          logo_url: string | null
+          name: string
+          receipt_prefix: string
+          signature_url: string | null
+          transparency_published: boolean
+          upi_qr_url: string | null
+          upi_vpa: string | null
+        }
+        Insert: {
+          bank_opening_paise?: number
+          expense_categories?: string[]
+          id?: boolean
+          logo_url?: string | null
+          name: string
+          receipt_prefix?: string
+          signature_url?: string | null
+          transparency_published?: boolean
+          upi_qr_url?: string | null
+          upi_vpa?: string | null
+        }
+        Update: {
+          bank_opening_paise?: number
+          expense_categories?: string[]
+          id?: boolean
+          logo_url?: string | null
+          name?: string
+          receipt_prefix?: string
+          signature_url?: string | null
+          transparency_published?: boolean
+          upi_qr_url?: string | null
+          upi_vpa?: string | null
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          active: boolean
+          auth_user_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          invite_token: string | null
+          name: string
+          phone: string | null
+          role: string
+        }
+        Insert: {
+          active?: boolean
+          auth_user_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invite_token?: string | null
+          name: string
+          phone?: string | null
+          role: string
+        }
+        Update: {
+          active?: boolean
+          auth_user_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invite_token?: string | null
+          name?: string
+          phone?: string | null
+          role?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
-      // View columns are reported as nullable regardless of the underlying
-      // table's NOT NULL constraints — Postgres does not propagate that
-      // metadata for views, and neither does the real generator.
       public_mandal_branding: {
         Row: {
-          name: string | null
           logo_url: string | null
-          signature_url: string | null
+          name: string | null
           receipt_prefix: string | null
+          signature_url: string | null
+        }
+        Insert: {
+          logo_url?: string | null
+          name?: string | null
+          receipt_prefix?: string | null
+          signature_url?: string | null
+        }
+        Update: {
+          logo_url?: string | null
+          name?: string | null
+          receipt_prefix?: string | null
+          signature_url?: string | null
         }
         Relationships: []
       }
     }
     Functions: {
+      app_user_id: { Args: never; Returns: string }
+      app_user_role: { Args: never; Returns: string }
+      get_expense_categories: { Args: never; Returns: string[] }
       get_public_receipt: {
         Args: { token: string }
         Returns: {
-          receipt_no: number
-          donor_name: string
           amount_paise: number
-          mode: string
           created_at: string
+          donor_name: string
+          mode: string
+          receipt_no: number
+          void_reason: string
           voided: boolean
-          void_reason: string | null
         }[]
       }
-      link_admin_account: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      list_admins: {
-        Args: Record<PropertyKey, never>
-        Returns: { id: string; name: string }[]
+      get_transparency_categories: {
+        Args: never
+        Returns: {
+          amount_paise: number
+          category: string
+        }[]
       }
       get_transparency_report: {
-        Args: Record<PropertyKey, never>
-        Returns: { total_collected_paise: number; total_expenses_paise: number }[]
+        Args: never
+        Returns: {
+          total_collected_paise: number
+          total_expenses_paise: number
+        }[]
       }
-      get_transparency_categories: {
-        Args: Record<PropertyKey, never>
-        Returns: { category: string; amount_paise: number }[]
+      is_admin: { Args: never; Returns: boolean }
+      link_admin_account: { Args: never; Returns: undefined }
+      list_admins: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+        }[]
       }
-      get_expense_categories: {
-        Args: Record<PropertyKey, never>
-        Returns: string[]
-      }
-      redeem_invite: {
-        Args: { token: string }
-        Returns: undefined
-      }
+      redeem_invite: { Args: { token: string }; Returns: undefined }
     }
-    Enums: Record<string, never>
-    CompositeTypes: Record<string, never>
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
 
-type DefaultSchema = Database[Extract<keyof Database, 'public'>]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
-    | { schema: keyof Database },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (Database[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
-        Database[DefaultSchemaTableNameOrOptions['schema']]['Views'])
-    : never) = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
-      Database[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] &
-        DefaultSchema['Views'])
-    ? (DefaultSchema['Tables'] &
-        DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -369,20 +410,23 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    keyof DefaultSchema['Tables'] | { schema: keyof Database },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[DefaultSchemaTableNameOrOptions['schema']]['Tables']
-    : never) = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? Database[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -391,22 +435,68 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    keyof DefaultSchema['Tables'] | { schema: keyof Database },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[DefaultSchemaTableNameOrOptions['schema']]['Tables']
-    : never) = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? Database[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
       : never
     : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {},
+  },
+} as const

@@ -8,7 +8,14 @@
 import { supabase } from './client'
 import type { Database, Tables } from './database.types'
 
-export type PublicReceipt = Database['public']['Functions']['get_public_receipt']['Returns'][number]
+// void_reason is corrected to `| null` here: the hosted type generator can't
+// infer nullability through a `language sql returns table(...)` function, so
+// it always emits the column as non-null even though donations.void_reason
+// (and thus this RPC's real result for a non-voided receipt) is nullable.
+export type PublicReceipt = Omit<
+  Database['public']['Functions']['get_public_receipt']['Returns'][number],
+  'void_reason'
+> & { void_reason: string | null }
 export type MandalBranding = Tables<'public_mandal_branding'>
 
 // Returns null for a bogus/unknown token (RPC returns zero rows) rather than
