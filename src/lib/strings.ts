@@ -15,6 +15,17 @@ export const strings = {
     loading: 'Loading…',
     inviteInvalid: 'This invite link is invalid or has already been used.',
   },
+  signup: {
+    title: 'Start your mandal',
+    intro: 'Create your mandal and you become its first admin. You can invite your team next.',
+    mandalNameLabel: 'Mandal name',
+    adminNameLabel: 'Your name',
+    slugLabel: 'Public link (optional)',
+    slugHelp: 'Leave blank and we pick one from your mandal name.',
+    slugPreviewPrefix: '/transparency/',
+    submit: 'Create mandal',
+    submitting: 'Creating…',
+  },
   admin: {
     dashboardTitle: 'Admin Dashboard',
     volunteersLink: 'Manage volunteers',

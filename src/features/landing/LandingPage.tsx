@@ -457,8 +457,10 @@ function Transparency() {
           <p className="font-serif mb-5.5 text-[17px] leading-relaxed text-stone-600 text-pretty">
             {t.transparency.body}
           </p>
+          {/* Slug-addressed since multi-tenancy: bare /transparency is no
+              longer a route. Points at the published demo mandal. */}
           <Link
-            to="/transparency"
+            to="/transparency/demo"
             className="inline-flex h-12 items-center rounded-xl bg-stone-900 px-5.5 text-sm font-bold text-stone-50 hover:bg-orange-600"
           >
             {t.transparency.cta}
@@ -584,7 +586,7 @@ function FinalCta() {
             {t.finalCta.body}
           </p>
           <Link
-            to="/login"
+            to="/signup"
             className="inline-flex h-14 items-center rounded-2xl bg-orange-600 px-7.5 text-[17px] font-bold text-white shadow-lg shadow-orange-600/40 hover:bg-amber-500 hover:text-stone-900"
           >
             {t.finalCta.ctaPrimary}

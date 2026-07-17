@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
+import { Signup } from '../features/auth/Signup'
 import { RequireRole } from '../features/auth/RequireRole'
 import { VolunteersScreen } from '../features/settings/volunteers'
 import { AdminsScreen } from '../features/settings/admins'
@@ -22,6 +23,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AdminLogin />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/invite/:token" element={<InviteRedeem />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />

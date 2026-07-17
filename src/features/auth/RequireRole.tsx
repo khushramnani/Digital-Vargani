@@ -22,7 +22,18 @@ export function RequireRole({ role, children }: { role: Role | Role[]; children:
     )
   }
 
-  if (!session || !appUser || !allowedRoles.includes(appUser.role as Role)) {
+  if (!session) {
+    return <Navigate to="/login" replace />
+  }
+
+  // Authenticated, but not a member of any mandal yet — they came in via a
+  // magic link and never created one. /login would just re-send a link and
+  // loop them back here; /signup is the only exit.
+  if (!appUser) {
+    return <Navigate to="/signup" replace />
+  }
+
+  if (!allowedRoles.includes(appUser.role as Role)) {
     return <Navigate to="/login" replace />
   }
 
