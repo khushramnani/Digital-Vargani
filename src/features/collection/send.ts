@@ -17,6 +17,18 @@ export function buildSmsLink(phone: string, message: string): string {
   return `sms:${phone}${separator}${encodeURIComponent(message)}`
 }
 
+// WhatsApp's wa.me links need a full international number, digits only (no
+// +, spaces, or symbols). Donor phone numbers are only validated as a
+// plausible 7-15 digit count (lib/validation/donation.ts), not a specific
+// format, so a bare 10-digit number is assumed to be an Indian mobile
+// missing its country code and gets 91 prepended; anything else is passed
+// through as-is on the assumption it already includes a country code.
+export function buildWhatsAppLink(phone: string, message: string): string {
+  const digits = phone.replace(/\D/g, '')
+  const withCountryCode = digits.length === 10 ? `91${digits}` : digits
+  return `https://wa.me/${withCountryCode}?text=${encodeURIComponent(message)}`
+}
+
 // `/r/:public_token` is Task 9's public receipt page (not built yet, per
 // this task's scope boundary) — this only constructs the URL to it.
 export function receiptUrl(publicToken: string): string {
@@ -31,5 +43,17 @@ export function receiptUrl(publicToken: string): string {
 export function sendReceiptSms(donation: Donation): void {
   const message = strings.collection.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
   window.location.href = buildSmsLink(donation.donor_phone ?? '', message)
+  markSmsSent(donation.id).catch(() => {})
+}
+
+// Same shape as sendReceiptSms, opened in a new tab instead of same-tab
+// navigation — unlike the sms: URI (an OS-handled protocol that never
+// actually navigates the tab), https://wa.me/... is a normal URL, so
+// window.location.href would leave the app. markSmsSent is reused
+// unchanged: that column means "a receipt has been sent for this donation"
+// for the Pending Send tray's purposes, not "sent via SMS specifically".
+export function sendReceiptWhatsApp(donation: Donation): void {
+  const message = strings.collection.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
+  window.open(buildWhatsAppLink(donation.donor_phone ?? '', message), '_blank')
   markSmsSent(donation.id).catch(() => {})
 }
