@@ -125,7 +125,20 @@ export function ReceiptPage() {
         )}
 
         <div className="relative flex flex-col items-center gap-4 text-center">
-          <h1 className="text-lg font-semibold tracking-wide text-amber-900 uppercase">{mandalName}</h1>
+          <div className="flex flex-col items-center gap-2">
+            {receipt.logo_url && (
+              <img
+                src={receipt.logo_url}
+                alt={mandalName}
+                className="h-16 w-16 rounded-full border border-amber-800/30 bg-white/60 object-contain p-1"
+              />
+            )}
+            {/* No uppercase, no wide tracking: text-transform does nothing to
+                Devanagari or Gujarati (they're unicase) while letter-spacing
+                actively breaks their conjuncts and matras. This has to read
+                correctly in all four scripts, not just Latin. */}
+            <h1 className="text-xl leading-snug font-semibold text-amber-900">{mandalName}</h1>
+          </div>
 
           {receipt.voided && (
             <div role="alert" className="w-full rounded border-2 border-red-700 bg-red-50 p-3 text-red-800">
@@ -139,13 +152,13 @@ export function ReceiptPage() {
             </div>
           )}
 
-          <p className="text-4xl font-bold text-amber-950">{formatINR(receipt.amount_paise)}</p>
+          <p className="text-5xl font-bold tracking-tight text-amber-950">{formatINR(receipt.amount_paise)}</p>
 
           <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-1 text-left text-sm">
             <dt className="text-stone-500">{t.donorLabel}</dt>
             <dd>{receipt.donor_name}</dd>
             <dt className="text-stone-500">{t.receiptNoLabel}</dt>
-            <dd>{receiptNumber}</dd>
+            <dd className="font-semibold tabular-nums">{receiptNumber}</dd>
             <dt className="text-stone-500">{t.dateLabel}</dt>
             <dd>{formatReceiptDate(receipt.created_at)}</dd>
           </dl>

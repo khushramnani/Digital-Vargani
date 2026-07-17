@@ -142,6 +142,21 @@ describe('ReceiptPage', () => {
     expect(await screen.findByText('Donor')).toBeInTheDocument()
   })
 
+  it('shows the logo as a legible header mark, not only a watermark', async () => {
+    getPublicReceipt.mockResolvedValue({ ...cashReceipt, logo_url: 'https://x.test/logo.png' })
+    render(
+      <MemoryRouter initialEntries={['/r/tok-abc']}>
+        <Routes>
+          <Route path="/r/:public_token" element={<ReceiptPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    // The watermark is aria-hidden; the header mark is the one a donor reads
+    // as "this is my mandal's receipt", so it carries the mandal's name.
+    const mark = await screen.findByAltText(cashReceipt.mandal_name)
+    expect(mark).toHaveAttribute('src', 'https://x.test/logo.png')
+  })
+
   it('never requests or renders donor_phone in any form', async () => {
     getPublicReceipt.mockResolvedValue(cashReceipt)
     renderReceiptPage('tok-abc')
