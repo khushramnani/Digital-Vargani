@@ -71,4 +71,12 @@ describe('MasterLedgerScreen', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: 'Collect donation' })).toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'Collect donation' })).toHaveAttribute('href', '/volunteer')
   })
+
+  it('links to the admin management screen', async () => {
+    fetchFullLedger.mockResolvedValue(balancedLedger)
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Manage admins' })).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: 'Manage admins' })).toHaveAttribute('href', '/admin/admins')
+  })
 })

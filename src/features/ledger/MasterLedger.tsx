@@ -89,6 +89,9 @@ export function MasterLedgerScreen() {
         <Link to="/admin/volunteers" className="text-orange-700 underline">
           {strings.admin.volunteersLink}
         </Link>
+        <Link to="/admin/admins" className="text-orange-700 underline">
+          {strings.admin.adminsLink}
+        </Link>
         <Link to="/admin/settings" className="text-orange-700 underline">
           {strings.admin.settingsLink}
         </Link>

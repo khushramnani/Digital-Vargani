@@ -28,6 +28,7 @@ export const strings = {
     transparencyLink: 'Transparency report',
     collectionsLink: 'All collections',
     collectDonationLink: 'Collect donation',
+    adminsLink: 'Manage admins',
   },
   mandalConfig: {
     title: 'Mandal Settings',
@@ -57,6 +58,20 @@ export const strings = {
     active: 'Active',
     copyLink: 'Copy invite link',
     copied: 'Copied!',
+  },
+  admins: {
+    title: 'Admins',
+    nameLabel: 'Name',
+    emailLabel: 'Email',
+    addButton: 'Add admin',
+    adding: 'Adding…',
+    empty: 'No admins yet.',
+    pending: 'Pending',
+    active: 'Active',
+    loginHint: "They'll get a login link by entering this email at /login.",
+    errors: {
+      email: 'Enter a valid email address.',
+    },
   },
   collection: {
     title: 'Collect Donation',

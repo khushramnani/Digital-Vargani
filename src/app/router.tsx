@@ -4,6 +4,7 @@ import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
 import { RequireRole } from '../features/auth/RequireRole'
 import { VolunteersScreen } from '../features/settings/volunteers'
+import { AdminsScreen } from '../features/settings/admins'
 import { MandalConfigScreen } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
@@ -49,6 +50,14 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <VolunteersScreen />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/admin/admins"
+        element={
+          <RequireRole role="admin">
+            <AdminsScreen />
           </RequireRole>
         }
       />
