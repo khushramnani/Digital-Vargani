@@ -6,7 +6,7 @@ import { voidRow } from '../../lib/db/void'
 import { db, type OutboxDonation } from '../../lib/queue/db'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
-import { sendReceiptSms } from './send'
+import { sendReceiptSms, sendReceiptWhatsApp } from './send'
 import { VoidButton } from '../../components/VoidButton'
 
 const t = strings.pendingSend
@@ -68,8 +68,13 @@ export function PendingSend() {
     }
   }, [appUser])
 
-  function handleSend(donation: Donation) {
+  function handleSendSms(donation: Donation) {
     sendReceiptSms(donation)
+    setSentIds((current) => new Set(current).add(donation.id))
+  }
+
+  function handleSendWhatsApp(donation: Donation) {
+    sendReceiptWhatsApp(donation)
     setSentIds((current) => new Set(current).add(donation.id))
   }
 
@@ -143,10 +148,17 @@ export function PendingSend() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleSend(donation)}
+                    onClick={() => handleSendSms(donation)}
                     className="rounded border border-orange-700 px-3 py-2 text-orange-700"
                   >
-                    {sentIds.has(donation.id) ? t.sent : t.sendButton}
+                    {sentIds.has(donation.id) ? t.sent : t.sendSmsButton}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSendWhatsApp(donation)}
+                    className="rounded border border-orange-700 px-3 py-2 text-orange-700"
+                  >
+                    {sentIds.has(donation.id) ? t.sent : t.sendWhatsAppButton}
                   </button>
                   <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(donation, reason)} />
                 </div>

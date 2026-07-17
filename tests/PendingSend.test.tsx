@@ -117,17 +117,32 @@ describe('PendingSend', () => {
     await waitFor(() => expect(screen.getByText('No pending receipts to send.')).toBeInTheDocument())
   })
 
-  it('tapping Send fires the same SMS link flow and marks the donation sent', async () => {
+  it('tapping SMS fires the same SMS link flow and marks the donation sent', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'SMS' }))
 
     const expectedMessage = encodeURIComponent(
       'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+  })
+
+  it('tapping WhatsApp opens the wa.me link and marks the donation sent', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    renderPendingSend()
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
+
+    const expectedMessage = encodeURIComponent(
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
+    )
+    expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank')
+    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+    openSpy.mockRestore()
   })
 
   it('has a back link to the collection form', async () => {
@@ -153,9 +168,10 @@ describe('PendingSend', () => {
     await waitFor(() => expect(screen.getByText('Queued Donor')).toBeInTheDocument())
     expect(screen.getByText('₹200')).toBeInTheDocument()
     expect(screen.getByText('Waiting for signal')).toBeInTheDocument()
-    // The server-fetched row still gets its Send button — only the queued
+    // The server-fetched row still gets its send buttons — only the queued
     // (not-yet-synced) row has none, since it has no public_token yet.
-    expect(screen.getAllByRole('button', { name: 'Send' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'SMS' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'WhatsApp' })).toHaveLength(1)
   })
 
   it('does not show outbox items belonging to a different volunteer', async () => {
