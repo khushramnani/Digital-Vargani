@@ -2,11 +2,12 @@
 // pipeline. Rotated double-border box in a stamp-ink color; red reads as
 // "cash in hand", blue as "moved electronically", a simple, common
 // convention for either variant this app needs.
-export type StampVariant = 'cash' | 'online'
+export type StampVariant = 'cash' | 'online' | 'approved'
 
 const VARIANT_STYLES: Record<StampVariant, string> = {
   cash: 'border-red-700 text-red-700',
   online: 'border-blue-700 text-blue-700',
+  approved: 'border-emerald-700 text-emerald-700',
 }
 
 export function StampGraphic({ label, variant }: { label: string; variant: StampVariant }) {

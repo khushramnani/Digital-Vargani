@@ -26,9 +26,9 @@ vi.mock('../src/lib/queue/sync', () => ({
 }))
 
 describe('App', () => {
-  it('renders the app shell home route', () => {
+  it('renders the marketing landing page at the home route', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: strings.appName })).toBeInTheDocument()
-    expect(screen.getByText(strings.appTagline)).toBeInTheDocument()
+    expect(screen.getAllByText(strings.landing.productName).length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(strings.landing.hero.titleHighlight)
   })
 })

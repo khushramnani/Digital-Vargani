@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
-import { strings } from '../lib/strings'
+import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
 import { RequireRole } from '../features/auth/RequireRole'
@@ -17,20 +17,10 @@ import { MasterLedgerScreen } from '../features/ledger/MasterLedger'
 import { PublicTransparency } from '../features/transparency/PublicTransparency'
 import { AdminTransparency } from '../features/transparency/AdminTransparency'
 
-function HomePage() {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-2 px-4 text-center">
-      <h1 className="text-2xl font-semibold text-stone-900">{strings.appName}</h1>
-      <p className="text-stone-600">{strings.appTagline}</p>
-      <p className="text-sm text-stone-400">{strings.home.placeholder}</p>
-    </main>
-  )
-}
-
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AdminLogin />} />
       <Route path="/invite/:token" element={<InviteRedeem />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
