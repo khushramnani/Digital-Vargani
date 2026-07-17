@@ -20,8 +20,8 @@ const PAID_FROM_OPTIONS: { value: PaidFrom; label: string }[] = [
 // `expenses` already scopes createExpense/getExpenses per-role server-side
 // (see src/lib/db/expenses.ts), so this component never branches on role.
 // Categories come from getExpenseCategories() (the get_expense_categories
-// RPC), not getMandalConfig() directly — mandal_config's RLS is admin-only,
-// which would otherwise 0-row a volunteer session here.
+// RPC), not getMandal() directly — mandals' RLS is admin-only, which would
+// otherwise 0-row a volunteer session here.
 export function ExpensesScreen() {
   const { appUser } = useAuth()
   const [categories, setCategories] = useState<string[]>([])

@@ -18,8 +18,9 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 // Task 15: the real content for the admin dashboard stub Task 4 left in
 // place of AdminDashboardPage (see src/app/router.tsx) — routed at "/admin".
-// fetchFullLedger() is admin-only (mandal_config_admin_select +
-// users_admin_select RLS), which is exactly the scope this screen needs.
+// fetchFullLedger() is admin-only (mandals_admin_select +
+// users_admin_select RLS), which is exactly the scope this screen needs —
+// and both are mandal-scoped, so it only ever sums this mandal's books.
 export function MasterLedgerScreen() {
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [loading, setLoading] = useState(true)

@@ -54,6 +54,7 @@ const donationInput: CreateDonationInput = {
 
 const serverDonation: Tables<'donations'> = {
   id: 'donation-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   receipt_no: 42,
   public_token: 'tok-abc',
   donor_name: 'Ramesh Kulkarni',

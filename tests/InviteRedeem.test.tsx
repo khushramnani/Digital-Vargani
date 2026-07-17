@@ -36,6 +36,7 @@ const anonSession = { user: { id: 'anon-uid-1' } } as unknown as Session
 
 const linkedVolunteer: Tables<'users'> = {
   id: 'vol-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   name: 'Test Volunteer',
   phone: null,
   email: null,

@@ -48,6 +48,7 @@ export type Database = {
           donor_name: string
           donor_phone: string | null
           id: string
+          mandal_id: string
           mode: string
           public_token: string
           receipt_no: number
@@ -65,6 +66,7 @@ export type Database = {
           donor_name: string
           donor_phone?: string | null
           id?: string
+          mandal_id?: string
           mode: string
           public_token?: string
           receipt_no?: number
@@ -82,6 +84,7 @@ export type Database = {
           donor_name?: string
           donor_phone?: string | null
           id?: string
+          mandal_id?: string
           mode?: string
           public_token?: string
           receipt_no?: number
@@ -100,6 +103,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "donations_mandal_id_fkey"
+            columns: ["mandal_id"]
+            isOneToOne: false
+            referencedRelation: "mandals"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "donations_voided_by_fkey"
             columns: ["voided_by"]
             isOneToOne: false
@@ -115,6 +125,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          mandal_id: string
           paid_by: string
           paid_from: string
           void_reason: string | null
@@ -128,6 +139,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          mandal_id?: string
           paid_by: string
           paid_from: string
           void_reason?: string | null
@@ -141,6 +153,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          mandal_id?: string
           paid_by?: string
           paid_from?: string
           void_reason?: string | null
@@ -149,6 +162,13 @@ export type Database = {
           voided_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "expenses_mandal_id_fkey"
+            columns: ["mandal_id"]
+            isOneToOne: false
+            referencedRelation: "mandals"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "expenses_paid_by_fkey"
             columns: ["paid_by"]
@@ -170,6 +190,7 @@ export type Database = {
           amount_paise: number
           created_at: string
           id: string
+          mandal_id: string
           note: string | null
           received_by: string
           void_reason: string | null
@@ -182,6 +203,7 @@ export type Database = {
           amount_paise: number
           created_at?: string
           id?: string
+          mandal_id?: string
           note?: string | null
           received_by: string
           void_reason?: string | null
@@ -194,6 +216,7 @@ export type Database = {
           amount_paise?: number
           created_at?: string
           id?: string
+          mandal_id?: string
           note?: string | null
           received_by?: string
           void_reason?: string | null
@@ -203,6 +226,13 @@ export type Database = {
           volunteer_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "handovers_mandal_id_fkey"
+            columns: ["mandal_id"]
+            isOneToOne: false
+            referencedRelation: "mandals"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "handovers_received_by_fkey"
             columns: ["received_by"]
@@ -226,39 +256,48 @@ export type Database = {
           },
         ]
       }
-      mandal_config: {
+      mandals: {
         Row: {
           bank_opening_paise: number
+          created_at: string
           expense_categories: string[]
-          id: boolean
+          id: string
           logo_url: string | null
           name: string
+          next_receipt_no: number
           receipt_prefix: string
           signature_url: string | null
+          slug: string
           transparency_published: boolean
           upi_qr_url: string | null
           upi_vpa: string | null
         }
         Insert: {
           bank_opening_paise?: number
+          created_at?: string
           expense_categories?: string[]
-          id?: boolean
+          id?: string
           logo_url?: string | null
           name: string
+          next_receipt_no?: number
           receipt_prefix?: string
           signature_url?: string | null
+          slug: string
           transparency_published?: boolean
           upi_qr_url?: string | null
           upi_vpa?: string | null
         }
         Update: {
           bank_opening_paise?: number
+          created_at?: string
           expense_categories?: string[]
-          id?: boolean
+          id?: string
           logo_url?: string | null
           name?: string
+          next_receipt_no?: number
           receipt_prefix?: string
           signature_url?: string | null
+          slug?: string
           transparency_published?: boolean
           upi_qr_url?: string | null
           upi_vpa?: string | null
@@ -273,6 +312,7 @@ export type Database = {
           email: string | null
           id: string
           invite_token: string | null
+          mandal_id: string
           name: string
           phone: string | null
           role: string
@@ -284,6 +324,7 @@ export type Database = {
           email?: string | null
           id?: string
           invite_token?: string | null
+          mandal_id?: string
           name: string
           phone?: string | null
           role: string
@@ -295,39 +336,33 @@ export type Database = {
           email?: string | null
           id?: string
           invite_token?: string | null
+          mandal_id?: string
           name?: string
           phone?: string | null
           role?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "users_mandal_id_fkey"
+            columns: ["mandal_id"]
+            isOneToOne: false
+            referencedRelation: "mandals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
-      public_mandal_branding: {
-        Row: {
-          logo_url: string | null
-          name: string | null
-          receipt_prefix: string | null
-          signature_url: string | null
-        }
-        Insert: {
-          logo_url?: string | null
-          name?: string | null
-          receipt_prefix?: string | null
-          signature_url?: string | null
-        }
-        Update: {
-          logo_url?: string | null
-          name?: string | null
-          receipt_prefix?: string | null
-          signature_url?: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
+      app_mandal_id: { Args: never; Returns: string }
       app_user_id: { Args: never; Returns: string }
       app_user_role: { Args: never; Returns: string }
+      create_mandal: {
+        Args: { admin_name: string; mandal_name: string; slug_hint?: string }
+        Returns: string
+      }
       get_expense_categories: { Args: never; Returns: string[] }
       get_public_receipt: {
         Args: { token: string }
@@ -335,21 +370,25 @@ export type Database = {
           amount_paise: number
           created_at: string
           donor_name: string
+          logo_url: string
+          mandal_name: string
           mode: string
           receipt_no: number
+          receipt_prefix: string
+          signature_url: string
           void_reason: string
           voided: boolean
         }[]
       }
       get_transparency_categories: {
-        Args: never
+        Args: { mandal_slug: string }
         Returns: {
           amount_paise: number
           category: string
         }[]
       }
       get_transparency_report: {
-        Args: never
+        Args: { mandal_slug: string }
         Returns: {
           total_collected_paise: number
           total_expenses_paise: number
@@ -365,6 +404,7 @@ export type Database = {
         }[]
       }
       redeem_invite: { Args: { token: string }; Returns: undefined }
+      slugify: { Args: { txt: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

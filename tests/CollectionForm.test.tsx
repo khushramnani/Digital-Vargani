@@ -34,6 +34,7 @@ vi.mock('../src/lib/queue/sync', () => ({
 
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   name: 'Sita Volunteer',
   phone: null,
   email: null,
@@ -55,6 +56,7 @@ vi.mock('../src/features/auth/useAuth', () => ({
 
 const createdDonation: Tables<'donations'> = {
   id: 'donation-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   receipt_no: 42,
   public_token: 'tok-abc',
   donor_name: 'Ramesh Kulkarni',

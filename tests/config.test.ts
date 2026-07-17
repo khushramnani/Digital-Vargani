@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getMandalConfig, getExpenseCategories, updateMandalConfig, uploadMandalAsset } from '../src/lib/db/config'
+import { getMandal, getExpenseCategories, updateMandal, uploadMandalAsset } from '../src/lib/db/config'
 import type { Tables } from '../src/lib/db/database.types'
 
 // No live Supabase project exists (same constraint as every prior task's
@@ -21,9 +21,12 @@ vi.mock('../src/lib/db/client', () => ({
   },
 }))
 
-const configRow: Tables<'mandal_config'> = {
-  id: true,
+const MANDAL_ID = '11111111-1111-1111-1111-000000000001'
+
+const configRow: Tables<'mandals'> = {
+  id: MANDAL_ID,
   name: 'Vinayak Mitra Mandal',
+  slug: 'vinayak-mitra-mandal',
   logo_url: null,
   signature_url: null,
   upi_vpa: null,
@@ -32,6 +35,8 @@ const configRow: Tables<'mandal_config'> = {
   expense_categories: ['Misc'],
   bank_opening_paise: 500000,
   transparency_published: false,
+  next_receipt_no: 1,
+  created_at: '2026-07-17T00:00:00.000Z',
 }
 
 beforeEach(() => {
@@ -39,14 +44,17 @@ beforeEach(() => {
   storageFrom.mockReturnValue({ upload, getPublicUrl })
 })
 
-describe('getMandalConfig', () => {
-  it('selects the single mandal_config row', async () => {
+describe('getMandal', () => {
+  // No client-side tenant filter: mandals_admin_select scopes the select to
+  // the caller's own mandal server-side, which is what keeps single() at
+  // exactly one row.
+  it('selects the caller own mandals row with no client-side filter', async () => {
     const single = vi.fn(() => Promise.resolve({ data: configRow, error: null }))
     from.mockReturnValue({ select: () => ({ single }) })
 
-    const result = await getMandalConfig()
+    const result = await getMandal()
 
-    expect(from).toHaveBeenCalledWith('mandal_config')
+    expect(from).toHaveBeenCalledWith('mandals')
     expect(result).toEqual(configRow)
   })
 
@@ -54,12 +62,12 @@ describe('getMandalConfig', () => {
     const single = vi.fn(() => Promise.resolve({ data: null, error: new Error('boom') }))
     from.mockReturnValue({ select: () => ({ single }) })
 
-    await expect(getMandalConfig()).rejects.toThrow('boom')
+    await expect(getMandal()).rejects.toThrow('boom')
   })
 })
 
 describe('getExpenseCategories', () => {
-  it('calls the get_expense_categories RPC (readable by a volunteer session, unlike mandal_config directly)', async () => {
+  it('calls the get_expense_categories RPC (readable by a volunteer session, unlike mandals directly)', async () => {
     rpc.mockResolvedValue({ data: ['Mandap', 'Prasad'], error: null })
 
     const result = await getExpenseCategories()
@@ -81,37 +89,42 @@ describe('getExpenseCategories', () => {
   })
 })
 
-describe('updateMandalConfig', () => {
-  it('updates mandal_config filtered by the id=true single-row key', async () => {
+describe('updateMandal', () => {
+  it('updates mandals filtered by the passed id', async () => {
     const eq = vi.fn(() => Promise.resolve({ error: null }))
     const update = vi.fn(() => ({ eq }))
     from.mockReturnValue({ update })
 
-    await updateMandalConfig({ name: 'New Name', bank_opening_paise: 500000 })
+    await updateMandal(MANDAL_ID, { name: 'New Name', bank_opening_paise: 500000 })
 
-    expect(from).toHaveBeenCalledWith('mandal_config')
+    expect(from).toHaveBeenCalledWith('mandals')
     expect(update).toHaveBeenCalledWith({ name: 'New Name', bank_opening_paise: 500000 })
-    expect(eq).toHaveBeenCalledWith('id', true)
+    expect(eq).toHaveBeenCalledWith('id', MANDAL_ID)
   })
 
-  it('throws when the update errors (e.g. RLS rejects a non-admin)', async () => {
+  it('throws when the update errors (e.g. RLS rejects a non-admin or another mandal id)', async () => {
     const eq = vi.fn(() => Promise.resolve({ error: new Error('permission denied') }))
     from.mockReturnValue({ update: () => ({ eq }) })
 
-    await expect(updateMandalConfig({ name: 'x' })).rejects.toThrow('permission denied')
+    await expect(updateMandal(MANDAL_ID, { name: 'x' })).rejects.toThrow('permission denied')
   })
 })
 
 describe('uploadMandalAsset', () => {
-  it('uploads to a kind-prefixed path in the mandal-assets bucket and returns the public URL', async () => {
-    upload.mockResolvedValue({ data: { path: 'logo-123.png' }, error: null })
+  // The mandal id must lead the path: mandal_assets_admin_write checks
+  // (storage.foldername(name))[1] against app_mandal_id(), so a flat path
+  // is rejected server-side outright.
+  it('uploads under a <mandal_id>/ prefix in the mandal-assets bucket and returns the public URL', async () => {
+    upload.mockResolvedValue({ data: { path: `${MANDAL_ID}/logo-123.png` }, error: null })
     getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://example.com/mandal-assets/logo-123.png' } })
     const file = new File(['x'], 'logo.png', { type: 'image/png' })
 
-    const url = await uploadMandalAsset('logo', file)
+    const url = await uploadMandalAsset(MANDAL_ID, 'logo', file)
 
     expect(storageFrom).toHaveBeenCalledWith('mandal-assets')
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^logo-\d+\.png$/), file, { upsert: true })
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^${MANDAL_ID}/logo-\\d+\\.png$`)), file, {
+      upsert: true,
+    })
     expect(url).toBe('https://example.com/mandal-assets/logo-123.png')
   })
 
@@ -120,16 +133,18 @@ describe('uploadMandalAsset', () => {
     getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://example.com/mandal-assets/signature-1' } })
     const file = new File(['x'], 'signature', { type: 'image/png' })
 
-    await uploadMandalAsset('signature', file)
+    await uploadMandalAsset(MANDAL_ID, 'signature', file)
 
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^signature-\d+\.bin$/), file, { upsert: true })
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^${MANDAL_ID}/signature-\\d+\\.bin$`)), file, {
+      upsert: true,
+    })
   })
 
   it('throws when the upload errors, without calling getPublicUrl', async () => {
     upload.mockResolvedValue({ data: null, error: new Error('upload failed') })
     const file = new File(['x'], 'qr.png')
 
-    await expect(uploadMandalAsset('upi_qr', file)).rejects.toThrow('upload failed')
+    await expect(uploadMandalAsset(MANDAL_ID, 'upi_qr', file)).rejects.toThrow('upload failed')
     expect(getPublicUrl).not.toHaveBeenCalled()
   })
 })

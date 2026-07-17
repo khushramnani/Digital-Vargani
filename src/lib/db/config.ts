@@ -1,48 +1,53 @@
-// Typed query module for the single-row mandal_config table + its Storage
-// assets. RLS (mandal_config_admin_* / mandal_assets_admin_*, both from
-// Task 2 + this task's storage migration) already enforces admin-only
-// writes server-side, so nothing here re-checks role — callers just need
-// to route the screen behind RequireRole role="admin".
+// Typed query module for the mandals table + its Storage assets. RLS
+// (mandals_admin_* / mandal_assets_admin_*) already enforces admin-only,
+// same-mandal writes server-side, so nothing here re-checks role or
+// mandal — callers just route the screen behind RequireRole role="admin".
 import { supabase } from './client'
 import type { Tables, TablesUpdate } from './database.types'
 
-export type MandalConfig = Tables<'mandal_config'>
+export type Mandal = Tables<'mandals'>
 export type MandalAssetKind = 'logo' | 'signature' | 'upi_qr'
 
 const ASSETS_BUCKET = 'mandal-assets'
 
-export async function getMandalConfig(): Promise<MandalConfig> {
-  const { data, error } = await supabase.from('mandal_config').select('*').single()
+// RLS scopes this to the caller's own mandal, so `single()` still returns
+// exactly one row — the tenant filter is server-side, not a client `.eq()`.
+export async function getMandal(): Promise<Mandal> {
+  const { data, error } = await supabase.from('mandals').select('*').single()
   if (error) throw error
   return data
 }
 
-// mandal_config only has an admin-only RLS select policy — a volunteer
-// session gets zero rows from getMandalConfig(). This goes through the
-// get_expense_categories() RPC (this task's migration) instead, which is
-// grant-to-authenticated and exposes only the one column any session
-// (admin or volunteer) actually needs for the expense form's category
-// dropdown.
+// mandals only has an admin-only RLS select policy — a volunteer session
+// gets zero rows from getMandal(). This goes through the
+// get_expense_categories() RPC instead, which is grant-to-authenticated,
+// scoped to app_mandal_id() server-side, and exposes only the one column
+// any session (admin or volunteer) actually needs for the expense form's
+// category dropdown.
 export async function getExpenseCategories(): Promise<string[]> {
   const { data, error } = await supabase.rpc('get_expense_categories')
   if (error) throw error
   return data ?? []
 }
 
-// id is the boolean PK that's always `true` (single-row table, see Task 2's
-// migration) — filtering by it is how the one row gets targeted.
-export async function updateMandalConfig(patch: TablesUpdate<'mandal_config'>): Promise<void> {
-  const { error } = await supabase.from('mandal_config').update(patch).eq('id', true)
+// The id filter is defence in depth, not the guard: mandals_admin_update's
+// `id = app_mandal_id()` is what actually prevents writing another mandal's
+// row. The old `.eq('id', true)` targeted the boolean singleton PK, which
+// no longer exists.
+export async function updateMandal(id: string, patch: TablesUpdate<'mandals'>): Promise<void> {
+  const { error } = await supabase.from('mandals').update(patch).eq('id', id)
   if (error) throw error
 }
 
-// Uploads to a timestamped path (upsert:true covers the same-path
+// Path is `<mandal_id>/<kind>-<timestamp>.<ext>` — the mandal_assets_admin_write
+// policy checks (storage.foldername(name))[1] against app_mandal_id(), so a
+// flat path is rejected outright now. upsert:true covers the same-path
 // re-upload case; a new timestamp naturally covers the timestamped-path
-// case) and returns the public URL. Caller then calls updateMandalConfig
-// with that URL to point the relevant *_url column at it.
-export async function uploadMandalAsset(kind: MandalAssetKind, file: File): Promise<string> {
+// case. Caller then calls updateMandal with that URL to point the relevant
+// *_url column at it.
+export async function uploadMandalAsset(mandalId: string, kind: MandalAssetKind, file: File): Promise<string> {
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
-  const path = `${kind}-${Date.now()}.${ext}`
+  const path = `${mandalId}/${kind}-${Date.now()}.${ext}`
 
   const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, file, { upsert: true })
   if (error) throw error

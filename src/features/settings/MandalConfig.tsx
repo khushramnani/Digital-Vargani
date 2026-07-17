@@ -1,10 +1,10 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
-  getMandalConfig,
-  updateMandalConfig,
+  getMandal,
+  updateMandal,
   uploadMandalAsset,
   type MandalAssetKind,
-  type MandalConfig,
+  type Mandal,
 } from '../../lib/db/config'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
@@ -12,10 +12,15 @@ import { strings } from '../../lib/strings'
 const t = strings.mandalConfig
 
 // Admin-only screen (routed behind RequireRole role="admin"). Single form
-// over the single-row mandal_config table + its three Storage-backed
-// assets — no volunteer management here, that's settings/volunteers.tsx.
+// over the admin's own mandals row + its three Storage-backed assets —
+// RLS scopes the row, so there's no tenant filter here. No volunteer
+// management on this screen, that's settings/volunteers.tsx.
 export function MandalConfigScreen() {
   const [loading, setLoading] = useState(true)
+  // Held in state because updateMandal and uploadMandalAsset both need it:
+  // the update targets this row by id, and the upload path must start with
+  // it or the storage policy rejects the write.
+  const [mandalId, setMandalId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [upiVpa, setUpiVpa] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
@@ -35,7 +40,8 @@ export function MandalConfigScreen() {
   useEffect(() => {
     let active = true
 
-    function applyConfig(config: MandalConfig) {
+    function applyConfig(config: Mandal) {
+      setMandalId(config.id)
       setName(config.name)
       setUpiVpa(config.upi_vpa ?? '')
       setLogoUrl(config.logo_url)
@@ -45,7 +51,7 @@ export function MandalConfigScreen() {
       setBankOpeningRupees(String(toRupees(config.bank_opening_paise)))
     }
 
-    getMandalConfig()
+    getMandal()
       .then((config) => {
         if (active) applyConfig(config)
       })
@@ -65,11 +71,12 @@ export function MandalConfigScreen() {
     const file = event.target.files?.[0]
     event.target.value = '' // allow re-selecting the same file again later
     if (!file) return
+    if (!mandalId) return
 
     setUploading(kind)
     setError(null)
     try {
-      const url = await uploadMandalAsset(kind, file)
+      const url = await uploadMandalAsset(mandalId, kind, file)
       if (kind === 'logo') setLogoUrl(url)
       if (kind === 'signature') setSignatureUrl(url)
       if (kind === 'upi_qr') setUpiQrUrl(url)
@@ -93,12 +100,13 @@ export function MandalConfigScreen() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!mandalId) return
     setSaving(true)
     setSaved(false)
     setError(null)
 
     try {
-      await updateMandalConfig({
+      await updateMandal(mandalId, {
         name,
         upi_vpa: upiVpa || null,
         logo_url: logoUrl,

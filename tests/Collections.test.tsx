@@ -16,6 +16,7 @@ vi.mock('../src/lib/db/void', () => ({ voidRow }))
 
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   name: 'Sita Volunteer',
   phone: null,
   email: null,
@@ -37,6 +38,7 @@ vi.mock('../src/features/auth/useAuth', () => ({
 
 const activeDonation: Tables<'donations'> = {
   id: 'donation-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   receipt_no: 7,
   public_token: 'tok-1',
   donor_name: 'Ganesh Donor',

@@ -4,7 +4,7 @@
 // db/handovers.ts) — a volunteer's select only ever returns their own rows,
 // so fetchLedgerRows works unmodified for either role.
 import { supabase } from './client'
-import { getMandalConfig } from './config'
+import { getMandal } from './config'
 import type { Ledger, LedgerDonation, LedgerExpense, LedgerHandover, LedgerUser } from '../reconcile'
 
 type LedgerRows = Pick<Ledger, 'donations' | 'expenses' | 'handovers'>
@@ -56,16 +56,16 @@ export async function fetchActiveVolunteers(): Promise<VolunteerSummary[]> {
   return data ?? []
 }
 
-// Admin-only (mandal_config_admin_select + users_admin_select RLS): the
+// Admin-only (mandals_admin_select + users_admin_select RLS): the
 // full `Ledger`, including every user and the bank opening balance, for
 // the aggregates (cashHeldByTreasurer, booksBalanceCheck) that need them —
 // Task 15's master ledger. Cash-in-hand (Task 13) only ever needs
 // fetchLedgerRows(), since volunteerCashInHand doesn't touch ledger.users.
 export async function fetchFullLedger(): Promise<Ledger> {
-  const [rows, usersRes, config] = await Promise.all([
+  const [rows, usersRes, mandal] = await Promise.all([
     fetchLedgerRows(),
     supabase.from('users').select('id, role'),
-    getMandalConfig(),
+    getMandal(),
   ])
   if (usersRes.error) throw usersRes.error
 
@@ -74,5 +74,5 @@ export async function fetchFullLedger(): Promise<Ledger> {
     role: u.role as LedgerUser['role'],
   }))
 
-  return { ...rows, users, bankOpeningPaise: config.bank_opening_paise }
+  return { ...rows, users, bankOpeningPaise: mandal.bank_opening_paise }
 }

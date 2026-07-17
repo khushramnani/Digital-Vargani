@@ -1,26 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getPublicReceipt, getPublicBranding } from '../src/lib/db/receipt'
-import type { Tables } from '../src/lib/db/database.types'
+import { getPublicReceipt } from '../src/lib/db/receipt'
 
 // No live Supabase project exists (same constraint as every prior task's
-// tests) — mock the client's `rpc`/`from` calls directly to prove
-// receipt.ts builds the right query shape, and in particular that the RPC
-// call sends *only* the token — never a donor_phone (there's no such
-// field to send in the first place: get_public_receipt's Returns type,
-// asserted against below, has no donor_phone member at all).
-const { rpc, from, maybeSingle } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  from: vi.fn(),
-  maybeSingle: vi.fn(),
-}))
+// tests) — mock the client's `rpc` call directly to prove receipt.ts builds
+// the right query shape, and in particular that the RPC call sends *only*
+// the token — never a donor_phone (there's no such field to send in the
+// first place: get_public_receipt's Returns type, asserted against below,
+// has no donor_phone member at all).
+const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 
 vi.mock('../src/lib/db/client', () => ({
-  supabase: { rpc, from },
+  supabase: { rpc },
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
-  from.mockReturnValue({ select: () => ({ maybeSingle }) })
 })
 
 describe('getPublicReceipt', () => {
@@ -35,6 +29,10 @@ describe('getPublicReceipt', () => {
           created_at: '2026-01-01T00:00:00Z',
           voided: false,
           void_reason: null,
+          mandal_name: 'Vinayak Mitra Mandal',
+          logo_url: null,
+          signature_url: 'https://example.com/signature.png',
+          receipt_prefix: 'VM',
         },
       ],
       error: null,
@@ -49,6 +47,36 @@ describe('getPublicReceipt', () => {
     expect(Object.keys(result ?? {})).not.toContain('donor_phone')
   })
 
+  // Branding arrives joined from the receipt's own mandal — the
+  // public_mandal_branding view (a view over "the one row") is gone, so
+  // there is no second call that could return a different mandal's logo.
+  it('returns the branding of the receipt own mandal alongside it', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          receipt_no: 7,
+          donor_name: 'Donor Name',
+          amount_paise: 50000,
+          mode: 'cash',
+          created_at: '2026-01-01T00:00:00Z',
+          voided: false,
+          void_reason: null,
+          mandal_name: 'Ganesh Seva Mandal',
+          logo_url: 'https://example.com/gs-logo.png',
+          signature_url: null,
+          receipt_prefix: 'GS',
+        },
+      ],
+      error: null,
+    })
+
+    const result = await getPublicReceipt('tok-gs')
+
+    expect(result?.mandal_name).toBe('Ganesh Seva Mandal')
+    expect(result?.receipt_prefix).toBe('GS')
+    expect(result?.logo_url).toBe('https://example.com/gs-logo.png')
+  })
+
   it('returns null for a bogus token (zero rows) rather than throwing', async () => {
     rpc.mockResolvedValue({ data: [], error: null })
 
@@ -61,29 +89,5 @@ describe('getPublicReceipt', () => {
     rpc.mockResolvedValue({ data: null, error: new Error('boom') })
 
     await expect(getPublicReceipt('tok-abc')).rejects.toThrow('boom')
-  })
-})
-
-describe('getPublicBranding', () => {
-  const brandingRow: Tables<'public_mandal_branding'> = {
-    name: 'Vinayak Mitra Mandal',
-    logo_url: 'https://example.com/logo.png',
-    signature_url: 'https://example.com/signature.png',
-    receipt_prefix: 'VM',
-  }
-
-  it('selects from the public_mandal_branding view', async () => {
-    maybeSingle.mockResolvedValue({ data: brandingRow, error: null })
-
-    const result = await getPublicBranding()
-
-    expect(from).toHaveBeenCalledWith('public_mandal_branding')
-    expect(result).toEqual(brandingRow)
-  })
-
-  it('throws when the query errors', async () => {
-    maybeSingle.mockResolvedValue({ data: null, error: new Error('boom') })
-
-    await expect(getPublicBranding()).rejects.toThrow('boom')
   })
 })

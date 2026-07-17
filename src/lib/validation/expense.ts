@@ -23,7 +23,7 @@ export type ExpenseValidationErrors = Partial<Record<'category' | 'amountRupees'
 const t = strings.expenses.errors
 
 // `categories` is the mandal's currently configured expense_categories
-// (from getMandalConfig) — passed in rather than fetched here so this stays
+// (from getExpenseCategories) — passed in rather than fetched here so this stays
 // a pure function, same as donation validation takes no I/O of its own.
 export function validateExpenseInput(
   input: ExpenseFormInput,

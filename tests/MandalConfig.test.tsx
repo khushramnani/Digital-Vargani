@@ -7,21 +7,24 @@ import { MandalConfigScreen } from '../src/features/settings/MandalConfig'
 // (not the raw Supabase client) — this is a component test of the form
 // behavior, not a re-test of config.ts's own query shape (that's
 // tests/config.test.ts).
-const { getMandalConfig, updateMandalConfig, uploadMandalAsset } = vi.hoisted(() => ({
-  getMandalConfig: vi.fn(),
-  updateMandalConfig: vi.fn(),
+const { getMandal, updateMandal, uploadMandalAsset } = vi.hoisted(() => ({
+  getMandal: vi.fn(),
+  updateMandal: vi.fn(),
   uploadMandalAsset: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/config', () => ({
-  getMandalConfig,
-  updateMandalConfig,
+  getMandal,
+  updateMandal,
   uploadMandalAsset,
 }))
 
-const existingConfig: Tables<'mandal_config'> = {
-  id: true,
+const MANDAL_ID = '11111111-1111-1111-1111-000000000001'
+
+const existingConfig: Tables<'mandals'> = {
+  id: MANDAL_ID,
   name: 'Vinayak Mitra Mandal',
+  slug: 'vinayak-mitra-mandal',
   logo_url: null,
   signature_url: null,
   upi_vpa: 'mandal@upi',
@@ -30,12 +33,14 @@ const existingConfig: Tables<'mandal_config'> = {
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 500000, // ₹5000
   transparency_published: false,
+  next_receipt_no: 1,
+  created_at: '2026-07-17T00:00:00.000Z',
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getMandalConfig.mockResolvedValue(existingConfig)
-  updateMandalConfig.mockResolvedValue(undefined)
+  getMandal.mockResolvedValue(existingConfig)
+  updateMandal.mockResolvedValue(undefined)
 })
 
 describe('MandalConfigScreen', () => {
@@ -60,8 +65,9 @@ describe('MandalConfigScreen', () => {
     fireEvent.change(screen.getByLabelText('Bank opening balance (₹)'), { target: { value: '5000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
-    await waitFor(() => expect(updateMandalConfig).toHaveBeenCalledTimes(1))
-    expect(updateMandalConfig).toHaveBeenCalledWith(
+    await waitFor(() => expect(updateMandal).toHaveBeenCalledTimes(1))
+    expect(updateMandal).toHaveBeenCalledWith(
+      MANDAL_ID,
       expect.objectContaining({
         bank_opening_paise: 500000,
         name: 'Vinayak Mitra Mandal',
@@ -81,7 +87,9 @@ describe('MandalConfigScreen', () => {
     const file = new File(['x'], 'logo.png', { type: 'image/png' })
     fireEvent.change(screen.getByLabelText('Logo'), { target: { files: [file] } })
 
-    await waitFor(() => expect(uploadMandalAsset).toHaveBeenCalledWith('logo', file))
+    // The mandal id leads the args now — the storage policy rejects an
+    // upload whose path doesn't start with the caller's own mandal folder.
+    await waitFor(() => expect(uploadMandalAsset).toHaveBeenCalledWith(MANDAL_ID, 'logo', file))
     await waitFor(() =>
       expect(screen.getByAltText('Logo')).toHaveAttribute('src', 'https://example.com/mandal-assets/logo-1.png'),
     )
@@ -89,7 +97,8 @@ describe('MandalConfigScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     await waitFor(() =>
-      expect(updateMandalConfig).toHaveBeenCalledWith(
+      expect(updateMandal).toHaveBeenCalledWith(
+        MANDAL_ID,
         expect.objectContaining({ logo_url: 'https://example.com/mandal-assets/logo-1.png' }),
       ),
     )
@@ -109,14 +118,15 @@ describe('MandalConfigScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() =>
-      expect(updateMandalConfig).toHaveBeenCalledWith(
+      expect(updateMandal).toHaveBeenCalledWith(
+        MANDAL_ID,
         expect.objectContaining({ expense_categories: ['Prasad', 'Sound'] }),
       ),
     )
   })
 
-  it('shows an error instead of a saved confirmation when updateMandalConfig rejects', async () => {
-    updateMandalConfig.mockRejectedValue(new Error('permission denied'))
+  it('shows an error instead of a saved confirmation when updateMandal rejects', async () => {
+    updateMandal.mockRejectedValue(new Error('permission denied'))
     render(<MandalConfigScreen />)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))

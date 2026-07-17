@@ -28,6 +28,7 @@ vi.mock('../src/lib/db/config', () => ({ getExpenseCategories }))
 
 const admin: Tables<'users'> = {
   id: 'admin-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   name: 'Admin User',
   phone: null,
   email: 'admin@example.com',
@@ -51,6 +52,7 @@ const categories = ['Mandap', 'Prasad']
 
 const activeExpense: Expense = {
   id: 'expense-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   category: 'Mandap',
   amount_paise: 250000,
   description: 'Tent rental',
@@ -66,6 +68,7 @@ const activeExpense: Expense = {
 
 const voidedExpense: Expense = {
   id: 'expense-2',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   category: 'Prasad',
   amount_paise: 50000,
   description: 'Sweets',
@@ -81,6 +84,7 @@ const voidedExpense: Expense = {
 
 const createdExpense: Expense = {
   id: 'expense-3',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   category: 'Mandap',
   amount_paise: 100100,
   description: 'Decorations',

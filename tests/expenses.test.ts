@@ -13,6 +13,7 @@ vi.mock('../src/lib/db/client', () => ({
 
 const expenseRow: Tables<'expenses'> = {
   id: 'expense-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   category: 'Mandap',
   amount_paise: 250000,
   description: 'Tent rental',

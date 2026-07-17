@@ -35,6 +35,7 @@ const fakeSession = { user: { id: 'auth-uid-1' } } as unknown as Session
 
 const adminUser: Tables<'users'> = {
   id: 'user-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
   name: 'Admin Treasurer',
   phone: null,
   email: 'admin@example.com',
