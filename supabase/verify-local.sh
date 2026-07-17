@@ -1324,4 +1324,64 @@ END $$;
 reset role;
 SQL
 
+echo "== assertion: get_mandal_default_lang() is per-mandal and volunteer-readable =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role postgres;
+update mandals set default_lang = 'mr' where id = '11111111-1111-1111-1111-000000000001';
+update mandals set default_lang = 'gu' where id = '22222222-2222-2222-2222-000000000002';
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One, mandal one
+DO $$
+BEGIN
+  -- A volunteer cannot read mandals directly, which is exactly why this RPC
+  -- exists — the same gap get_expense_categories() closes.
+  ASSERT NOT EXISTS (SELECT 1 FROM mandals),
+    'FAIL: expected mandals direct select to be empty for a volunteer';
+  ASSERT get_mandal_default_lang() = 'mr',
+    format('FAIL: volunteer should read their own mandal''s default_lang, got %s', get_mandal_default_lang());
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+DO $$
+BEGIN
+  ASSERT get_mandal_default_lang() = 'gu',
+    'LEAK: get_mandal_default_lang() returned another mandal''s value';
+  RAISE NOTICE 'PASS: get_mandal_default_lang() is scoped to the caller''s own mandal';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: get_mandal_default_lang() is not exposed to anon =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM get_mandal_default_lang();
+    RAISE EXCEPTION 'SECURITY HOLE: anon called get_mandal_default_lang()';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: anon is rejected from get_mandal_default_lang() (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: default_lang rejects an unsupported code =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+BEGIN
+  BEGIN
+    UPDATE mandals SET default_lang = 'fr' WHERE id = '11111111-1111-1111-1111-000000000001';
+    RAISE EXCEPTION 'FAIL: default_lang accepted an unsupported language code';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: default_lang check constraint rejects an unsupported code';
+  END;
+END $$;
+SQL
+
 echo "== all assertions passed =="
