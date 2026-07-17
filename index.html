@@ -13,10 +13,11 @@
     />
     <meta name="keywords" content="digital vargani, vargani app, Ganesh mandal, ganeshotsav donation, mandal fund management, mandal receipt, donation collection app, mandal treasurer" />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="/" />
 
     <!-- Open Graph / social preview. og:image is the favicon for now; swap in a
-         1200×630 PNG and set og:url/canonical to the real domain once deployed. -->
+         1200×630 PNG once deployed. Add <link rel="canonical" href="https://<real-domain>/">
+         and og:url then too — a root-relative "/" canonical makes the Vite HTML
+         plugin try to read the project root as a file (EISDIR), breaking the build. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Digital Vargani" />
     <meta property="og:title" content="Digital Vargani — Free Vargani & Fund Management for Ganesh Mandals" />
