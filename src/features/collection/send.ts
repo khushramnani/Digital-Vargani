@@ -3,7 +3,7 @@
 // button — one send flow, reused (not duplicated) in both places.
 import { markSmsSent, type Donation } from '../../lib/db/donations'
 import { toRupees } from '../../lib/money'
-import { strings } from '../../lib/strings'
+import { receiptStrings } from '../../lib/i18n/receipt'
 
 export { markSmsSent }
 
@@ -41,7 +41,7 @@ export function receiptUrl(publicToken: string): string {
 // update just leaves the row in the "Pending send" tray (PendingSend.tsx)
 // instead of surfacing an error over an otherwise-successful donation.
 export function sendReceiptSms(donation: Donation): void {
-  const message = strings.collection.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
+  const message = receiptStrings.en.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
   window.location.href = buildSmsLink(donation.donor_phone ?? '', message)
   markSmsSent(donation.id).catch(() => {})
 }
@@ -53,7 +53,7 @@ export function sendReceiptSms(donation: Donation): void {
 // unchanged: that column means "a receipt has been sent for this donation"
 // for the Pending Send tray's purposes, not "sent via SMS specifically".
 export function sendReceiptWhatsApp(donation: Donation): void {
-  const message = strings.collection.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
+  const message = receiptStrings.en.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
   window.open(buildWhatsAppLink(donation.donor_phone ?? '', message), '_blank', 'noopener')
   markSmsSent(donation.id).catch(() => {})
 }

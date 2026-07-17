@@ -102,10 +102,6 @@ export const strings = {
     cashInHandLink: 'Cash in hand',
     collectionsLink: 'My collections',
     savedOffline: "Saved — will send once you're back online.",
-    // Kept short (SMS length matters). {amountRupees} is a plain number
-    // (no thousands separator, no repeated ₹) so the message stays short.
-    smsMessage: (amountRupees: number, receiptLink: string): string =>
-      `Thank you for your ₹${amountRupees} contribution. View your official receipt here: ${receiptLink}`,
     errors: {
       donorName: "Enter the donor's name.",
       donorPhone: 'Enter a valid phone number.',
@@ -200,18 +196,6 @@ export const strings = {
     netBalanceLabel: 'Net Balance',
     balanced: 'Books balanced',
     discrepancyPrefix: 'Discrepancy: ',
-  },
-  receipt: {
-    notFound: 'Receipt not found.',
-    donorLabel: 'Donor',
-    amountLabel: 'Amount',
-    receiptNoLabel: 'Receipt No.',
-    dateLabel: 'Date',
-    stampCash: 'RECEIVED: CASH',
-    stampOnline: 'RECEIVED: ONLINE',
-    voidedBanner: 'This entry has been voided',
-    voidedReasonPrefix: 'Reason: ',
-    signatureLabel: 'President',
   },
   landing: {
     productName: 'Digital Vargani',

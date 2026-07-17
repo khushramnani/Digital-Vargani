@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom'
 import { getPublicReceipt, type PublicReceipt } from '../../lib/db/receipt'
 import { StampGraphic } from '../../components/StampGraphic'
 import { formatINR } from '../../lib/money'
+import { receiptStrings } from '../../lib/i18n/receipt'
 import { strings } from '../../lib/strings'
 
-const t = strings.receipt
+const t = receiptStrings.en
 
 type PageState =
   | { status: 'loading' }
