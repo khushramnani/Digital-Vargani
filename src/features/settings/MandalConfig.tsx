@@ -6,6 +6,7 @@ import {
   type MandalAssetKind,
   type Mandal,
 } from '../../lib/db/config'
+import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 
@@ -32,6 +33,10 @@ export function MandalConfigScreen() {
   // toPaise conversion only happens at submit time (and toRupees only at
   // load time), per the brief: this is the first screen to need it.
   const [bankOpeningRupees, setBankOpeningRupees] = useState('0')
+  // toLang() on the way in as well as out: default_lang is a plain `text`
+  // column to TypeScript (the check constraint that narrows it lives in the
+  // DB), so this is the boundary that turns it back into a Lang.
+  const [defaultLang, setDefaultLang] = useState<Lang>('en')
   const [uploading, setUploading] = useState<MandalAssetKind | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -49,6 +54,7 @@ export function MandalConfigScreen() {
       setUpiQrUrl(config.upi_qr_url)
       setCategories(config.expense_categories)
       setBankOpeningRupees(String(toRupees(config.bank_opening_paise)))
+      setDefaultLang(toLang(config.default_lang))
     }
 
     getMandal()
@@ -114,6 +120,7 @@ export function MandalConfigScreen() {
         upi_qr_url: upiQrUrl,
         expense_categories: categories,
         bank_opening_paise: toPaise(Number(bankOpeningRupees) || 0),
+        default_lang: defaultLang,
       })
       setSaved(true)
     } catch (err) {
@@ -227,6 +234,23 @@ export function MandalConfigScreen() {
           className="rounded border border-stone-300 px-3 py-2"
         />
         <p className="text-sm text-stone-400">{formatINR(toPaise(Number(bankOpeningRupees) || 0))}</p>
+
+        <label htmlFor="default-lang" className="text-sm text-stone-600">
+          {t.defaultLangLabel}
+        </label>
+        <select
+          id="default-lang"
+          value={defaultLang}
+          onChange={(event) => setDefaultLang(toLang(event.target.value))}
+          className="rounded border border-stone-300 px-3 py-2"
+        >
+          {LANGS.map((lang) => (
+            <option key={lang} value={lang}>
+              {strings.languages[lang]}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-stone-500">{t.defaultLangHelp}</p>
 
         <button
           type="submit"

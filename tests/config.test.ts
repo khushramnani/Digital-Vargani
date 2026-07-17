@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getMandal, getExpenseCategories, updateMandal, uploadMandalAsset } from '../src/lib/db/config'
+import {
+  getMandal,
+  getExpenseCategories,
+  getMandalDefaultLang,
+  updateMandal,
+  uploadMandalAsset,
+} from '../src/lib/db/config'
 import type { Tables } from '../src/lib/db/database.types'
 
 // No live Supabase project exists (same constraint as every prior task's
@@ -35,6 +41,7 @@ const configRow: Tables<'mandals'> = {
   expense_categories: ['Misc'],
   bank_opening_paise: 500000,
   transparency_published: false,
+  default_lang: 'en',
   next_receipt_no: 1,
   created_at: '2026-07-17T00:00:00.000Z',
 }
@@ -86,6 +93,28 @@ describe('getExpenseCategories', () => {
     rpc.mockResolvedValue({ data: null, error: new Error('permission denied') })
 
     await expect(getExpenseCategories()).rejects.toThrow('permission denied')
+  })
+})
+
+describe('getMandalDefaultLang', () => {
+  it('calls the get_mandal_default_lang RPC', async () => {
+    rpc.mockResolvedValue({ data: 'mr', error: null })
+    const result = await getMandalDefaultLang()
+    expect(rpc).toHaveBeenCalledWith('get_mandal_default_lang')
+    expect(result).toBe('mr')
+  })
+
+  // A mandal row could hold a code this build doesn't know (rolled back
+  // deploy, hand-edited row). The picker must not render a broken option.
+  it('falls back to English for an unrecognised value', async () => {
+    rpc.mockResolvedValue({ data: 'fr', error: null })
+    expect(await getMandalDefaultLang()).toBe('en')
+  })
+
+  // Never block the collection form on this — it's a preference, not data.
+  it('falls back to English when the RPC errors', async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error('boom') })
+    expect(await getMandalDefaultLang()).toBe('en')
   })
 })
 

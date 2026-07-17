@@ -31,6 +31,7 @@ const config: Tables<'mandals'> = {
   expense_categories: ['Mandap'],
   bank_opening_paise: 0,
   transparency_published: false,
+  default_lang: 'en',
   next_receipt_no: 1,
   created_at: '2026-07-17T00:00:00.000Z',
 }

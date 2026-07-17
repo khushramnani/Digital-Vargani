@@ -2,6 +2,7 @@
 // (mandals_admin_* / mandal_assets_admin_*) already enforces admin-only,
 // same-mandal writes server-side, so nothing here re-checks role or
 // mandal — callers just route the screen behind RequireRole role="admin".
+import { toLang, type Lang } from '../i18n/receipt'
 import { supabase } from './client'
 import type { Tables, TablesUpdate } from './database.types'
 
@@ -28,6 +29,16 @@ export async function getExpenseCategories(): Promise<string[]> {
   const { data, error } = await supabase.rpc('get_expense_categories')
   if (error) throw error
   return data ?? []
+}
+
+// mandals is admin-only at the RLS level, so a volunteer session reads this
+// one column through the RPC instead — same pattern as getExpenseCategories.
+// Never throws: the picker's preset is a convenience, and failing it would
+// block the collection form over a preference.
+export async function getMandalDefaultLang(): Promise<Lang> {
+  const { data, error } = await supabase.rpc('get_mandal_default_lang')
+  if (error) return 'en'
+  return toLang(data)
 }
 
 // The id filter is defence in depth, not the guard: mandals_admin_update's

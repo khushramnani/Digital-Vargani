@@ -50,10 +50,23 @@ export const strings = {
     addCategory: 'Add',
     removeCategory: 'Remove category',
     bankOpeningLabel: 'Bank opening balance (₹)',
+    defaultLangLabel: 'Default receipt language',
+    defaultLangHelp: 'Preselected when a volunteer sends a receipt. They can still change it per donation.',
     uploading: 'Uploading…',
     saveButton: 'Save settings',
     saving: 'Saving…',
     saved: 'Settings saved.',
+  },
+  // Top-level, not inside mandalConfig: every language picker (mandal
+  // settings, the collection form, pending send) names the languages, and
+  // three copies of these four names is three places to drift. Endonyms —
+  // a Marathi donor's volunteer looks for "मराठी", not "Marathi", and the
+  // surrounding operator UI staying English doesn't change that.
+  languages: {
+    en: 'English',
+    mr: 'मराठी',
+    hi: 'हिंदी',
+    gu: 'ગુજરાતી',
   },
   volunteers: {
     title: 'Volunteers',

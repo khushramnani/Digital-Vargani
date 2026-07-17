@@ -33,6 +33,7 @@ const existingConfig: Tables<'mandals'> = {
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 500000, // ₹5000
   transparency_published: false,
+  default_lang: 'en',
   next_receipt_no: 1,
   created_at: '2026-07-17T00:00:00.000Z',
 }
