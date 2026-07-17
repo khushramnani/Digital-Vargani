@@ -260,6 +260,7 @@ export type Database = {
         Row: {
           bank_opening_paise: number
           created_at: string
+          default_lang: string
           expense_categories: string[]
           id: string
           logo_url: string | null
@@ -275,6 +276,7 @@ export type Database = {
         Insert: {
           bank_opening_paise?: number
           created_at?: string
+          default_lang?: string
           expense_categories?: string[]
           id?: string
           logo_url?: string | null
@@ -290,6 +292,7 @@ export type Database = {
         Update: {
           bank_opening_paise?: number
           created_at?: string
+          default_lang?: string
           expense_categories?: string[]
           id?: string
           logo_url?: string | null
@@ -364,6 +367,7 @@ export type Database = {
         Returns: string
       }
       get_expense_categories: { Args: never; Returns: string[] }
+      get_mandal_default_lang: { Args: never; Returns: string }
       get_public_receipt: {
         Args: { token: string }
         Returns: {
