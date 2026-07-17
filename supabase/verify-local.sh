@@ -1053,6 +1053,42 @@ BEGIN
 END $$;
 SQL
 
+echo "== assertion: TENANT ISOLATION — an admin invites into their OWN mandal by default =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- users has no insert trigger, so mandal_id comes from the column default
+-- (app_mandal_id()). This is the real path settings/volunteers.tsx uses:
+-- it inserts name/phone/role/invite_token and nothing else.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+
+insert into users (name, phone, role, invite_token, active)
+  values ('Invited By M2', '9000000099', 'volunteer', 'invite-default-test', true);
+
+DO $$
+DECLARE
+  v_mandal uuid;
+BEGIN
+  SELECT mandal_id INTO v_mandal FROM users WHERE name = 'Invited By M2';
+  ASSERT v_mandal = '22222222-2222-2222-2222-000000000002',
+    format('FAIL: invited volunteer landed in %s, not the inviting admin''s mandal', v_mandal);
+  RAISE NOTICE 'PASS: an invited volunteer defaults into the inviting admin''s mandal';
+END $$;
+
+-- And an admin must not be able to invite INTO another mandal by forging it.
+DO $$
+BEGIN
+  BEGIN
+    insert into users (mandal_id, name, role, invite_token, active)
+      values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer',
+              'invite-cross-test', true);
+    RAISE EXCEPTION 'SECURITY HOLE: an admin invited a user into another mandal';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: cross-mandal invite rejected by users_admin_insert (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
 echo "== assertion: create_mandal() guards =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 insert into auth.users (id, email) values
