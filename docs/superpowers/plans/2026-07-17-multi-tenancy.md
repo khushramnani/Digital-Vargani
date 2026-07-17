@@ -543,7 +543,7 @@ Do not commit yet.
 
 **Interfaces:**
 - Consumes: `app_mandal_id()` from Task 2, `slugify()` + `mandals` from Task 1.
-- Produces: `create_mandal(mandal_name text, admin_name text) returns uuid`; re-published `list_admins()`, `get_expense_categories()`, `get_public_receipt(token text)`, `get_transparency_report(mandal_slug text)`, `get_transparency_categories(mandal_slug text)`. `link_admin_account()` and `redeem_invite(token)` are deliberately unchanged.
+- Produces: `create_mandal(mandal_name text, admin_name text, slug_hint text default null) returns uuid` — **three args as shipped**, not the two this task's Steps 4–5 below were originally written against; see the STATUS header. Also re-published `list_admins()`, `get_expense_categories()`, `get_public_receipt(token text)`, `get_transparency_report(mandal_slug text)`, `get_transparency_categories(mandal_slug text)`. `link_admin_account()` and `redeem_invite(token)` are deliberately unchanged.
 
 - [ ] **Step 1: Drop the cross-tenant branding view and fold branding into the receipt RPC**
 
