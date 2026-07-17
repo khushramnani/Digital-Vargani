@@ -53,16 +53,16 @@ export function LandingPage() {
 
 function Logo() {
   return (
-    <Link to="/" className="flex flex-none items-center gap-2.5">
-      <div className="font-mark flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-xl font-extrabold text-stone-900 shadow-lg shadow-orange-600/30">
-        ॥
-      </div>
-      <div className="leading-tight">
-        <div className="font-display text-[17px] font-extrabold tracking-tight text-stone-900">{t.productName}</div>
-        <div className="text-[10px] font-semibold tracking-widest text-stone-400 uppercase">
-          {t.productSubtitle}
-        </div>
-      </div>
+    <Link to="/" className="flex flex-none flex-col leading-none">
+      {/* Wordmark, not an icon: Marcellus (already loaded as --font-mark) with
+          the brand gradient clipped into the text carries the identity on its
+          own, so there's no logo glyph to design, localise, or keep in sync. */}
+      <span className="font-mark bg-gradient-to-br from-amber-500 to-orange-600 bg-clip-text pr-0.5 text-[23px] tracking-tight text-transparent">
+        {t.productName}
+      </span>
+      <span className="mt-0.5 text-[10px] font-semibold tracking-widest text-stone-400 uppercase">
+        {t.productSubtitle}
+      </span>
     </Link>
   )
 }
@@ -600,12 +600,9 @@ function FinalCta() {
 function Footer() {
   return (
     <footer className="mx-auto flex max-w-6xl flex-wrap items-center gap-3.5 px-6 py-10 sm:py-14">
-      <div className="flex items-center gap-2.5">
-        <div className="font-mark flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-base font-extrabold text-stone-900">
-          ॥
-        </div>
-        <span className="font-display text-[15px] font-extrabold">{t.productName}</span>
-      </div>
+      <span className="font-mark bg-gradient-to-br from-amber-500 to-orange-600 bg-clip-text pr-0.5 text-[19px] tracking-tight text-transparent">
+        {t.productName}
+      </span>
       <span className="text-[13px] font-medium text-stone-400">{t.footer.tagline}</span>
       <div className="flex-1" />
       <span className="text-[13px] font-medium text-stone-400">{t.footer.copyright}</span>
