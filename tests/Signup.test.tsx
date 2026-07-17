@@ -20,13 +20,19 @@ vi.mock('react-router-dom', async () => ({
 
 beforeEach(() => vi.clearAllMocks())
 
-function fillAndSubmit(mandalName: string, adminName: string, slug?: string) {
+// State is a required field now, so every submit selects one (otherwise the
+// browser's constraint validation blocks the submit and createMandal never
+// runs).
+function fillAndSubmit(mandalName: string, adminName: string, opts: { slug?: string; state?: string } = {}) {
   fireEvent.change(screen.getByLabelText('Mandal name'), { target: { value: mandalName } })
   fireEvent.change(screen.getByLabelText('Your name'), { target: { value: adminName } })
-  if (slug !== undefined) {
-    fireEvent.change(screen.getByLabelText('Public link (optional)'), { target: { value: slug } })
+  // The only <select> on the form; querying by role dodges option-text
+  // pollution of the wrapping label.
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: opts.state ?? 'Maharashtra' } })
+  if (opts.slug !== undefined) {
+    fireEvent.change(screen.getByLabelText(/Public link/), { target: { value: opts.slug } })
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Create mandal' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create my mandal' }))
 }
 
 describe('Signup', () => {
@@ -38,10 +44,14 @@ describe('Signup', () => {
       </MemoryRouter>,
     )
 
-    fillAndSubmit('Shivaji Nagar Mandal', 'New Founder', 'shivaji-nagar')
+    fillAndSubmit('Shivaji Nagar Mandal', 'New Founder', { slug: 'shivaji-nagar', state: 'Maharashtra' })
 
     await waitFor(() =>
-      expect(createMandal).toHaveBeenCalledWith('Shivaji Nagar Mandal', 'New Founder', 'shivaji-nagar'),
+      expect(createMandal).toHaveBeenCalledWith('Shivaji Nagar Mandal', 'New Founder', {
+        slugHint: 'shivaji-nagar',
+        state: 'Maharashtra',
+        address: undefined,
+      }),
     )
     // refreshAppUser must run before navigating: RequireRole reads appUser,
     // which is still null until the just-created users row is re-fetched.
@@ -61,7 +71,13 @@ describe('Signup', () => {
 
     fillAndSubmit('गणेश मंडळ', 'New Founder')
 
-    await waitFor(() => expect(createMandal).toHaveBeenCalledWith('गणेश मंडळ', 'New Founder', undefined))
+    await waitFor(() =>
+      expect(createMandal).toHaveBeenCalledWith('गणेश मंडळ', 'New Founder', {
+        slugHint: undefined,
+        state: 'Maharashtra',
+        address: undefined,
+      }),
+    )
   })
 
   it('previews the public transparency URL the chosen link will produce', async () => {
@@ -71,7 +87,7 @@ describe('Signup', () => {
       </MemoryRouter>,
     )
 
-    fireEvent.change(screen.getByLabelText('Public link (optional)'), { target: { value: 'Shivaji Nagar!' } })
+    fireEvent.change(screen.getByLabelText(/Public link/), { target: { value: 'Shivaji Nagar!' } })
 
     expect(screen.getByText('/transparency/shivaji-nagar')).toBeInTheDocument()
   })

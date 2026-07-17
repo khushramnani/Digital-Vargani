@@ -20,3 +20,15 @@ export async function voidRow(table: VoidableTable, id: string, reason: string, 
     .eq('id', id)
   if (error) throw error
 }
+
+// Admin-only bulk void of the whole mandal's donation ledger — the "clear
+// all donations" companion to per-row delete. Goes through the
+// clear_donation_history RPC (SECURITY DEFINER, is_admin() + mandal-scoped)
+// rather than a client-side loop: one atomic statement, and the voided_by /
+// mandal predicate are set server-side where they can't be forged. Returns
+// how many rows were cleared.
+export async function clearAllDonations(reason: string): Promise<number> {
+  const { data, error } = await supabase.rpc('clear_donation_history', { reason })
+  if (error) throw error
+  return data ?? 0
+}

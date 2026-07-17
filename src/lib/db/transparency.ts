@@ -9,7 +9,12 @@
 // returns zero rows too, so it is indistinguishable from an unpublished one.
 import { supabase } from './client'
 
-export type TransparencyTotals = { totalCollectedPaise: number; totalExpensesPaise: number }
+export type TransparencyTotals = {
+  // From the 20260717190000 migration — the report titles itself with this.
+  mandalName: string
+  totalCollectedPaise: number
+  totalExpensesPaise: number
+}
 export type CategoryBreakdown = { category: string; amountPaise: number }
 
 export async function getTransparencyReport(mandalSlug: string): Promise<TransparencyTotals | null> {
@@ -17,7 +22,11 @@ export async function getTransparencyReport(mandalSlug: string): Promise<Transpa
   if (error) throw error
   const row = data?.[0]
   if (!row) return null
-  return { totalCollectedPaise: row.total_collected_paise, totalExpensesPaise: row.total_expenses_paise }
+  return {
+    mandalName: row.mandal_name,
+    totalCollectedPaise: row.total_collected_paise,
+    totalExpensesPaise: row.total_expenses_paise,
+  }
 }
 
 export async function getTransparencyCategories(mandalSlug: string): Promise<CategoryBreakdown[]> {

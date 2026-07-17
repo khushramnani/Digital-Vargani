@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import { MandalConfigScreen } from '../src/features/settings/MandalConfig'
 
@@ -25,6 +26,9 @@ const existingConfig: Tables<'mandals'> = {
   id: MANDAL_ID,
   name: 'Vinayak Mitra Mandal',
   slug: 'vinayak-mitra-mandal',
+  state: null,
+  address: null,
+  creator_phone: null,
   logo_url: null,
   signature_url: null,
   upi_vpa: 'mandal@upi',
@@ -46,7 +50,7 @@ beforeEach(() => {
 
 describe('MandalConfigScreen', () => {
   it('renders existing values, converting bank_opening_paise back to rupees', async () => {
-    render(<MandalConfigScreen />)
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
     expect(screen.getByLabelText('UPI VPA')).toHaveValue('mandal@upi')
@@ -59,7 +63,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('submits with bank_opening_paise converted from the rupees input via toPaise (5000 -> 500000)', async () => {
-    render(<MandalConfigScreen />)
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -81,7 +85,7 @@ describe('MandalConfigScreen', () => {
 
   it('uploads a selected logo file and includes the returned URL on save', async () => {
     uploadMandalAsset.mockResolvedValue('https://example.com/mandal-assets/logo-1.png')
-    render(<MandalConfigScreen />)
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -106,7 +110,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('adds and removes expense category tags', async () => {
-    render(<MandalConfigScreen />)
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -128,7 +132,7 @@ describe('MandalConfigScreen', () => {
 
   it('shows an error instead of a saved confirmation when updateMandal rejects', async () => {
     updateMandal.mockRejectedValue(new Error('permission denied'))
-    render(<MandalConfigScreen />)
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))

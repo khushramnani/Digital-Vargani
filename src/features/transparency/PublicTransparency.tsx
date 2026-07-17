@@ -46,9 +46,7 @@ export function PublicTransparency() {
   }, [slug])
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
-
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 bg-stone-50 px-4 py-8 sm:py-12">
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}
@@ -58,7 +56,7 @@ export function PublicTransparency() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : totals ? (
-        <TransparencyReport totals={totals} categories={categories} />
+        <TransparencyReport totals={totals} categories={categories} mandalName={totals.mandalName} />
       ) : (
         <p className="text-stone-400">{t.notPublished}</p>
       )}

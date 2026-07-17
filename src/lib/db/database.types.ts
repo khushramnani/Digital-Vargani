@@ -258,8 +258,10 @@ export type Database = {
       }
       mandals: {
         Row: {
+          address: string | null
           bank_opening_paise: number
           created_at: string
+          creator_phone: string | null
           default_lang: string
           expense_categories: string[]
           id: string
@@ -269,13 +271,16 @@ export type Database = {
           receipt_prefix: string
           signature_url: string | null
           slug: string
+          state: string | null
           transparency_published: boolean
           upi_qr_url: string | null
           upi_vpa: string | null
         }
         Insert: {
+          address?: string | null
           bank_opening_paise?: number
           created_at?: string
+          creator_phone?: string | null
           default_lang?: string
           expense_categories?: string[]
           id?: string
@@ -285,13 +290,16 @@ export type Database = {
           receipt_prefix?: string
           signature_url?: string | null
           slug: string
+          state?: string | null
           transparency_published?: boolean
           upi_qr_url?: string | null
           upi_vpa?: string | null
         }
         Update: {
+          address?: string | null
           bank_opening_paise?: number
           created_at?: string
+          creator_phone?: string | null
           default_lang?: string
           expense_categories?: string[]
           id?: string
@@ -301,6 +309,7 @@ export type Database = {
           receipt_prefix?: string
           signature_url?: string | null
           slug?: string
+          state?: string | null
           transparency_published?: boolean
           upi_qr_url?: string | null
           upi_vpa?: string | null
@@ -362,8 +371,15 @@ export type Database = {
       app_mandal_id: { Args: never; Returns: string }
       app_user_id: { Args: never; Returns: string }
       app_user_role: { Args: never; Returns: string }
+      clear_donation_history: { Args: { reason: string }; Returns: number }
       create_mandal: {
-        Args: { admin_name: string; mandal_name: string; slug_hint?: string }
+        Args: {
+          admin_name: string
+          mandal_address?: string
+          mandal_name: string
+          mandal_state?: string
+          slug_hint?: string
+        }
         Returns: string
       }
       get_expense_categories: { Args: never; Returns: string[] }
@@ -394,6 +410,7 @@ export type Database = {
       get_transparency_report: {
         Args: { mandal_slug: string }
         Returns: {
+          mandal_name: string
           total_collected_paise: number
           total_expenses_paise: number
         }[]

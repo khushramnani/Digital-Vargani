@@ -117,7 +117,7 @@ export function AdminTransparency() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : (
-        totals && <TransparencyReport totals={totals} categories={categories} />
+        totals && <TransparencyReport totals={totals} categories={categories} mandalName={mandal?.name} />
       )}
     </main>
   )

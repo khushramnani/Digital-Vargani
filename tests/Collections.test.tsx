@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import { CollectionsScreen } from '../src/features/collection/Collections'
 
@@ -10,9 +11,9 @@ const { getDonations } = vi.hoisted(() => ({ getDonations: vi.fn() }))
 
 vi.mock('../src/lib/db/donations', () => ({ getDonations }))
 
-const { voidRow } = vi.hoisted(() => ({ voidRow: vi.fn() }))
+const { voidRow, clearAllDonations } = vi.hoisted(() => ({ voidRow: vi.fn(), clearAllDonations: vi.fn() }))
 
-vi.mock('../src/lib/db/void', () => ({ voidRow }))
+vi.mock('../src/lib/db/void', () => ({ voidRow, clearAllDonations }))
 
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
@@ -74,35 +75,42 @@ beforeEach(() => {
 })
 
 describe('CollectionsScreen', () => {
-  it('renders every donation, including a voided one struck-through with its reason and no Void button', async () => {
-    render(<CollectionsScreen />)
+  it('shows active donations with a Delete action and hides removed ones until toggled', async () => {
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
     expect(screen.getByText('₹500')).toBeInTheDocument()
+    // A voided donation is removed from the current ledger — hidden by default.
+    expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
+
+    // Reveal removed rows: struck-through with the reason, and no Delete action.
+    fireEvent.click(screen.getByRole('button', { name: /Show removed/ }))
     expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
     expect(screen.getByText(/Entered twice/)).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Void' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
   })
 
-  it('prompts for a required reason and calls voidRow(donations, ...) when Void is tapped', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Wrong amount')
-    render(<CollectionsScreen />)
+  it('deletes a donation through the confirm dialog, calling voidRow with the typed reason', async () => {
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Void' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Wrong amount' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete donation' }))
 
-    expect(promptSpy).toHaveBeenCalled()
     await waitFor(() =>
       expect(voidRow).toHaveBeenCalledWith('donations', 'donation-1', 'Wrong amount', 'volunteer-1'),
     )
   })
 
-  it('does not call voidRow when the reason prompt is cancelled', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue(null)
-    render(<CollectionsScreen />)
+  it('does not call voidRow when the confirm dialog is cancelled', async () => {
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Void' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
 
     expect(voidRow).not.toHaveBeenCalled()
   })

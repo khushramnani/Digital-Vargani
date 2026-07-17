@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import type { Tables } from '../src/lib/db/database.types'
 import type { Expense } from '../src/lib/db/expenses'
 import { ExpensesScreen } from '../src/features/expenses/ExpensesScreen'
@@ -168,23 +168,25 @@ describe('ExpensesScreen', () => {
     expect(createExpense).not.toHaveBeenCalled()
   })
 
-  it('prompts for a required reason and calls voidRow with it when Void is tapped', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Wrong category')
+  it('opens a confirm dialog and calls voidRow with the typed reason when Void is confirmed', async () => {
     render(<ExpensesScreen />)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))
 
-    expect(promptSpy).toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Wrong category' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Void' }))
+
     await waitFor(() => expect(voidRow).toHaveBeenCalledWith('expenses', 'expense-1', 'Wrong category', 'admin-1'))
   })
 
-  it('does not call voidRow when the reason prompt is cancelled', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue(null)
+  it('does not call voidRow when the confirm dialog is cancelled', async () => {
     render(<ExpensesScreen />)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
 
     expect(voidRow).not.toHaveBeenCalled()
   })

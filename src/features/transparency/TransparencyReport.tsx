@@ -1,71 +1,108 @@
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import type { TransparencyTotals, CategoryBreakdown } from '../../lib/db/transparency'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { FundDonut, type DonutSegment } from '../../components/FundDonut'
 
 const t = strings.transparency
 
-// Fixed categorical order from the dataviz skill's validated reference
-// palette (references/palette.md) — colorblind-safe as an ordered set, so
-// slots are assigned by rank, never generated/cycled. A 9th+ category
-// folds into "Other" (muted gray) rather than growing the palette.
-// ponytail: no dark-mode chart theming / palette-validator run / table-view
-// fallback — this app has no dark mode anywhere else and ≤8 categories is
-// the realistic ceiling for a single mandal's expense categories; add if
-// either changes.
-const CATEGORY_COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834']
-const OTHER_COLOR = '#898781'
+// Warm festival palette for the "how funds were used" donut — reads on the
+// cream paper and stays distinguishable as an ordered set. Slots are assigned
+// by rank (largest category first), never cycled; a 9th+ category folds into
+// "Other" (muted warm gray) rather than growing the palette.
+// ponytail: no colourblind-validator run — the donut is decorative and every
+// slice is also a text+amount legend row (FundDonut), so colour is never the
+// only channel; ≤8 expense categories is the realistic ceiling for one mandal.
+const CATEGORY_COLORS = ['#e2680f', '#2f7d44', '#dca02c', '#c0442e', '#7c4a86', '#2f8a86', '#c96b93', '#8a6d3b']
+const OTHER_COLOR = '#a8998a'
 
-function toChartData(categories: CategoryBreakdown[]): { name: string; value: number }[] {
+function toSegments(categories: CategoryBreakdown[]): DonutSegment[] {
   const sorted = [...categories].sort((a, b) => b.amountPaise - a.amountPaise)
   const head = sorted.slice(0, CATEGORY_COLORS.length)
   const rest = sorted.slice(CATEGORY_COLORS.length)
-  const data = head.map((c) => ({ name: c.category, value: c.amountPaise }))
+  const segments: DonutSegment[] = head.map((c, i) => ({
+    name: c.category,
+    value: c.amountPaise,
+    color: CATEGORY_COLORS[i],
+  }))
   const otherTotal = rest.reduce((sum, c) => sum + c.amountPaise, 0)
-  if (otherTotal > 0) data.push({ name: t.otherCategory, value: otherTotal })
-  return data
+  if (otherTotal > 0) segments.push({ name: t.otherCategory, value: otherTotal, color: OTHER_COLOR })
+  return segments
 }
 
 // Presentational only — no data fetching. Reused by both the public report
 // (PublicTransparency.tsx) and the admin preview (AdminTransparency.tsx) so
-// the two can never render the aggregate differently. `categories` only
-// ever contains category+amount sums (get_transparency_categories, Task 16
-// migration) — no donor or individual-expense row ever reaches this
-// component to begin with.
+// the two can never render the aggregate differently. `categories` only ever
+// contains category+amount sums (get_transparency_categories) — no donor or
+// individual-expense row ever reaches this component. `mandalName` is a
+// display title only; the public page derives it from the slug (mandals is
+// admin-only at the RLS level, so its real name can't be read unauthenticated
+// without a new RPC).
 export function TransparencyReport({
   totals,
   categories,
+  mandalName,
 }: {
   totals: TransparencyTotals
   categories: CategoryBreakdown[]
+  mandalName?: string
 }) {
-  const data = toChartData(categories)
+  const segments = toSegments(categories)
+  const inHandPaise = totals.totalCollectedPaise - totals.totalExpensesPaise
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded border border-stone-200 p-4 text-center">
-        <p className="text-sm text-stone-500">{t.totalCollectedLabel}</p>
-        <p className="text-3xl font-semibold text-stone-900">{formatINR(totals.totalCollectedPaise)}</p>
-      </div>
+    <div className="overflow-hidden rounded-3xl border border-amber-200/70 bg-[#f7f0e1] shadow-xl shadow-amber-900/5">
+      <div className="flex flex-col gap-8 px-5 py-8 sm:px-8 sm:py-10">
+        {/* Header — mantra + identity */}
+        <header className="text-center">
+          <p className="text-sm tracking-[0.25em] text-amber-700">॥ श्री गणेशाय नमः ॥</p>
+          {mandalName && (
+            <h2 className="font-serif mt-2.5 text-3xl leading-tight font-semibold text-stone-800 sm:text-4xl">
+              {mandalName}
+            </h2>
+          )}
+          <p className="mt-2 text-[11px] font-semibold tracking-[0.22em] text-stone-400 uppercase">
+            {t.reportEyebrow}
+          </p>
+        </header>
 
-      {data.length === 0 ? (
-        <p className="text-stone-400">{t.noExpenses}</p>
-      ) : (
-        <ResponsiveContainer width="100%" height={320}>
-          <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" label={(entry) => String(entry.name ?? '')}>
-              {data.map((entry, index) => (
-                <Cell
-                  key={entry.name}
-                  fill={index < CATEGORY_COLORS.length ? CATEGORY_COLORS[index] : OTHER_COLOR}
-                />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => formatINR(Number(value))} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      )}
+        {/* Hero — total collected */}
+        <div className="rounded-2xl border border-amber-200/70 bg-[#fbf6ea] px-5 py-7 text-center">
+          <p className="text-[11px] font-semibold tracking-[0.18em] text-stone-500 uppercase">
+            {t.totalCollectedLabel}
+          </p>
+          <p className="font-serif mt-2 text-5xl font-semibold text-emerald-700 sm:text-6xl">
+            {formatINR(totals.totalCollectedPaise)}
+          </p>
+        </div>
+
+        {/* How the funds were used */}
+        <section>
+          <h3 className="font-serif mb-6 text-center text-xl font-semibold text-stone-800">{t.usageTitle}</h3>
+          {segments.length === 0 ? (
+            <p className="text-center text-stone-400">{t.noExpenses}</p>
+          ) : (
+            <>
+              <FundDonut segments={segments} />
+              {/* Spent vs. still-in-hand — both derive from data already on
+                  screen; the honest close to a fund report. */}
+              <div className="mt-8 grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-amber-200/60 bg-[#fbf6ea] px-4 py-3 text-center">
+                  <p className="text-[10px] font-semibold tracking-wider text-stone-400 uppercase">{t.spentLabel}</p>
+                  <p className="font-serif mt-1 text-lg font-semibold text-stone-800">
+                    {formatINR(totals.totalExpensesPaise)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-200/60 bg-[#fbf6ea] px-4 py-3 text-center">
+                  <p className="text-[10px] font-semibold tracking-wider text-stone-400 uppercase">{t.inHandLabel}</p>
+                  <p className="font-serif mt-1 text-lg font-semibold text-stone-800">{formatINR(inHandPaise)}</p>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+
+        <p className="text-center text-xs text-stone-400">{t.footerNote}</p>
+      </div>
     </div>
   )
 }

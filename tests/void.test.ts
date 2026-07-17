@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { voidRow } from '../src/lib/db/void'
+import { voidRow, clearAllDonations } from '../src/lib/db/void'
 
-const { from } = vi.hoisted(() => ({ from: vi.fn() }))
+const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 
 vi.mock('../src/lib/db/client', () => ({
-  supabase: { from },
+  supabase: { from, rpc },
 }))
 
 beforeEach(() => {
@@ -37,5 +37,22 @@ describe('voidRow', () => {
     from.mockReturnValue({ update: () => ({ eq }) })
 
     await expect(voidRow('expenses', 'row-1', 'reason', 'admin-1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('clearAllDonations', () => {
+  it('calls the clear_donation_history rpc with the reason and returns the cleared count', async () => {
+    rpc.mockResolvedValue({ data: 5, error: null })
+
+    const cleared = await clearAllDonations('Clearing test data')
+
+    expect(rpc).toHaveBeenCalledWith('clear_donation_history', { reason: 'Clearing test data' })
+    expect(cleared).toBe(5)
+  })
+
+  it('throws when the rpc errors (e.g. a volunteer without permission)', async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error('only an admin can clear the donation history') })
+
+    await expect(clearAllDonations('x')).rejects.toThrow('only an admin')
   })
 })
