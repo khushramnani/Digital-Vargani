@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import type { PublicReceipt, MandalBranding } from '../src/lib/db/receipt'
+import type { PublicReceipt } from '../src/lib/db/receipt'
 import { ReceiptPage } from '../src/features/receipt/ReceiptPage'
 
 // Per the brief's testing section: mock src/lib/db/receipt.ts directly
@@ -11,23 +11,16 @@ import { ReceiptPage } from '../src/features/receipt/ReceiptPage'
 // off get_public_receipt's Returns shape in database.types.ts) has no
 // donor_phone field to accidentally read — accessing `.donor_phone` on it
 // below would be a type error, not just a lint warning.
-const { getPublicReceipt, getPublicBranding } = vi.hoisted(() => ({
+const { getPublicReceipt } = vi.hoisted(() => ({
   getPublicReceipt: vi.fn(),
-  getPublicBranding: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/receipt', () => ({
   getPublicReceipt,
-  getPublicBranding,
 }))
 
-const branding: MandalBranding = {
-  name: 'Vinayak Mitra Mandal',
-  logo_url: null,
-  signature_url: 'https://example.com/signature.png',
-  receipt_prefix: 'VM',
-}
-
+// Branding is part of the receipt row now — one fetch, and it can only ever
+// be the branding of the mandal the receipt itself belongs to.
 const cashReceipt: PublicReceipt = {
   receipt_no: 42,
   donor_name: 'Ramesh Kulkarni',
@@ -36,6 +29,10 @@ const cashReceipt: PublicReceipt = {
   created_at: '2026-01-01T00:00:00Z',
   voided: false,
   void_reason: null,
+  mandal_name: 'Vinayak Mitra Mandal',
+  logo_url: null,
+  signature_url: 'https://example.com/signature.png',
+  receipt_prefix: 'VM',
 }
 
 function renderReceiptPage(token: string) {
@@ -50,7 +47,6 @@ function renderReceiptPage(token: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getPublicBranding.mockResolvedValue(branding)
 })
 
 describe('ReceiptPage', () => {
@@ -78,6 +74,24 @@ describe('ReceiptPage', () => {
     expect(screen.getByText('VM-000042')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'RECEIVED: CASH' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'RECEIVED: ONLINE' })).not.toBeInTheDocument()
+  })
+
+  it('renders the mandal name and logo that came back with the receipt', async () => {
+    getPublicReceipt.mockResolvedValue({
+      ...cashReceipt,
+      receipt_no: 7,
+      donor_name: 'Donor Name',
+      mandal_name: 'Ganesh Seva Mandal',
+      logo_url: 'https://example.test/logo.png',
+      signature_url: null,
+      receipt_prefix: 'GS',
+    })
+    renderReceiptPage('tok-1')
+
+    expect(await screen.findByText('Ganesh Seva Mandal')).toBeInTheDocument()
+    expect(await screen.findByText('GS-000007')).toBeInTheDocument()
+    // One fetch, not two — the branding cannot come from another mandal.
+    expect(getPublicReceipt).toHaveBeenCalledTimes(1)
   })
 
   it.each(['upi', 'bank'])('renders the ONLINE stamp for a %s-mode donation', async (mode) => {

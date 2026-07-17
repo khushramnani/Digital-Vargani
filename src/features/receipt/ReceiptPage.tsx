@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { getPublicReceipt, getPublicBranding, type PublicReceipt, type MandalBranding } from '../../lib/db/receipt'
+import { getPublicReceipt, type PublicReceipt } from '../../lib/db/receipt'
 import { StampGraphic } from '../../components/StampGraphic'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
@@ -10,7 +10,7 @@ const t = strings.receipt
 type PageState =
   | { status: 'loading' }
   | { status: 'not-found' }
-  | { status: 'found'; receipt: PublicReceipt; branding: MandalBranding | null }
+  | { status: 'found'; receipt: PublicReceipt }
 
 // Generic devotional placeholder (a simple lotus/mandala, not a specific
 // deity likeness) used when the mandal hasn't uploaded a real logo yet —
@@ -61,9 +61,12 @@ export function ReceiptPage() {
       }
 
       try {
-        const [receipt, branding] = await Promise.all([getPublicReceipt(public_token), getPublicBranding()])
+        // One round trip, not two: get_public_receipt joins the receipt's
+        // own mandal, so its branding arrives with it and can never be
+        // another mandal's.
+        const receipt = await getPublicReceipt(public_token)
         if (!active) return
-        setState(receipt ? { status: 'found', receipt, branding } : { status: 'not-found' })
+        setState(receipt ? { status: 'found', receipt } : { status: 'not-found' })
       } catch {
         if (active) setState({ status: 'not-found' })
       }
@@ -92,17 +95,19 @@ export function ReceiptPage() {
     )
   }
 
-  const { receipt, branding } = state
-  const mandalName = branding?.name ?? strings.appName
-  const receiptNumber = `${branding?.receipt_prefix ?? ''}-${String(receipt.receipt_no).padStart(6, '0')}`
+  // No appName fallback: the RPC joins mandals, and a receipt cannot exist
+  // without one.
+  const { receipt } = state
+  const mandalName = receipt.mandal_name
+  const receiptNumber = `${receipt.receipt_prefix}-${String(receipt.receipt_no).padStart(6, '0')}`
   const stampLabel = receipt.mode === 'cash' ? t.stampCash : t.stampOnline
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-100 px-4 py-10">
       <div className="relative w-full max-w-md overflow-hidden rounded-lg border-4 border-dashed border-amber-800/40 bg-gradient-to-br from-amber-50 to-amber-100 p-8 text-stone-800 shadow-md">
-        {branding?.logo_url ? (
+        {receipt.logo_url ? (
           <img
-            src={branding.logo_url}
+            src={receipt.logo_url}
             alt=""
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 m-auto h-56 w-56 object-contain opacity-10"
@@ -139,9 +144,9 @@ export function ReceiptPage() {
 
           {!receipt.voided && <StampGraphic label={stampLabel} variant={receipt.mode === 'cash' ? 'cash' : 'online'} />}
 
-          {branding?.signature_url && !receipt.voided && (
+          {receipt.signature_url && !receipt.voided && (
             <div className="mt-2 flex flex-col items-center gap-1">
-              <img src={branding.signature_url} alt={t.signatureLabel} className="h-12 object-contain" />
+              <img src={receipt.signature_url} alt={t.signatureLabel} className="h-12 object-contain" />
               <p className="text-xs text-stone-500">{t.signatureLabel}</p>
             </div>
           )}
