@@ -11,7 +11,7 @@
 2. **Multi-tenant.** Each mandal is a row in `mandals`, holding its identity (name, slug, logo, signature, UPI VPA/QR, expense categories, receipt-number prefix). Every table carries a `mandal_id`; `users.mandal_id` is the tenant key, read through `app_mandal_id()` and enforced by RLS on every policy. One account belongs to exactly one mandal. Mandals are created only by the `create_mandal()` RPC (self-serve signup, one mandal per verified email).
 3. **Trust-based payments.** No payment gateway, no payment-status/pending state, no UTR capture, no online-payment verification. Donor shows they paid → volunteer logs it → receipt sent → entry is final.
 4. **Zero messaging cost.** Receipts are sent by the volunteer's own SMS app via an `sms:` deep link. No SMS gateway.
-5. **Language:** UI copy in English for v1, but all user-facing strings go through a single strings file so Marathi/Hindi can be added later without refactor.
+5. **Language:** Operator UI (volunteer/admin) is English, in `src/lib/strings.ts`. Donor-facing copy — the receipt page and the SMS/WhatsApp body — is available in English, Marathi, Hindi and Gujarati from `src/lib/i18n/receipt.ts`, selected per-send by the volunteer and carried on the receipt link as `?lang=`. The mandal's `default_lang` preselects it. Unknown/absent `?lang=` falls back to English.
 6. **Currency:** INR only. Amounts stored as integer paise to avoid float errors; displayed as ₹.
 
 ## Objective
@@ -39,7 +39,7 @@ Give a neighborhood Ganesh Mandal three things at zero cost:
 - Tailwind CSS
 - `vite-plugin-pwa` (+ Workbox) for installability and the service worker
 - Dexie (IndexedDB) for the offline write-queue
-- Supabase: Postgres, Row Level Security, Auth (admin email magic link), Storage (logo/signature/QR assets)
+- Supabase: Postgres, Row Level Security, Auth (admin email magic link), Storage (legacy branding assets; new uploads go to Cloudinary via the sign-upload edge function)
 - Recharts (transparency pie chart)
 - React Router
 - Deploy: Vercel or Cloudflare Pages (free tier)
@@ -104,6 +104,8 @@ mandals (
   upi_vpa           text,
   upi_qr_url        text,
   receipt_prefix    text not null default 'VM',
+  default_lang      text not null default 'en'                  -- donor receipt/message language
+                    check (default_lang in ('en','mr','hi','gu')),
   expense_categories text[] not null default '{Mandap,Murti,Prasad,Decoration,Events,Sound,Misc}',
   bank_opening_paise bigint not null default 0,
   transparency_published boolean not null default false,
@@ -238,9 +240,9 @@ Conventions: `camelCase` vars/functions, `PascalCase` components/types, feature-
 
 ## Boundaries
 
-- **Always:** store money as integer paise; stamp entries with the session user; scope every RLS policy and every mandal-taking SECURITY DEFINER RPC by `app_mandal_id()`; stamp `mandal_id` server-side, never from the client; keep entries append-only (void, never edit); run `typecheck` + `test` before commit; validate amount > 0 and mode ∈ enum on both client and DB.
+- **Always:** store money as integer paise; stamp entries with the session user; scope every RLS policy and every mandal-taking SECURITY DEFINER RPC by `app_mandal_id()`; stamp `mandal_id` server-side, never from the client; keep entries append-only (void, never edit); run `typecheck` + `test` before commit; validate amount > 0 and mode ∈ enum on both client and DB; derive the upload folder from the caller's JWT in `sign-upload`, never from the request body.
 - **Ask first:** any change to the data model / migrations; adding a dependency; introducing any paid service or payment gateway; changing the reconciliation identity; touching RLS policies.
-- **Never:** edit a donation/expense/handover amount after creation; hard-delete a financial row; expose donor phone on the public receipt or transparency page; show individual donor names/amounts on the transparency page; expose an RPC that takes a mandal identifier and returns unpublished or donor-level data without an `app_mandal_id()` check; commit Supabase keys/secrets.
+- **Never:** edit a donation/expense/handover amount after creation; hard-delete a financial row; expose donor phone on the public receipt or transparency page; show individual donor names/amounts on the transparency page; expose an RPC that takes a mandal identifier and returns unpublished or donor-level data without an `app_mandal_id()` check; commit Supabase keys/secrets; commit or persist Cloudinary credentials; return the Cloudinary API secret from an edge function; translate a mandal name or a donor name (only fixed receipt/message copy is translated, never proper nouns).
 
 ## Success Criteria
 
@@ -258,4 +260,4 @@ Conventions: `camelCase` vars/functions, `PascalCase` components/types, feature-
 1. Should volunteers be allowed to log **expenses**, or admin-only? (Spec assumes volunteers can log cash expenses they personally paid; flip if not.)
 2. Should the transparency report be **always-live** or **published/frozen** at festival end? (Assumed: admin toggles "publish".)
 3. Bank opening balance and any pre-festival funds — captured in `mandals.bank_opening_paise`; confirm that's sufficient.
-4. Confirm English-only for v1 with i18n-ready strings (Marathi later).
+4. ~~English-only for v1~~ — **resolved.** Operator UI is English; donor-facing receipt + message copy ships in English, Marathi, Hindi and Gujarati. Those translations shipped without native-speaker review — approved by the repo owner as-is — so a native-speaker pass remains outstanding. Translating the operator UI is deferred until a mandal asks.
