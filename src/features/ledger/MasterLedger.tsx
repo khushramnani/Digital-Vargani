@@ -80,6 +80,9 @@ export function MasterLedgerScreen() {
       )}
 
       <div className="flex flex-col gap-2">
+        <Link to="/volunteer" className="text-orange-700 underline">
+          {strings.admin.collectDonationLink}
+        </Link>
         <Link to="/admin/collections" className="text-orange-700 underline">
           {strings.admin.collectionsLink}
         </Link>

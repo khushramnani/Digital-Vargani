@@ -63,4 +63,12 @@ describe('MasterLedgerScreen', () => {
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument())
     expect(screen.getByRole('status')).toHaveTextContent('Discrepancy: ₹-1,000')
   })
+
+  it('links to the volunteer collection form so an admin can log a donation as themselves', async () => {
+    fetchFullLedger.mockResolvedValue(balancedLedger)
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Collect donation' })).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: 'Collect donation' })).toHaveAttribute('href', '/volunteer')
+  })
 })

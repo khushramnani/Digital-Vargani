@@ -27,6 +27,7 @@ export const strings = {
     cashInHandLink: 'Cash in hand',
     transparencyLink: 'Transparency report',
     collectionsLink: 'All collections',
+    collectDonationLink: 'Collect donation',
   },
   mandalConfig: {
     title: 'Mandal Settings',

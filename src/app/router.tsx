@@ -63,7 +63,7 @@ export function AppRoutes() {
       <Route
         path="/volunteer"
         element={
-          <RequireRole role="volunteer">
+          <RequireRole role={['admin', 'volunteer']}>
             <CollectionForm />
           </RequireRole>
         }
@@ -71,7 +71,7 @@ export function AppRoutes() {
       <Route
         path="/volunteer/pending"
         element={
-          <RequireRole role="volunteer">
+          <RequireRole role={['admin', 'volunteer']}>
             <PendingSend />
           </RequireRole>
         }
@@ -135,7 +135,7 @@ export function AppRoutes() {
       <Route
         path="/volunteer/collections"
         element={
-          <RequireRole role="volunteer">
+          <RequireRole role={['admin', 'volunteer']}>
             <CollectionsScreen />
           </RequireRole>
         }
