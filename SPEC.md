@@ -1,6 +1,6 @@
 # Spec: Vinayak Yuvak Mandal (VYM) — Digital Vargani & Fund Management System
 
-> Single-mandal, zero-cost, mobile-first PWA that replaces a paper bill book for door-to-door
+> Multi-tenant, zero-cost, mobile-first PWA that replaces a paper bill book for door-to-door
 > festival donation collection, receipt delivery, and fund/cash reconciliation.
 > Companion design: Claude Design "Vinayak Mandal" (shared separately).
 > Product brief: `ganesh-mandal-project-brief.md`.
@@ -8,7 +8,7 @@
 ## Assumptions (correct these before building)
 
 1. **Stack:** React 18 + TypeScript + Vite, Tailwind CSS, PWA via `vite-plugin-pwa`, IndexedDB (Dexie) for the offline write-queue, Supabase (Postgres + RLS) as the backend, Recharts for the transparency pie chart, deployed to Vercel or Cloudflare Pages. All chosen because they are free-tier / zero running cost. **Swap freely — nothing below depends on a specific vendor except the SQL, which is Postgres-flavored.**
-2. **Single mandal.** No multi-tenancy. The mandal's identity (name, logo, signature, UPI VPA/QR, expense categories, receipt-number prefix) is a single config row.
+2. **Multi-tenant.** Each mandal is a row in `mandals`, holding its identity (name, slug, logo, signature, UPI VPA/QR, expense categories, receipt-number prefix). Every table carries a `mandal_id`; `users.mandal_id` is the tenant key, read through `app_mandal_id()` and enforced by RLS on every policy. One account belongs to exactly one mandal. Mandals are created only by the `create_mandal()` RPC (self-serve signup, one mandal per verified email).
 3. **Trust-based payments.** No payment gateway, no payment-status/pending state, no UTR capture, no online-payment verification. Donor shows they paid → volunteer logs it → receipt sent → entry is final.
 4. **Zero messaging cost.** Receipts are sent by the volunteer's own SMS app via an `sms:` deep link. No SMS gateway.
 5. **Language:** UI copy in English for v1, but all user-facing strings go through a single strings file so Marathi/Hindi can be added later without refactor.
@@ -93,21 +93,27 @@ tasks/                 → plan.md + todo.md
 All money in **integer paise**. All tables append-only in spirit: **no row is ever edited except to void it.** Corrections are made by voiding and re-entering.
 
 ```sql
--- Single config row for the whole mandal
-mandal_config (
-  id                boolean primary key default true check (id),  -- enforce single row
+-- One row per mandal. The tenant root; created only by create_mandal().
+mandals (
+  id                uuid primary key default gen_random_uuid(),
   name              text not null,
+  slug              text not null unique                       -- public URL: /transparency/:slug
+                    check (slug ~ '^[a-z0-9][a-z0-9-]{1,39}$'),
   logo_url          text,
   signature_url     text,          -- president signature image
   upi_vpa           text,
   upi_qr_url        text,
-  receipt_prefix    text default 'VM',
+  receipt_prefix    text not null default 'VM',
   expense_categories text[] not null default '{Mandap,Murti,Prasad,Decoration,Events,Sound,Misc}',
-  bank_opening_paise bigint not null default 0
+  bank_opening_paise bigint not null default 0,
+  transparency_published boolean not null default false,
+  next_receipt_no   bigint not null default 1,  -- per-mandal receipt counter
+  created_at        timestamptz not null default now()
 )
 
 users (
   id            uuid primary key default gen_random_uuid(),
+  mandal_id     uuid not null references mandals(id),
   name          text not null,
   phone         text,
   role          text not null check (role in ('admin','volunteer')),
@@ -119,7 +125,8 @@ users (
 
 donations (
   id            uuid primary key default gen_random_uuid(),
-  receipt_no    bigint not null,           -- sequential, per mandal
+  mandal_id     uuid not null references mandals(id),
+  receipt_no    bigint not null,           -- sequential per mandal; unique (mandal_id, receipt_no)
   public_token  text not null unique,      -- unguessable receipt URL slug
   donor_name    text not null,
   donor_phone   text,
@@ -136,6 +143,7 @@ donations (
 
 expenses (
   id            uuid primary key default gen_random_uuid(),
+  mandal_id     uuid not null references mandals(id),
   category      text not null,
   amount_paise  bigint not null check (amount_paise > 0),
   description   text,
@@ -150,6 +158,7 @@ expenses (
 
 handovers (                                   -- volunteer hands cash to treasurer
   id            uuid primary key default gen_random_uuid(),
+  mandal_id     uuid not null references mandals(id),
   volunteer_id  uuid not null references users(id),
   amount_paise  bigint not null check (amount_paise > 0),
   received_by   uuid not null references users(id),  -- admin
@@ -162,7 +171,7 @@ handovers (                                   -- volunteer hands cash to treasur
 )
 ```
 
-`receipt_no` is allocated server-side (Postgres sequence or a transactional counter) so numbers are gapless and unique. `public_token` uses a 16+ char url-safe random id.
+`receipt_no` is allocated server-side from `mandals.next_receipt_no`, incremented under a row lock in the insert trigger, so numbers are gapless and unique **per mandal** — two mandals both holding receipt #1 is correct, not a collision. `mandal_id` is likewise stamped by the trigger from the session, never accepted from the client: the trigger writes `coalesce(app_mandal_id(), new.mandal_id)`, so a real session always wins and a forged `mandal_id` is overwritten. The fallback exists only for the table owner seeding data (which bypasses RLS anyway); a caller with no `users` row is rejected by RLS before it could matter. `public_token` uses a 16+ char url-safe random id.
 
 ### Derived calculations (pure functions in `lib/reconcile.ts`)
 
@@ -194,6 +203,7 @@ The exact identity is implemented and unit-tested in `reconcile.ts`; the dashboa
 
 ## Auth
 
+- **Signup:** anyone can create a mandal via email magic link → `create_mandal(mandal_name, admin_name, slug_hint)`, becoming its first admin. Anonymous (volunteer) sessions are rejected. One mandal per verified email, enforced by the database. `slug_hint` is optional and lets the founder choose their own public link — it matters because `slugify()` is ASCII-only, so a mandal named गणेश मंडळ would otherwise land on `mandal`, `mandal-2`, `mandal-3`… defeating the point of a readable link. The hint is slugified and uniqueness-checked like any other candidate, never trusted raw.
 - **Admin:** Supabase email magic link (admin has an email).
 - **Volunteer:** admin creates the user; app generates an `invite_token`; admin shares the link over WhatsApp; opening it establishes a long-lived session bound to that user. No passwords, no OTP.
 - Every donation/expense/handover is stamped with the acting user's id from the session — never user-supplied.
@@ -228,9 +238,9 @@ Conventions: `camelCase` vars/functions, `PascalCase` components/types, feature-
 
 ## Boundaries
 
-- **Always:** store money as integer paise; stamp entries with the session user; keep entries append-only (void, never edit); run `typecheck` + `test` before commit; validate amount > 0 and mode ∈ enum on both client and DB.
+- **Always:** store money as integer paise; stamp entries with the session user; scope every RLS policy and every mandal-taking SECURITY DEFINER RPC by `app_mandal_id()`; stamp `mandal_id` server-side, never from the client; keep entries append-only (void, never edit); run `typecheck` + `test` before commit; validate amount > 0 and mode ∈ enum on both client and DB.
 - **Ask first:** any change to the data model / migrations; adding a dependency; introducing any paid service or payment gateway; changing the reconciliation identity; touching RLS policies.
-- **Never:** edit a donation/expense/handover amount after creation; hard-delete a financial row; expose donor phone on the public receipt or transparency page; show individual donor names/amounts on the transparency page; commit Supabase keys/secrets.
+- **Never:** edit a donation/expense/handover amount after creation; hard-delete a financial row; expose donor phone on the public receipt or transparency page; show individual donor names/amounts on the transparency page; expose an RPC that takes a mandal identifier and returns unpublished or donor-level data without an `app_mandal_id()` check; commit Supabase keys/secrets.
 
 ## Success Criteria
 
@@ -247,5 +257,5 @@ Conventions: `camelCase` vars/functions, `PascalCase` components/types, feature-
 
 1. Should volunteers be allowed to log **expenses**, or admin-only? (Spec assumes volunteers can log cash expenses they personally paid; flip if not.)
 2. Should the transparency report be **always-live** or **published/frozen** at festival end? (Assumed: admin toggles "publish".)
-3. Bank opening balance and any pre-festival funds — captured in `mandal_config.bank_opening_paise`; confirm that's sufficient.
+3. Bank opening balance and any pre-festival funds — captured in `mandals.bank_opening_paise`; confirm that's sufficient.
 4. Confirm English-only for v1 with i18n-ready strings (Marathi later).
