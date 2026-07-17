@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { strings } from '../../lib/strings'
+import { formatINR } from '../../lib/money'
 import { DemoPhone } from './DemoPhone'
 import { ReceiptCard } from './ReceiptCard'
+import { FundDonut } from '../../components/FundDonut'
 
 const t = strings.landing
 
@@ -72,7 +74,11 @@ function Nav() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-stone-200 bg-stone-50/85 backdrop-blur-md">
-      <div className="mx-auto flex min-h-16 max-w-6xl items-center gap-5 px-5 py-3">
+      {/* justify-between is load-bearing on mobile: the centre <nav> is
+          display:none below md, so without it the logo and hamburger — both
+          flex-none — bunch on the left half. px-6 matches every section below,
+          so the logo lines up with the hero text. */}
+      <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-5 px-6 py-3">
         <Logo />
         <nav className="hidden flex-1 items-center justify-center gap-8 md:flex">
           <a href="#what" className="text-sm font-semibold text-stone-600 hover:text-orange-600">
@@ -112,7 +118,7 @@ function Nav() {
         </button>
       </div>
       {open && (
-        <div className="border-t border-stone-200 bg-stone-50 px-5 pt-2 pb-4.5 md:hidden">
+        <div className="border-t border-stone-200 bg-stone-50 px-6 pt-2 pb-4.5 md:hidden">
           <a
             href="#what"
             onClick={() => setOpen(false)}
@@ -467,24 +473,37 @@ function Transparency() {
           </Link>
         </div>
         <div className="flex justify-center">
-          <div className="w-full max-w-75">
-            <ReceiptCard
-              mark={t.demoPhone.mark}
-              mandalName={t.demoPhone.mandalName}
-              subtitle={t.transparency.sample.subtitle}
-              noLabel={t.transparency.sample.noLabel}
-              donorLabel={t.transparency.sample.donorLabel}
-              amountLabel={t.transparency.sample.amountLabel}
-              receiptNo="VYM-1042"
-              donorName="Anjali Kulkarni"
-              amountRupees={501}
-              thanks={t.transparency.sample.thanks}
-              showStamp
-            />
-          </div>
+          <ReportPreview />
         </div>
       </div>
     </section>
+  )
+}
+
+// Honest preview of the real public report (see TransparencyReport.tsx) — the
+// same paper-and-donut visual with sample numbers, not the donation receipt
+// this slot used to show. Kept as a lightweight static mirror rather than
+// rendering the live component so the marketing page pulls in no data layer.
+function ReportPreview() {
+  const s = t.transparency.sample
+  const segments = s.categories.map((c) => ({ name: c.name, value: c.value * 100, color: c.color }))
+  const totalPaise = segments.reduce((sum, seg) => sum + seg.value, 0)
+
+  return (
+    <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-amber-200/70 bg-[#f7f0e1] p-6 shadow-xl">
+      <div className="text-center">
+        <p className="text-xs tracking-[0.22em] text-amber-700">॥ श्री गणेशाय नमः ॥</p>
+        <div className="font-serif mt-1.5 text-2xl font-semibold text-stone-800">{t.demoPhone.mandalName}</div>
+        <p className="mt-1 text-[10px] font-semibold tracking-[0.2em] text-stone-400 uppercase">{s.eyebrow}</p>
+      </div>
+      <div className="mt-5 rounded-2xl border border-amber-200/70 bg-[#fbf6ea] px-4 py-5 text-center">
+        <p className="text-[10px] font-semibold tracking-[0.16em] text-stone-500 uppercase">{s.totalLabel}</p>
+        <p className="font-serif mt-1.5 text-4xl font-semibold text-emerald-700">{formatINR(totalPaise)}</p>
+        <p className="font-serif mt-1.5 text-xs text-stone-500 italic">{s.totalNote}</p>
+      </div>
+      <h3 className="font-serif mt-6 mb-5 text-center text-base font-semibold text-stone-800">{s.usageTitle}</h3>
+      <FundDonut segments={segments} size={148} />
+    </div>
   )
 }
 
