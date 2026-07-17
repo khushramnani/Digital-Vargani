@@ -36,7 +36,7 @@ function fakeStoredSession(userId: string) {
   }
 }
 
-test('submitting a donation shows the receipt number, the Send Receipt fallback, and auto-fires markSmsSent', async ({
+test('submitting a donation shows the receipt number, the Send via SMS fallback, and auto-fires markSmsSent', async ({
   page,
 }) => {
   const authUserId = 'fake-volunteer-auth-id-sms'
@@ -109,7 +109,7 @@ test('submitting a donation shows the receipt number, the Send Receipt fallback,
   await page.getByRole('button', { name: 'Record Donation' }).click()
 
   await expect(page.getByText('Receipt #42')).toBeVisible()
-  const sendButton = page.getByRole('button', { name: 'Send Receipt' })
+  const sendButton = page.getByRole('button', { name: 'Send via SMS' })
   await expect(sendButton).toBeVisible()
   await expect(sendButton).toBeEnabled()
 
