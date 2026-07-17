@@ -54,6 +54,6 @@ export function sendReceiptSms(donation: Donation): void {
 // for the Pending Send tray's purposes, not "sent via SMS specifically".
 export function sendReceiptWhatsApp(donation: Donation): void {
   const message = strings.collection.smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token))
-  window.open(buildWhatsAppLink(donation.donor_phone ?? '', message), '_blank')
+  window.open(buildWhatsAppLink(donation.donor_phone ?? '', message), '_blank', 'noopener')
   markSmsSent(donation.id).catch(() => {})
 }

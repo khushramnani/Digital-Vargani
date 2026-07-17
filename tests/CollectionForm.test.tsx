@@ -238,7 +238,7 @@ describe('CollectionForm', () => {
     const expectedMessage = encodeURIComponent(
       'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc',
     )
-    expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank')
+    expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank', 'noopener')
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
     openSpy.mockRestore()
   })
