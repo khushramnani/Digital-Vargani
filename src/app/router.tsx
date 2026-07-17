@@ -26,7 +26,7 @@ export function AppRoutes() {
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />
       {/* Public, unauthenticated — community transparency report, no RequireRole guard. */}
-      <Route path="/transparency" element={<PublicTransparency />} />
+      <Route path="/transparency/:slug" element={<PublicTransparency />} />
       <Route
         path="/admin"
         element={

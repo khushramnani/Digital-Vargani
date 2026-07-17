@@ -179,6 +179,9 @@ export const strings = {
     unpublishButton: 'Unpublish',
     publishedStatus: 'Visible to the public.',
     unpublishedStatus: 'Not visible to the public yet.',
+    publicLinkLabel: 'Public link',
+    copyLink: 'Copy link',
+    copied: 'Copied',
   },
   ledger: {
     totalCollectedLabel: 'Total Collected',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getMandalConfig, updateMandalConfig } from '../../lib/db/config'
+import { getMandal, updateMandal, type Mandal } from '../../lib/db/config'
 import {
   getTransparencyReport,
   getTransparencyCategories,
@@ -17,6 +17,11 @@ const t = strings.transparency
 // aggregate here regardless of the publish flag, so preview can never
 // drift from what publishing will actually show.
 export function AdminTransparency() {
+  // The mandal is fetched before the RPCs rather than alongside them: its
+  // slug is what addresses them, so this is a genuine dependency, not an
+  // avoidable waterfall.
+  const [mandal, setMandal] = useState<Mandal | null>(null)
+  const [copied, setCopied] = useState(false)
   const [published, setPublished] = useState(false)
   const [totals, setTotals] = useState<TransparencyTotals | null>(null)
   const [categories, setCategories] = useState<CategoryBreakdown[]>([])
@@ -26,10 +31,16 @@ export function AdminTransparency() {
 
   useEffect(() => {
     let active = true
-    Promise.all([getMandalConfig(), getTransparencyReport(), getTransparencyCategories()])
-      .then(([config, report, categoryRows]) => {
+    getMandal()
+      .then((m) => {
         if (!active) return
-        setPublished(config.transparency_published)
+        setMandal(m)
+        setPublished(m.transparency_published)
+        return Promise.all([getTransparencyReport(m.slug), getTransparencyCategories(m.slug)])
+      })
+      .then((result) => {
+        if (!active || !result) return
+        const [report, categoryRows] = result
         setTotals(report)
         setCategories(categoryRows)
       })
@@ -45,10 +56,11 @@ export function AdminTransparency() {
   }, [])
 
   async function handleToggle() {
+    if (!mandal) return
     setToggling(true)
     setError(null)
     try {
-      await updateMandalConfig({ transparency_published: !published })
+      await updateMandal(mandal.id, { transparency_published: !published })
       setPublished(!published)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -80,6 +92,27 @@ export function AdminTransparency() {
       )}
 
       <p className="text-sm text-stone-500">{published ? t.publishedStatus : t.unpublishedStatus}</p>
+
+      {/* The slug's whole purpose is a link pasted into a WhatsApp group —
+          without a visible copy affordance it's a column nobody uses. */}
+      {mandal && (
+        <div className="flex items-center gap-2 rounded border border-stone-200 p-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-stone-500">{t.publicLinkLabel}</p>
+            <p className="truncate text-sm text-stone-800">{`${window.location.origin}/transparency/${mandal.slug}`}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(`${window.location.origin}/transparency/${mandal.slug}`)
+              setCopied(true)
+            }}
+            className="flex-none rounded border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700"
+          >
+            {copied ? t.copied : t.copyLink}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
