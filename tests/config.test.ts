@@ -9,21 +9,19 @@ import {
 import type { Tables } from '../src/lib/db/database.types'
 
 // No live Supabase project exists (same constraint as every prior task's
-// tests) — mock the client's `from`/`rpc`/`storage.from` chains directly to
-// prove config.ts builds the right query/upload shape.
-const { from, rpc, upload, getPublicUrl, storageFrom } = vi.hoisted(() => ({
+// tests) — mock the client's `from`/`rpc`/`functions.invoke` chains directly
+// to prove config.ts builds the right query/upload shape.
+const { from, rpc, invoke } = vi.hoisted(() => ({
   from: vi.fn(),
   rpc: vi.fn(),
-  upload: vi.fn(),
-  getPublicUrl: vi.fn(),
-  storageFrom: vi.fn(),
+  invoke: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/client', () => ({
   supabase: {
     from,
     rpc,
-    storage: { from: storageFrom },
+    functions: { invoke },
   },
 }))
 
@@ -48,7 +46,7 @@ const configRow: Tables<'mandals'> = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  storageFrom.mockReturnValue({ upload, getPublicUrl })
+  vi.unstubAllGlobals()
 })
 
 describe('getMandal', () => {
@@ -140,40 +138,51 @@ describe('updateMandal', () => {
 })
 
 describe('uploadMandalAsset', () => {
-  // The mandal id must lead the path: mandal_assets_admin_write checks
-  // (storage.foldername(name))[1] against app_mandal_id(), so a flat path
-  // is rejected server-side outright.
-  it('uploads under a <mandal_id>/ prefix in the mandal-assets bucket and returns the public URL', async () => {
-    upload.mockResolvedValue({ data: { path: `${MANDAL_ID}/logo-123.png` }, error: null })
-    getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://example.com/mandal-assets/logo-123.png' } })
-    const file = new File(['x'], 'logo.png', { type: 'image/png' })
+  const file = new File(['x'], 'logo.png', { type: 'image/png' })
 
-    const url = await uploadMandalAsset(MANDAL_ID, 'logo', file)
-
-    expect(storageFrom).toHaveBeenCalledWith('mandal-assets')
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^${MANDAL_ID}/logo-\\d+\\.png$`)), file, {
-      upsert: true,
+  it('signs via the edge function, posts to Cloudinary, and returns secure_url', async () => {
+    invoke.mockResolvedValue({
+      data: {
+        signature: 'sig123',
+        timestamp: '1700000000',
+        folder: 'mandals/m1',
+        api_key: 'key123',
+        cloud_name: 'democloud',
+      },
+      error: null,
     })
-    expect(url).toBe('https://example.com/mandal-assets/logo-123.png')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ secure_url: 'https://res.cloudinary.com/democloud/logo.png' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const url = await uploadMandalAsset('m1', 'logo', file)
+
+    expect(invoke).toHaveBeenCalledWith('sign-upload')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.cloudinary.com/v1_1/democloud/image/upload',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    // The signed folder is the function's, never the caller's argument.
+    const body = fetchMock.mock.calls[0][1].body as FormData
+    expect(body.get('folder')).toBe('mandals/m1')
+    expect(body.get('signature')).toBe('sig123')
+    expect(body.get('api_key')).toBe('key123')
+    expect(url).toBe('https://res.cloudinary.com/democloud/logo.png')
   })
 
-  it('falls back to a generic extension when the filename has none', async () => {
-    upload.mockResolvedValue({ data: {}, error: null })
-    getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://example.com/mandal-assets/signature-1' } })
-    const file = new File(['x'], 'signature', { type: 'image/png' })
-
-    await uploadMandalAsset(MANDAL_ID, 'signature', file)
-
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^${MANDAL_ID}/signature-\\d+\\.bin$`)), file, {
-      upsert: true,
-    })
+  it('throws when the edge function refuses (e.g. a volunteer session)', async () => {
+    invoke.mockResolvedValue({ data: null, error: new Error('admin only') })
+    await expect(uploadMandalAsset('m1', 'logo', file)).rejects.toThrow('admin only')
   })
 
-  it('throws when the upload errors, without calling getPublicUrl', async () => {
-    upload.mockResolvedValue({ data: null, error: new Error('upload failed') })
-    const file = new File(['x'], 'qr.png')
-
-    await expect(uploadMandalAsset(MANDAL_ID, 'upi_qr', file)).rejects.toThrow('upload failed')
-    expect(getPublicUrl).not.toHaveBeenCalled()
+  it('throws when Cloudinary rejects the upload', async () => {
+    invoke.mockResolvedValue({
+      data: { signature: 's', timestamp: '1', folder: 'mandals/m1', api_key: 'k', cloud_name: 'c' },
+      error: null,
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }))
+    await expect(uploadMandalAsset('m1', 'logo', file)).rejects.toThrow()
   })
 })

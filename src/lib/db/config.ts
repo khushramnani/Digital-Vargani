@@ -9,8 +9,6 @@ import type { Tables, TablesUpdate } from './database.types'
 export type Mandal = Tables<'mandals'>
 export type MandalAssetKind = 'logo' | 'signature' | 'upi_qr'
 
-const ASSETS_BUCKET = 'mandal-assets'
-
 // RLS scopes this to the caller's own mandal, so `single()` still returns
 // exactly one row — the tenant filter is server-side, not a client `.eq()`.
 export async function getMandal(): Promise<Mandal> {
@@ -50,21 +48,36 @@ export async function updateMandal(id: string, patch: TablesUpdate<'mandals'>): 
   if (error) throw error
 }
 
-// Path is `<mandal_id>/<kind>-<timestamp>.<ext>` — the mandal_assets_admin_write
-// policy checks (storage.foldername(name))[1] against app_mandal_id(), so a
-// flat path is rejected outright now. upsert:true covers the same-path
-// re-upload case; a new timestamp naturally covers the timestamped-path
-// case. Caller then calls updateMandal with that URL to point the relevant
-// *_url column at it.
-export async function uploadMandalAsset(mandalId: string, kind: MandalAssetKind, file: File): Promise<string> {
-  const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
-  const path = `${mandalId}/${kind}-${Date.now()}.${ext}`
-
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, file, { upsert: true })
+// Uploads straight to Cloudinary, authorised by the sign-upload edge
+// function. Two reasons it goes through the function rather than an unsigned
+// preset: the API secret never reaches the browser, and the upload folder is
+// derived from the caller's JWT server-side — an unsigned preset would be an
+// open upload endpoint anyone reading this bundle could spam.
+//
+// `mandalId`/`kind` are kept in the signature for call-site clarity but are
+// NOT trusted and NOT read here (underscored) — the function signs its own
+// folder from the session. If they disagree, the server wins. `public_id` is
+// deliberately omitted — an unsigned public_id would make Cloudinary reject
+// the signature, and the folder already scopes the asset. Old Supabase
+// Storage URLs in *_url columns keep rendering — they're just strings, and
+// nothing here touches them.
+export async function uploadMandalAsset(_mandalId: string, _kind: MandalAssetKind, file: File): Promise<string> {
+  const { data: sig, error } = await supabase.functions.invoke('sign-upload')
   if (error) throw error
 
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path)
-  return publicUrl
+  const form = new FormData()
+  form.append('file', file)
+  form.append('api_key', sig.api_key)
+  form.append('timestamp', sig.timestamp)
+  form.append('folder', sig.folder)
+  form.append('signature', sig.signature)
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloud_name}/image/upload`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) throw new Error(`Cloudinary upload failed (${response.status})`)
+
+  const { secure_url } = await response.json()
+  return secure_url
 }
