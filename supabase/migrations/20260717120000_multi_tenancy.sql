@@ -409,7 +409,13 @@ grant execute on function get_transparency_categories(text) to anon, authenticat
 -- The only way a mandal is ever created. SECURITY DEFINER because the
 -- caller has no `users` row yet, so no policy can apply to them: they are
 -- not a member of anything at the moment they call this.
-create or replace function create_mandal(mandal_name text, admin_name text)
+-- slug_hint lets the founder choose their own public link. It matters more
+-- than it looks: slugify() is ASCII-only, so a mandal named गणेश मंडळ —
+-- i.e. the target market — slugifies to '' and would otherwise land on
+-- 'mandal', 'mandal-2', 'mandal-3'… defeating the entire point of having a
+-- readable link to paste into a WhatsApp group. The hint is slugified and
+-- uniqueness-checked like any other candidate; it is not trusted raw.
+create or replace function create_mandal(mandal_name text, admin_name text, slug_hint text default null)
 returns uuid
 language plpgsql security definer set search_path = public, auth, extensions as $$
 declare
@@ -447,10 +453,15 @@ begin
     raise exception 'this email was already invited to a mandal; open your invite link instead';
   end if;
 
-  -- A mandal named entirely in Devanagari slugifies to '' — the target
-  -- market, not an edge case. Truncate before suffixing so the check
-  -- constraint's 40-char bound can't be breached by a long name.
-  base := left(coalesce(nullif(slugify(mandal_name), ''), 'mandal'), 40);
+  -- Prefer the founder's chosen slug; fall back to the mandal name; fall
+  -- back to 'mandal' when neither yields any ASCII (a wholly-Devanagari
+  -- name AND no hint). Truncate before suffixing so the check constraint's
+  -- 40-char bound can't be breached by a long name.
+  base := left(coalesce(
+    nullif(slugify(slug_hint), ''),
+    nullif(slugify(mandal_name), ''),
+    'mandal'
+  ), 40);
   candidate := base;
 
   -- Try base, then base-2, base-3 … A concurrent signup racing for the same
@@ -478,8 +489,8 @@ begin
 end;
 $$;
 
-revoke execute on function create_mandal(text, text) from public;
-grant execute on function create_mandal(text, text) to authenticated;
+revoke execute on function create_mandal(text, text, text) from public;
+grant execute on function create_mandal(text, text, text) to authenticated;
 
 -- ── Finally: the singleton is gone ─────────────────────────────────────
 -- Every read of this table (the mandals backfill at the top of this file)

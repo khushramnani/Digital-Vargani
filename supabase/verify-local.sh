@@ -806,7 +806,7 @@ update expenses set voided = true, void_reason = 'test row, must be excluded',
 
 -- Drop the session claim too, not just the role: auth.uid() reads the
 -- jwt claim set at the top of this block, and a lingering admin claim
--- would flip is_admin() on and hand 'anon' the admin preview bypass �
+-- would flip is_admin() on and hand 'anon' the admin preview bypass �
 -- turning this leak test green for entirely the wrong reason.
 set request.jwt.claim.sub = '';
 set role anon;
@@ -847,7 +847,7 @@ echo "== assertion: Task 16 publishing (via the admin RLS update policy) makes t
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
 -- `where id = true` targeted the old boolean singleton PK. Scope to the
--- admin's own mandal now � mandals_admin_update's RLS would reject anything
+-- admin's own mandal now � mandals_admin_update's RLS would reject anything
 -- else anyway, which is the policy this assertion exercises.
 update mandals set transparency_published = true where id = app_mandal_id();
 reset role;
@@ -1058,7 +1058,9 @@ echo "== assertion: create_mandal() guards =="
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-0000000000c1', 'newfounder@example.com'),
   ('aaaaaaaa-0000-0000-0000-0000000000c2', 'devanagari@example.com'),
-  ('aaaaaaaa-0000-0000-0000-0000000000c3', 'dupname@example.com')
+  ('aaaaaaaa-0000-0000-0000-0000000000c3', 'dupname@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c4', 'hint@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c5', 'collide@example.com')
 on conflict (id) do nothing;
 
 set role authenticated;
@@ -1102,11 +1104,52 @@ DECLARE
   v_id uuid;
   v_slug text;
 BEGIN
+  -- With no hint, a wholly-Devanagari name can only reach the generic
+  -- fallback. It must still be valid and unique — never '' or a constraint
+  -- violation — because this is the target market's default case.
   v_id := create_mandal('गणेश मंडळ', 'Devanagari Founder');
   SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
   ASSERT v_slug ~ '^[a-z0-9][a-z0-9-]{1,39}$',
     format('FAIL: Devanagari name produced an invalid slug: %s', v_slug);
-  RAISE NOTICE 'PASS: Devanagari mandal name slugified to %', v_slug;
+  RAISE NOTICE 'PASS: Devanagari name with no hint fell back to a valid slug (%)', v_slug;
+END $$;
+reset role;
+
+-- The reason slug_hint exists: a Devanagari-named mandal must be able to
+-- get a READABLE link, not 'mandal-3'. Without this the slug column buys
+-- nothing for exactly the mandals this app is for.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c4';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('श्री गणेश मंडळ', 'Hint Founder', 'shree-ganesh-pune');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug = 'shree-ganesh-pune',
+    format('FAIL: slug_hint should win over the name fallback, got %s', v_slug);
+  RAISE NOTICE 'PASS: Devanagari-named mandal got a readable slug from its hint (%)', v_slug;
+END $$;
+reset role;
+
+-- A hint is a candidate, not a command: it is slugified and uniqueness-
+-- checked like any other. A hint colliding with an existing slug must
+-- suffix, not overwrite or error.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c5';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('Another Mandal', 'Collide Founder', 'Shree Ganesh Pune!!');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug = 'shree-ganesh-pune-2',
+    format('FAIL: colliding hint should suffix, got %s', v_slug);
+  RAISE NOTICE 'PASS: unsanitised colliding hint slugified and suffixed to %', v_slug;
 END $$;
 reset role;
 
