@@ -24,15 +24,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MIGRATION_FILE="$SCRIPT_DIR/migrations/20260714111950_schema_and_rls.sql"
-MIGRATION_FILE_2="$SCRIPT_DIR/migrations/20260714121305_add_users_email.sql"
-MIGRATION_FILE_3="$SCRIPT_DIR/migrations/20260714124014_redeem_invite.sql"
-MIGRATION_FILE_4="$SCRIPT_DIR/migrations/20260714131940_mandal_assets_storage.sql"
-MIGRATION_FILE_5="$SCRIPT_DIR/migrations/20260714134206_donations_sms_sent.sql"
-MIGRATION_FILE_6="$SCRIPT_DIR/migrations/20260714140000_donations_idempotency_key.sql"
-MIGRATION_FILE_7="$SCRIPT_DIR/migrations/20260714150000_list_admins.sql"
-MIGRATION_FILE_8="$SCRIPT_DIR/migrations/20260714160000_transparency_report.sql"
-MIGRATION_FILE_9="$SCRIPT_DIR/migrations/20260714170000_expense_categories_rpc.sql"
 SEED_FILE="$SCRIPT_DIR/seed.sql"
 
 PORT="${VERIFY_LOCAL_PORT:-55432}"
@@ -91,18 +82,19 @@ create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
+
+-- Supabase exposes the decoded JWT payload as auth.jwt(); create_mandal()
+-- reads its is_anonymous claim to reject volunteer (signInAnonymously)
+-- sessions. This stub returns whatever request.jwt.claims is set to, which
+-- is enough to exercise that guard from both sides.
+create or replace function auth.jwt() returns jsonb
+language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb)
+$$;
+
 create role anon;
 create role authenticated;
 SQL
-
-echo "== applying migration =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE"
-
-echo "== applying migration (add_users_email) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_2"
-
-echo "== applying migration (redeem_invite) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_3"
 
 echo "== stubbing storage schema (Task 6) =="
 # storage.buckets/storage.objects are part of Supabase's Storage extension
@@ -128,25 +120,20 @@ create table if not exists storage.objects (
   created_at timestamptz not null default now()
 );
 alter table storage.objects enable row level security;
+
+-- The multi-tenancy migration scopes the mandal-assets policies by folder
+-- prefix, which needs Supabase's path helper.
+create or replace function storage.foldername(name text) returns text[]
+language sql immutable as $$
+  select string_to_array(name, '/')
+$$;
 SQL
 
-echo "== applying migration (mandal_assets_storage) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_4"
-
-echo "== applying migration (donations_sms_sent) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_5"
-
-echo "== applying migration (donations_idempotency_key) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_6"
-
-echo "== applying migration (list_admins) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_7"
-
-echo "== applying migration (transparency_report) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_8"
-
-echo "== applying migration (expense_categories_rpc) =="
-"${PSQL[@]}" -d "$DB_NAME" -f "$MIGRATION_FILE_9"
+echo "== applying migrations (in filename order) =="
+for migration in "$SCRIPT_DIR"/migrations/*.sql; do
+  echo "   -> $(basename "$migration")"
+  "${PSQL[@]}" -d "$DB_NAME" -f "$migration"
+done
 
 echo "== applying seed.sql =="
 "${PSQL[@]}" -d "$DB_NAME" -f "$SEED_FILE"
@@ -183,8 +170,8 @@ echo "== assertion: link_admin_account() links exactly the matching admin row ==
 -- email with anyone (email is globally UNIQUE on this table, so a volunteer
 -- literally cannot share an admin's email — the `role = 'admin'` guard in
 -- the WHERE clause is what's actually relied on, not email uniqueness).
-insert into users (id, name, role, email, active) values
-  ('00000000-0000-0000-0000-000000000099', 'Link Test Admin', 'admin', 'linktest-admin@example.com', true);
+insert into users (id, mandal_id, name, role, email, active) values
+  ('00000000-0000-0000-0000-000000000099', '11111111-1111-1111-1111-000000000001', 'Link Test Admin', 'admin', 'linktest-admin@example.com', true);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000099', 'linktest-admin@example.com');
@@ -229,8 +216,8 @@ echo "== assertion: redeem_invite() links exactly the matching volunteer row and
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 -- Fresh volunteer row + fresh anonymous auth identity, isolated from the
 -- seed volunteers (002/003) and their later backfill/RLS assertions below.
-insert into users (id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-000000000098', 'Redeem Test Volunteer', 'volunteer', 'redeem-test-token', true);
+insert into users (id, mandal_id, name, role, invite_token, active) values
+  ('00000000-0000-0000-0000-000000000098', '11111111-1111-1111-1111-000000000001', 'Redeem Test Volunteer', 'volunteer', 'redeem-test-token', true);
 
 insert into auth.users (id) values
   ('aaaaaaaa-0000-0000-0000-000000000098');
@@ -286,6 +273,11 @@ SQL
 
 echo "== backfilling auth_user_id + seeding test donations =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 insert into auth.users (id) values
   ('aaaaaaaa-0000-0000-0000-000000000001'),
   ('aaaaaaaa-0000-0000-0000-000000000002');
@@ -296,10 +288,11 @@ update users set auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000002'
   where id = '00000000-0000-0000-0000-000000000002'; -- Volunteer One
 
 -- Superuser is the table owner and bypasses RLS; this is just test-data
--- setup, not itself an RLS assertion.
-insert into donations (donor_name, amount_paise, mode, collected_by) values
-  ('Vol1 Donor', 10000, 'cash', '00000000-0000-0000-0000-000000000002'),
-  ('Vol2 Donor', 20000, 'cash', '00000000-0000-0000-0000-000000000003');
+-- setup, not itself an RLS assertion. mandal_id is explicit here because
+-- there's no session for enforce_insert_defaults() to stamp it from.
+insert into donations (mandal_id, donor_name, amount_paise, mode, collected_by) values
+  ('11111111-1111-1111-1111-000000000001', 'Vol1 Donor', 10000, 'cash', '00000000-0000-0000-0000-000000000002'),
+  ('11111111-1111-1111-1111-000000000001', 'Vol2 Donor', 20000, 'cash', '00000000-0000-0000-0000-000000000003');
 SQL
 
 echo "== assertion: append-only trigger blocks financial-field edits =="
@@ -366,6 +359,11 @@ SQL
 
 echo "== assertion: receipt_no unique constraint + insert-time forgery override =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 DO $$
 DECLARE
   dup_receipt_no bigint;
@@ -397,10 +395,15 @@ BEGIN
   SELECT receipt_no INTO dup_receipt_no FROM donations WHERE donor_name = 'Vol1 Donor';
   BEGIN
     -- Disable the insert trigger just for this probe so the raw constraint
-    -- is what's being exercised, not the trigger papering over it.
+    -- is what's being exercised, not the trigger papering over it. That also
+    -- means nothing stamps mandal_id, so it's supplied explicitly — and it
+    -- must match 'Vol1 Donor''s mandal, since the constraint is now
+    -- unique(mandal_id, receipt_no): a duplicate receipt_no in a DIFFERENT
+    -- mandal is legal and would prove nothing here.
     ALTER TABLE donations DISABLE TRIGGER donations_enforce_insert;
-    INSERT INTO donations (donor_name, amount_paise, mode, collected_by, receipt_no)
-      VALUES ('Should Violate Unique', 100, 'cash', '00000000-0000-0000-0000-000000000001', dup_receipt_no);
+    INSERT INTO donations (mandal_id, donor_name, amount_paise, mode, collected_by, receipt_no)
+      VALUES ('11111111-1111-1111-1111-000000000001', 'Should Violate Unique', 100, 'cash',
+              '00000000-0000-0000-0000-000000000001', dup_receipt_no);
     ALTER TABLE donations ENABLE TRIGGER donations_enforce_insert;
     RAISE EXCEPTION 'FAIL: duplicate receipt_no was accepted with the insert trigger disabled — UNIQUE constraint missing';
   EXCEPTION WHEN unique_violation THEN
@@ -412,6 +415,11 @@ SQL
 
 echo "== assertion: insert-time trigger overrides client-forged financial fields =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 DO $$
 DECLARE
   forged_row donations%ROWTYPE;
@@ -446,6 +454,11 @@ SQL
 
 echo "== assertion: handovers.note is append-only (asymmetry fix) =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 DO $$
 DECLARE
   h_id uuid;
@@ -469,6 +482,11 @@ SQL
 
 echo "== assertion: created_at is append-only on all three tables =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 DO $$
 BEGIN
   BEGIN
@@ -610,20 +628,37 @@ echo "== assertion: mandal-assets storage RLS — admin can insert/update =="
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
 
-insert into storage.objects (bucket_id, name) values ('mandal-assets', 'logo-test.png');
+-- Paths are <mandal_id>/<file> now: mandal_assets_admin_write checks
+-- (storage.foldername(name))[1] against app_mandal_id(), so a flat path is
+-- rejected outright.
+insert into storage.objects (bucket_id, name) values ('mandal-assets', '11111111-1111-1111-1111-000000000001/logo-test.png');
 
 DO $$
 BEGIN
-  ASSERT (SELECT count(*) FROM storage.objects WHERE name = 'logo-test.png') = 1,
-    'FAIL: admin insert into mandal-assets storage.objects should have succeeded';
+  ASSERT (SELECT count(*) FROM storage.objects WHERE name = '11111111-1111-1111-1111-000000000001/logo-test.png') = 1,
+    'FAIL: admin insert into their own mandal folder should have succeeded';
 END $$;
 
-update storage.objects set name = 'logo-test-renamed.png' where name = 'logo-test.png';
+update storage.objects set name = '11111111-1111-1111-1111-000000000001/logo-test-renamed.png'
+  where name = '11111111-1111-1111-1111-000000000001/logo-test.png';
 
 DO $$
 BEGIN
-  ASSERT (SELECT count(*) FROM storage.objects WHERE name = 'logo-test-renamed.png') = 1,
-    'FAIL: admin update of mandal-assets storage.objects should have succeeded';
+  ASSERT (SELECT count(*) FROM storage.objects WHERE name = '11111111-1111-1111-1111-000000000001/logo-test-renamed.png') = 1,
+    'FAIL: admin update within their own mandal folder should have succeeded';
+END $$;
+
+-- The isolation this migration adds: mandal one's admin must not be able to
+-- write into mandal two's folder, even though they are a legitimate admin.
+DO $$
+BEGIN
+  BEGIN
+    insert into storage.objects (bucket_id, name)
+      values ('mandal-assets', '22222222-2222-2222-2222-000000000002/stolen-logo.png');
+    RAISE EXCEPTION 'SECURITY HOLE: an admin wrote into another mandal''s asset folder';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: cross-mandal storage write rejected (%)', SQLERRM;
+  END;
 END $$;
 
 reset role;
@@ -637,7 +672,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer
 DO $$
 BEGIN
   BEGIN
-    insert into storage.objects (bucket_id, name) values ('mandal-assets', 'should-be-rejected.png');
+    insert into storage.objects (bucket_id, name) values ('mandal-assets', '11111111-1111-1111-1111-000000000001/should-be-rejected.png');
     RAISE EXCEPTION 'SECURITY HOLE: non-admin insert into mandal-assets succeeded without error';
   EXCEPTION WHEN OTHERS THEN
     IF SQLSTATE = '42501' THEN
@@ -663,6 +698,11 @@ echo "== assertion: Task 10 client_idempotency_key UNIQUE constraint rejects a d
 # Run last (after every earlier row-count assertion has already executed) so
 # these extra inserts can't skew the admin/volunteer row-count checks above.
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. Superuser still bypasses RLS, so this block
+-- tests exactly what it tested before: trigger behaviour, not policies.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 DO $$
 BEGIN
   INSERT INTO donations (donor_name, amount_paise, mode, collected_by, client_idempotency_key)
@@ -699,8 +739,8 @@ echo "== assertion: Task 12 list_admins() is callable by a volunteer, hides inac
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 -- Inactive admin: proves "active admins only" is enforced, not just
 -- "role = 'admin'". A fresh row/identity, isolated from the seed admin.
-insert into users (id, name, role, email, active) values
-  ('00000000-0000-0000-0000-000000000096', 'Inactive Admin', 'admin', 'inactive-admin@example.com', false);
+insert into users (id, mandal_id, name, role, email, active) values
+  ('00000000-0000-0000-0000-000000000096', '11111111-1111-1111-1111-000000000001', 'Inactive Admin', 'admin', 'inactive-admin@example.com', false);
 
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
@@ -745,6 +785,10 @@ SQL
 
 echo "== assertion: Task 16 transparency report is gated on transparency_published; admin previews regardless =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
+-- needs a session to resolve. These setup inserts land in mandal one.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
 -- Own isolated expense rows (a fresh category), so the category breakdown
 -- assertion below has a known, exact expected row rather than depending on
 -- whatever earlier assertions left behind.
@@ -760,15 +804,20 @@ update expenses set voided = true, void_reason = 'test row, must be excluded',
     voided_by = '00000000-0000-0000-0000-000000000001', voided_at = now()
   where amount_paise = 99999999 and category = 'Transparency Test';
 
+-- Drop the session claim too, not just the role: auth.uid() reads the
+-- jwt claim set at the top of this block, and a lingering admin claim
+-- would flip is_admin() on and hand 'anon' the admin preview bypass �
+-- turning this leak test green for entirely the wrong reason.
+set request.jwt.claim.sub = '';
 set role anon;
 DO $$
 DECLARE
   row_count int;
 BEGIN
-  SELECT count(*) INTO row_count FROM get_transparency_report();
+  SELECT count(*) INTO row_count FROM get_transparency_report('mandal-one');
   ASSERT row_count = 0, format('FAIL: unpublished report should return 0 rows to anon, saw %s', row_count);
 
-  SELECT count(*) INTO row_count FROM get_transparency_categories();
+  SELECT count(*) INTO row_count FROM get_transparency_categories('mandal-one');
   ASSERT row_count = 0, format('FAIL: unpublished categories should return 0 rows to anon, saw %s', row_count);
 
   RAISE NOTICE 'PASS: anon sees 0 rows from both transparency RPCs before publish';
@@ -782,10 +831,10 @@ DECLARE
   row_count int;
   category_amount bigint;
 BEGIN
-  SELECT count(*) INTO row_count FROM get_transparency_report();
+  SELECT count(*) INTO row_count FROM get_transparency_report('mandal-one');
   ASSERT row_count = 1, format('FAIL: admin preview of the report should return 1 row even unpublished, saw %s', row_count);
 
-  SELECT amount_paise INTO category_amount FROM get_transparency_categories() WHERE category = 'Transparency Test';
+  SELECT amount_paise INTO category_amount FROM get_transparency_categories('mandal-one') WHERE category = 'Transparency Test';
   ASSERT category_amount = 12345,
     format('FAIL: admin preview category total should be 12345 (voided row excluded), saw %s', category_amount);
 
@@ -797,19 +846,25 @@ echo "== assertion: Task 16 publishing (via the admin RLS update policy) makes t
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- Admin Treasurer
-update mandal_config set transparency_published = true where id = true;
+-- `where id = true` targeted the old boolean singleton PK. Scope to the
+-- admin's own mandal now � mandals_admin_update's RLS would reject anything
+-- else anyway, which is the policy this assertion exercises.
+update mandals set transparency_published = true where id = app_mandal_id();
 reset role;
 
+-- Clear the claim, not just the role: a lingering admin claim would give
+-- 'anon' the is_admin() preview bypass and prove nothing about publishing.
+set request.jwt.claim.sub = '';
 set role anon;
 DO $$
 DECLARE
   row_count int;
   category_amount bigint;
 BEGIN
-  SELECT count(*) INTO row_count FROM get_transparency_report();
+  SELECT count(*) INTO row_count FROM get_transparency_report('mandal-one');
   ASSERT row_count = 1, format('FAIL: published report should return 1 row to anon, saw %s', row_count);
 
-  SELECT amount_paise INTO category_amount FROM get_transparency_categories() WHERE category = 'Transparency Test';
+  SELECT amount_paise INTO category_amount FROM get_transparency_categories('mandal-one') WHERE category = 'Transparency Test';
   ASSERT category_amount = 12345,
     format('FAIL: published category total should be 12345 (voided row excluded), saw %s', category_amount);
 
@@ -818,7 +873,7 @@ END $$;
 reset role;
 SQL
 
-echo "== assertion: a volunteer can read expense_categories via RPC even though mandal_config itself is admin-only =="
+echo "== assertion: a volunteer can read expense_categories via RPC even though mandals itself is admin-only =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
@@ -826,15 +881,15 @@ DO $$
 DECLARE
   categories text[];
 BEGIN
-  -- Confirms the gap this migration fixes: mandal_config has no
+  -- Confirms the gap this migration fixes: mandals has no
   -- volunteer-facing RLS policy, so a direct select returns nothing even
   -- for this same volunteer session.
-  ASSERT NOT EXISTS (SELECT 1 FROM mandal_config), 'FAIL: expected mandal_config direct select to be empty for a volunteer';
+  ASSERT NOT EXISTS (SELECT 1 FROM mandals), 'FAIL: expected mandals direct select to be empty for a volunteer';
 
   SELECT get_expense_categories() INTO categories;
   ASSERT categories IS NOT NULL AND array_length(categories, 1) > 0,
     'FAIL: get_expense_categories() should return the mandal''s categories to a volunteer';
-  RAISE NOTICE 'PASS: a volunteer session reads expense_categories via RPC (% categories) despite mandal_config RLS being admin-only', array_length(categories, 1);
+  RAISE NOTICE 'PASS: a volunteer session reads expense_categories via RPC (% categories) despite mandals RLS being admin-only', array_length(categories, 1);
 END $$;
 reset role;
 SQL
@@ -849,6 +904,244 @@ BEGIN
     RAISE EXCEPTION 'SECURITY HOLE: anon was able to call get_expense_categories() without error';
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'PASS: anon is rejected from calling get_expense_categories() (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: TENANT ISOLATION — mandal two's admin cannot see mandal one =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Mandal one already has donations/expenses from the assertions above.
+-- Give mandal two's admin a real session and prove none of it is reachable.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- Other Admin, mandal two
+
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM donations
+   WHERE mandal_id = '11111111-1111-1111-1111-000000000001';
+  ASSERT v_count = 0, format('LEAK: mandal two admin saw %s of mandal one''s donations', v_count);
+
+  SELECT count(*) INTO v_count FROM expenses
+   WHERE mandal_id = '11111111-1111-1111-1111-000000000001';
+  ASSERT v_count = 0, format('LEAK: mandal two admin saw %s of mandal one''s expenses', v_count);
+
+  SELECT count(*) INTO v_count FROM handovers
+   WHERE mandal_id = '11111111-1111-1111-1111-000000000001';
+  ASSERT v_count = 0, format('LEAK: mandal two admin saw %s of mandal one''s handovers', v_count);
+
+  SELECT count(*) INTO v_count FROM users
+   WHERE mandal_id = '11111111-1111-1111-1111-000000000001';
+  ASSERT v_count = 0, format('LEAK: mandal two admin saw %s of mandal one''s users', v_count);
+
+  SELECT count(*) INTO v_count FROM mandals
+   WHERE id = '11111111-1111-1111-1111-000000000001';
+  ASSERT v_count = 0, 'LEAK: mandal two admin can read mandal one''s mandals row';
+
+  -- Their own mandal must still be fully visible — an isolation test that
+  -- passes because the admin sees NOTHING proves nothing.
+  SELECT count(*) INTO v_count FROM mandals
+   WHERE id = '22222222-2222-2222-2222-000000000002';
+  ASSERT v_count = 1, 'FAIL: mandal two admin cannot read their OWN mandal row';
+
+  SELECT count(*) INTO v_count FROM list_admins() WHERE name = 'Admin Treasurer';
+  ASSERT v_count = 0, 'LEAK: list_admins() returned another mandal''s admin';
+
+  SELECT count(*) INTO v_count FROM list_admins() WHERE name = 'Other Admin';
+  ASSERT v_count = 1, 'FAIL: list_admins() should return the caller''s own mandal admin';
+
+  RAISE NOTICE 'PASS: mandal two admin is fully isolated from mandal one, and still sees their own';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: TENANT ISOLATION — admin cannot preview another mandal's unpublished report =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- mandal-one was published by the Task 16 assertions above; mandal-two is
+-- still unpublished, so it's the one to probe for the cross-mandal bypass.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal ONE admin
+
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM get_transparency_report('mandal-two');
+  ASSERT v_count = 0, 'LEAK: an admin previewed another mandal''s unpublished totals';
+
+  SELECT count(*) INTO v_count FROM get_transparency_categories('mandal-two');
+  ASSERT v_count = 0, 'LEAK: an admin previewed another mandal''s unpublished categories';
+
+  -- Same admin, own mandal: the preview bypass must still work.
+  SELECT count(*) INTO v_count FROM get_transparency_report('mandal-one');
+  ASSERT v_count = 1, 'FAIL: admin lost the preview of their OWN mandal';
+
+  -- An unknown slug must look identical to an unpublished one.
+  SELECT count(*) INTO v_count FROM get_transparency_report('no-such-mandal');
+  ASSERT v_count = 0, 'FAIL: unknown slug should return zero rows';
+
+  RAISE NOTICE 'PASS: cross-mandal transparency preview blocked; own-mandal preview intact';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: TENANT ISOLATION — mandal_id is stamped from the session, not the client =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+
+-- Forge mandal_id: claim this donation belongs to mandal two. The trigger
+-- must overwrite it with the session's own mandal.
+insert into donations (mandal_id, donor_name, amount_paise, mode, collected_by)
+  values ('22222222-2222-2222-2222-000000000002', 'Forged Mandal Id', 100, 'cash',
+          '00000000-0000-0000-0000-000000000001');
+
+DO $$
+DECLARE
+  v_mandal uuid;
+BEGIN
+  SELECT mandal_id INTO v_mandal FROM donations WHERE donor_name = 'Forged Mandal Id';
+  ASSERT v_mandal = '11111111-1111-1111-1111-000000000001',
+    format('SECURITY HOLE: client-forged mandal_id was honoured (row landed in %s)', v_mandal);
+  RAISE NOTICE 'PASS: forged mandal_id overridden by the insert trigger';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: TENANT ISOLATION — receipt numbers are per-mandal and gapless =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Mandal two has issued no receipts yet, so its first donation must be
+-- receipt #1 even though mandal one has already issued several.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+
+insert into donations (donor_name, amount_paise, mode, collected_by)
+  values ('M2 First Donor', 100, 'cash', '00000000-0000-0000-0000-0000000000b1');
+
+DO $$
+DECLARE
+  v_no bigint;
+BEGIN
+  SELECT receipt_no INTO v_no FROM donations WHERE donor_name = 'M2 First Donor';
+  ASSERT v_no = 1, format('FAIL: mandal two''s first receipt should be 1, got %s', v_no);
+END $$;
+
+insert into donations (donor_name, amount_paise, mode, collected_by)
+  values ('M2 Second Donor', 100, 'cash', '00000000-0000-0000-0000-0000000000b1');
+
+DO $$
+DECLARE
+  v_no bigint;
+BEGIN
+  SELECT receipt_no INTO v_no FROM donations WHERE donor_name = 'M2 Second Donor';
+  ASSERT v_no = 2, format('FAIL: mandal two''s second receipt should be 2, got %s', v_no);
+  RAISE NOTICE 'PASS: receipt numbers restart per mandal and increment gaplessly';
+END $$;
+reset role;
+
+-- Both mandals now legitimately own a receipt #1 — the composite unique
+-- constraint must permit exactly that.
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM donations WHERE receipt_no = 1;
+  ASSERT v_count = 2, format('FAIL: expected both mandals to hold a receipt #1, saw %s', v_count);
+  RAISE NOTICE 'PASS: two mandals can each hold receipt #1 (unique is per-mandal)';
+END $$;
+SQL
+
+echo "== assertion: create_mandal() guards =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+insert into auth.users (id, email) values
+  ('aaaaaaaa-0000-0000-0000-0000000000c1', 'newfounder@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c2', 'devanagari@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000c3', 'dupname@example.com')
+on conflict (id) do nothing;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c1';
+set request.jwt.claims = '{"is_anonymous": false}';
+
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('Shivaji Nagar Mandal', 'New Founder');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug = 'shivaji-nagar-mandal', format('FAIL: unexpected slug %s', v_slug);
+
+  ASSERT EXISTS (SELECT 1 FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000c1'
+                   AND role = 'admin' AND mandal_id = v_id),
+    'FAIL: create_mandal did not create the first admin';
+
+  -- The one-mandal-per-email cap.
+  BEGIN
+    PERFORM create_mandal('Second Mandal', 'New Founder');
+    RAISE EXCEPTION 'FAIL: a second create_mandal for the same account succeeded';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%already belongs to a mandal%' THEN
+      RAISE NOTICE 'PASS: one-mandal-per-email cap held';
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- A mandal named entirely in Devanagari must still get a valid slug: for a
+-- Ganesh mandal app this is the normal case, not an exotic one.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c2';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('गणेश मंडळ', 'Devanagari Founder');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug ~ '^[a-z0-9][a-z0-9-]{1,39}$',
+    format('FAIL: Devanagari name produced an invalid slug: %s', v_slug);
+  RAISE NOTICE 'PASS: Devanagari mandal name slugified to %', v_slug;
+END $$;
+reset role;
+
+-- A second mandal with the SAME name must get a distinct slug, not collide.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000c3';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE
+  v_id uuid;
+  v_slug text;
+BEGIN
+  v_id := create_mandal('Shivaji Nagar Mandal', 'Dup Name Founder');
+  SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
+  ASSERT v_slug = 'shivaji-nagar-mandal-2',
+    format('FAIL: duplicate mandal name should get -2 suffix, got %s', v_slug);
+  RAISE NOTICE 'PASS: duplicate mandal name resolved to %', v_slug;
+END $$;
+reset role;
+
+-- An anonymous (volunteer) session must never create a mandal.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002';
+set request.jwt.claims = '{"is_anonymous": true}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM create_mandal('Anon Mandal', 'Anon');
+    RAISE EXCEPTION 'SECURITY HOLE: an anonymous session created a mandal';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%anonymous%' THEN
+      RAISE NOTICE 'PASS: anonymous session rejected by create_mandal()';
+    ELSE
+      RAISE;
+    END IF;
   END;
 END $$;
 reset role;
