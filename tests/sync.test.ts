@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Tables } from '../src/lib/db/database.types'
 import type { CreateDonationInput } from '../src/lib/db/donations'
-import { enqueueDonation, syncOutboxItem, syncAllPending } from '../src/lib/queue/sync'
+import { enqueueDonation, syncOutboxItem, syncAllPending, MAX_SYNC_ATTEMPTS } from '../src/lib/queue/sync'
 
 // Mock src/lib/db/donations.ts, same shape as tests/CollectionForm.test.tsx.
 const { createDonation, getDonationByIdempotencyKey } = vi.hoisted(() => ({
@@ -37,6 +37,11 @@ const { outbox, outboxRows } = vi.hoisted(() => {
     delete: vi.fn((localId: string) => {
       outboxRows.delete(localId)
       return Promise.resolve()
+    }),
+    update: vi.fn((localId: string, changes: Record<string, unknown>) => {
+      const row = outboxRows.get(localId)
+      if (row) outboxRows.set(localId, { ...row, ...changes })
+      return Promise.resolve(row ? 1 : 0)
     }),
     orderBy: vi.fn(() => ({
       toArray: () =>
@@ -174,6 +179,20 @@ describe('syncOutboxItem', () => {
     expect(spy).not.toHaveBeenCalled()
     window.removeEventListener('queue:changed', spy)
   })
+
+  it('server rejection: records a failed attempt + reason and dispatches queue:changed (audit #6)', async () => {
+    const { localId } = await enqueueDonation(donationInput)
+    // A Postgrest error carries a code — a poison payload, not an offline blip.
+    createDonation.mockRejectedValue({ code: '23503', message: 'insert violates foreign key' })
+    const spy = captureQueueChanged()
+
+    const result = await syncOutboxItem(localId)
+
+    expect(result).toBeNull()
+    expect(await outbox.get(localId)).toMatchObject({ attempts: 1, failedReason: 'insert violates foreign key' })
+    expect(spy).toHaveBeenCalledTimes(1)
+    window.removeEventListener('queue:changed', spy)
+  })
 })
 
 describe('syncAllPending', () => {
@@ -225,6 +244,19 @@ describe('syncAllPending', () => {
     expect(createDonation.mock.calls[0][0]).toMatchObject({ clientIdempotencyKey: mine.localId })
     // The other user's row is fenced out — still queued, never synced.
     expect(await outbox.get('other-local-id')).toBeDefined()
+  })
+
+  it('skips a poison item that has already exhausted MAX_SYNC_ATTEMPTS', async () => {
+    vi.stubGlobal('navigator', { ...navigator, onLine: true })
+    const { localId } = await enqueueDonation(donationInput)
+    await outbox.update(localId, { attempts: MAX_SYNC_ATTEMPTS })
+    createDonation.mockResolvedValue(serverDonation)
+
+    await syncAllPending()
+
+    expect(createDonation).not.toHaveBeenCalled()
+    // Still present — surfaced for manual attention, not silently dropped.
+    expect(await outbox.get(localId)).toBeDefined()
   })
 
   it('guards against overlapping concurrent runs with an in-memory re-entrant flag', async () => {

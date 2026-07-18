@@ -16,6 +16,11 @@ export interface OutboxDonation {
   mode: DonationMode
   collectedBy: string
   queuedAt: string // ISO timestamp, for display/ordering only
+  // Poison-queue tracking (audit 2026-07-18 #6): count of server REJECTIONS
+  // (not offline blips), and the last such error. After MAX_SYNC_ATTEMPTS the
+  // item is surfaced as "needs attention" instead of retried forever.
+  attempts?: number
+  failedReason?: string
 }
 
 export const db = new Dexie('vinayak-mandal') as Dexie & {

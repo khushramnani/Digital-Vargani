@@ -224,6 +224,7 @@ insert into auth.users (id) values
 
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000098';
+set request.jwt.claims = '{"is_anonymous": true}'; -- redeem now requires an anonymous session (audit #5)
 select redeem_invite('redeem-test-token');
 reset role;
 
@@ -248,6 +249,7 @@ insert into auth.users (id) values
 
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000097';
+set request.jwt.claims = '{"is_anonymous": true}';
 DO $$
 BEGIN
   BEGIN
@@ -256,6 +258,30 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE '%invalid or already-used invite link%' THEN
       RAISE NOTICE 'PASS: redeem_invite() rejects replay of an already-used (now-null) token (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Hardening (audit #5): a real (non-anonymous) session must not redeem an
+-- invite — the volunteer flow is always signInAnonymously().
+insert into users (id, mandal_id, name, role, invite_token, active) values
+  ('00000000-0000-0000-0000-000000000095', '11111111-1111-1111-1111-000000000001', 'Non-anon Redeem Test', 'volunteer', 'nonanon-token', true);
+insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-000000000095');
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000095';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM redeem_invite('nonanon-token');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-anonymous session redeemed an invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%volunteer session%' THEN
+      RAISE NOTICE 'PASS: redeem_invite() rejects a non-anonymous session (%)', SQLERRM;
     ELSE
       RAISE;
     END IF;
@@ -311,16 +337,24 @@ BEGIN
   END;
 END $$;
 
--- Sanity check the trigger isn't over-broad: voiding (an allowed edit) must
--- still succeed.
-UPDATE donations SET voided = true, void_reason = 'verify-local test void'
-  WHERE donor_name = 'Vol2 Donor';
+-- A direct client UPDATE of the void columns is now rejected — voiding must
+-- go through void_row() (audit 2026-07-18 #2). The trigger fires even for the
+-- table owner, so this holds here too. (void_row()'s own happy path, the
+-- server-side stamp, and one-wayness are exercised in their own block below.)
 DO $$
 BEGIN
-  ASSERT (SELECT voided FROM donations WHERE donor_name = 'Vol2 Donor') = true,
-    'FAIL: voiding a donation (an allowed field) should still succeed';
+  BEGIN
+    UPDATE donations SET voided = true, void_reason = 'forged direct void'
+      WHERE donor_name = 'Vol2 Donor';
+    RAISE EXCEPTION 'SECURITY HOLE: a direct void UPDATE succeeded (must require void_row())';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%void_row%' OR SQLERRM LIKE '%void metadata%' THEN
+      RAISE NOTICE 'PASS: direct void UPDATE blocked — voiding must go through void_row() (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
 END $$;
-UPDATE donations SET voided = false, void_reason = null WHERE donor_name = 'Vol2 Donor';
 SQL
 
 echo "== assertion: Task 8 sms_sent_at is updatable and does not loosen the append-only guard =="
@@ -800,13 +834,18 @@ insert into expenses (category, amount_paise, paid_by, paid_from) values
   ('Transparency Test', 12345, '00000000-0000-0000-0000-000000000001', 'cash');
 
 -- enforce_insert_defaults (Task 2 migration) unconditionally forces
--- voided=false on INSERT regardless of what's sent — void via UPDATE
--- after the fact, same as every other voided-row fixture in this script.
+-- voided=false on INSERT regardless of what's sent — void after the fact via
+-- void_row(), the only void path now (audit #2), which stamps voided_by
+-- server-side from the admin session set above.
 insert into expenses (category, amount_paise, paid_by, paid_from) values
   ('Transparency Test', 99999999, '00000000-0000-0000-0000-000000000001', 'cash');
-update expenses set voided = true, void_reason = 'test row, must be excluded',
-    voided_by = '00000000-0000-0000-0000-000000000001', voided_at = now()
-  where amount_paise = 99999999 and category = 'Transparency Test';
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  SELECT id INTO v_id FROM expenses
+    WHERE amount_paise = 99999999 AND category = 'Transparency Test';
+  PERFORM void_row('expenses', v_id, 'test row, must be excluded');
+END $$;
 
 -- Drop the session claim too, not just the role: auth.uid() reads the
 -- jwt claim set at the top of this block, and a lingering admin claim
@@ -1382,6 +1421,133 @@ BEGIN
     RAISE NOTICE 'PASS: default_lang check constraint rejects an unsupported code';
   END;
 END $$;
+SQL
+
+echo "== assertion: void_row() authorization, server-side stamp, and one-wayness (audit #2) =="
+# Insert the target as the setup superuser — RLS-invisible to a volunteer, so
+# a volunteer session can't look the id up itself (same pattern as the anon
+# receipt test), which is why the id is captured here and passed in literally.
+VOIDROW_ID=$("${PSQL[@]}" -d "$DB_NAME" -tAc "insert into donations (mandal_id, donor_name, amount_paise, mode, collected_by) values ('11111111-1111-1111-1111-000000000001','VoidRow Target',100,'cash','00000000-0000-0000-0000-000000000001') returning id;")
+if [ -z "$VOIDROW_ID" ]; then
+  echo "FAIL: could not insert the void_row target" >&2
+  exit 1
+fi
+
+# A volunteer voiding a donation that isn't theirs must be rejected.
+VOID_ERR=$("${PSQL[@]}" -d "$DB_NAME" -tAc "set role authenticated; set request.jwt.claim.sub='aaaaaaaa-0000-0000-0000-000000000002'; select void_row('donations','$VOIDROW_ID','not mine');" 2>&1 || true)
+if echo "$VOID_ERR" | grep -qiE 'not yours to void|not found'; then
+  echo "PASS: void_row rejects a non-owner, non-admin volunteer"
+else
+  echo "FAIL: a volunteer voided another's donation (or wrong error): $VOID_ERR" >&2
+  exit 1
+fi
+
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  SELECT id INTO v_id FROM donations WHERE donor_name = 'VoidRow Target';
+  ASSERT v_id IS NOT NULL, 'FAIL: admin cannot see the void_row target';
+
+  PERFORM void_row('donations', v_id, 'admin voids it');
+  ASSERT (SELECT voided FROM donations WHERE id = v_id) = true, 'FAIL: void_row did not void the row';
+  ASSERT (SELECT voided_by FROM donations WHERE id = v_id) = '00000000-0000-0000-0000-000000000001',
+    'FAIL: void_row did not stamp voided_by from the session';
+  ASSERT (SELECT voided_at FROM donations WHERE id = v_id) IS NOT NULL,
+    'FAIL: void_row did not stamp voided_at from the session';
+  RAISE NOTICE 'PASS: void_row voids and stamps voided_by/voided_at server-side';
+
+  -- One-way: a direct un-void UPDATE is rejected.
+  BEGIN
+    UPDATE donations SET voided = false, voided_by = null, voided_at = null, void_reason = null WHERE id = v_id;
+    RAISE EXCEPTION 'SECURITY HOLE: a voided donation was un-voided by a direct UPDATE';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%void metadata%' OR SQLERRM LIKE '%voided row cannot be changed%' OR SQLERRM LIKE '%one-way%' THEN
+      RAISE NOTICE 'PASS: voids are one-way — direct un-void rejected (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+
+  -- Re-voiding an already-voided row via void_row is a raise, not a silent no-op.
+  BEGIN
+    PERFORM void_row('donations', v_id, 'again');
+    RAISE EXCEPTION 'FAIL: void_row succeeded on an already-voided row';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%already voided%' OR SQLERRM LIKE '%not found%' THEN
+      RAISE NOTICE 'PASS: void_row raises on an already-voided row (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: TENANT ISOLATION — composite actor FK blocks a cross-mandal actor (audit #3) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+BEGIN
+  BEGIN
+    -- Disable the insert trigger so mandal_id isn't stamped from the session,
+    -- letting us forge a (collected_by, mandal_id) pair that crosses tenants:
+    -- collected_by is mandal TWO's admin, mandal_id is mandal ONE.
+    ALTER TABLE donations DISABLE TRIGGER donations_enforce_insert;
+    INSERT INTO donations (mandal_id, donor_name, amount_paise, mode, collected_by)
+      VALUES ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Actor', 100, 'cash',
+              '00000000-0000-0000-0000-0000000000b1');
+    ALTER TABLE donations ENABLE TRIGGER donations_enforce_insert;
+    RAISE EXCEPTION 'SECURITY HOLE: a donation named collected_by from another mandal was accepted';
+  EXCEPTION WHEN foreign_key_violation THEN
+    ALTER TABLE donations ENABLE TRIGGER donations_enforce_insert;
+    RAISE NOTICE 'PASS: composite FK rejects a cross-mandal collected_by (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: reissue_invite() mints a fresh token and clears the old binding (audit #4) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Runs LAST: it clears volunteer 002's auth_user_id, and 002 is used as a
+-- live session by many assertions above.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE new_tok text;
+BEGIN
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NOT NULL,
+    'FAIL: precondition — volunteer 002 should be bound before reissue';
+
+  new_tok := reissue_invite('00000000-0000-0000-0000-000000000002');
+  ASSERT new_tok IS NOT NULL AND length(new_tok) > 0, 'FAIL: reissue_invite returned no token';
+  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
+    'FAIL: reissue_invite did not clear the old binding';
+  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = new_tok,
+    'FAIL: reissue_invite did not set the new token';
+  RAISE NOTICE 'PASS: reissue_invite minted a fresh token and cleared the binding';
+END $$;
+reset role;
+
+-- A non-admin cannot reissue.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000003'; -- a non-admin session
+DO $$
+BEGIN
+  BEGIN
+    PERFORM reissue_invite('00000000-0000-0000-0000-000000000002');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-admin reissued an invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only an admin%' THEN
+      RAISE NOTICE 'PASS: reissue_invite rejects a non-admin (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
 SQL
 
 echo "== all assertions passed =="

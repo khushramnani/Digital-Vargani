@@ -12,8 +12,31 @@ import {
   type Donation,
 } from '../db/donations'
 
+// How many server rejections an outbox item tolerates before it's treated as
+// poison and surfaced for manual attention instead of retried forever.
+export const MAX_SYNC_ATTEMPTS = 3
+
 function dispatchQueueChanged(): void {
   window.dispatchEvent(new Event('queue:changed'))
+}
+
+// A server rejection carries a Postgrest error code (bad payload / RLS denial
+// / FK or check violation) and will fail identically on every retry. A plain
+// network failure (offline, fetch aborted) has no code and is worth retrying.
+function isServerRejection(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    typeof (err as { code?: unknown }).code === 'string' &&
+    (err as { code: string }).code.length > 0
+  )
+}
+
+function errorMessage(err: unknown): string {
+  if (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message
+  }
+  return String(err)
 }
 
 // The auth user id (not the users.id) of the current session. The outbox is
@@ -44,6 +67,13 @@ export async function enqueueDonation(input: CreateDonationInput): Promise<{ loc
 // (or syncing) the previous volunteer's queued donor details.
 export async function clearOutbox(): Promise<void> {
   await db.outbox.clear()
+}
+
+// Manual discard of a poison item the volunteer chooses to give up on
+// (audit #6). Dispatches queue:changed so the tray drops it immediately.
+export async function discardOutboxItem(localId: string): Promise<void> {
+  await db.outbox.delete(localId)
+  dispatchQueueChanged()
 }
 
 // The only unique column this insert can ever collide on is
@@ -80,9 +110,20 @@ export async function syncOutboxItem(localId: string): Promise<Donation | null> 
       dispatchQueueChanged()
       return recovered
     }
-    // Any other error (offline, transient network failure): leave the row
-    // queued, let the next sync attempt retry it. Not rethrown — this is a
-    // normal, expected outcome for a caller, not an exceptional one.
+    // A server rejection (audit #6): record the failure so it stops being an
+    // invisible "waiting for signal" forever. After MAX_SYNC_ATTEMPTS the UI
+    // flags it for attention and syncAllPending skips it.
+    if (isServerRejection(err)) {
+      await db.outbox.update(localId, {
+        attempts: (item.attempts ?? 0) + 1,
+        failedReason: errorMessage(err),
+      })
+      dispatchQueueChanged()
+      return null
+    }
+    // Otherwise (offline, transient network failure): leave the row queued,
+    // untouched, and let the next sync attempt retry it. Not rethrown — this
+    // is a normal, expected outcome for a caller, not an exceptional one.
     return null
   }
 }
@@ -111,6 +152,9 @@ export async function syncAllPending(): Promise<void> {
       // rows (a different volunteer on a shared device) stay put rather than
       // syncing into THIS mandal's books (audit 2026-07-18 #3).
       if (item.authUserId !== authUserId) continue
+      // Skip poison items — they've failed on the server MAX_SYNC_ATTEMPTS
+      // times and won't succeed on retry; the UI surfaces them instead.
+      if ((item.attempts ?? 0) >= MAX_SYNC_ATTEMPTS) continue
       await syncOutboxItem(item.localId)
     }
   } finally {

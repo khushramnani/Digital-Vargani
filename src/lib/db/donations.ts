@@ -31,7 +31,9 @@ export async function createDonation(input: CreateDonationInput): Promise<Donati
     .from('donations')
     .insert({
       donor_name: input.donorName,
-      donor_phone: input.donorPhone,
+      // Optional (audit #8): an empty phone lands as NULL, not '' — the column
+      // is nullable and downstream "has a phone?" checks read cleaner for it.
+      donor_phone: input.donorPhone || null,
       amount_paise: input.amountPaise,
       mode: input.mode,
       collected_by: input.collectedBy,

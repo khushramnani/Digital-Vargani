@@ -129,7 +129,9 @@ describe('CollectionForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
-    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(4)
+    // Name, amount, and mode error on an empty form; phone is optional now
+    // (audit #8), so it does not.
+    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(3)
     expect(enqueueDonation).not.toHaveBeenCalled()
   })
 
