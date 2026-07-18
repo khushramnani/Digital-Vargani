@@ -70,7 +70,7 @@ describe('ReceiptPage', () => {
     renderReceiptPage('tok-abc')
 
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
-    expect(screen.getByText('₹501.00')).toBeInTheDocument()
+    expect(screen.getByText('₹501')).toBeInTheDocument()
     expect(screen.getByText('VM-000042')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'RECEIVED: CASH' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'RECEIVED: ONLINE' })).not.toBeInTheDocument()
@@ -88,7 +88,9 @@ describe('ReceiptPage', () => {
     })
     renderReceiptPage('tok-1')
 
-    expect(await screen.findByText('Ganesh Seva Mandal')).toBeInTheDocument()
+    // The name appears both as the header and on the stamp, so target the
+    // heading specifically.
+    expect(await screen.findByRole('heading', { name: 'Ganesh Seva Mandal' })).toBeInTheDocument()
     expect(await screen.findByText('GS-000007')).toBeInTheDocument()
     // One fetch, not two — the branding cannot come from another mandal.
     expect(getPublicReceipt).toHaveBeenCalledTimes(1)
@@ -127,7 +129,7 @@ describe('ReceiptPage', () => {
         </Routes>
       </MemoryRouter>,
     )
-    expect(await screen.findByText('देणगीदार')).toBeInTheDocument()
+    expect(await screen.findByText('सार्वजनिक गणेशोत्सव')).toBeInTheDocument()
   })
 
   it('falls back to English for an unknown ?lang=', async () => {
@@ -139,7 +141,7 @@ describe('ReceiptPage', () => {
         </Routes>
       </MemoryRouter>,
     )
-    expect(await screen.findByText('Donor')).toBeInTheDocument()
+    expect(await screen.findByText('Received with gratitude from')).toBeInTheDocument()
   })
 
   it('shows the logo as a legible header mark, not only a watermark', async () => {
