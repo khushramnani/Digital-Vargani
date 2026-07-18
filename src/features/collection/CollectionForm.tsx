@@ -9,6 +9,8 @@ import { sendReceiptSms, sendReceiptWhatsApp } from './send'
 import { LanguagePicker } from './LanguagePicker'
 import { useReceiptLang } from './useReceiptLang'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
+import { AppShell } from '../../components/AppShell'
+import { card, fieldLg, label as labelCls, btnPrimaryLg, btnGhost, errorText } from '../../components/ui'
 
 const t = strings.collection
 
@@ -16,6 +18,16 @@ const MODE_OPTIONS: { value: DonationMode; label: string }[] = [
   { value: 'cash', label: t.modeCash },
   { value: 'upi', label: t.modeUpi },
   { value: 'bank', label: t.modeBank },
+]
+
+// The volunteer home's own nav to the other volunteer screens. Route is
+// structure; the label is copy from strings.collection.
+const NAV: { to: string; label: string }[] = [
+  { to: '/volunteer/pending', label: t.pendingSendLink },
+  { to: '/volunteer/collections', label: t.collectionsLink },
+  { to: '/volunteer/expenses', label: t.expensesLink },
+  { to: '/volunteer/handover', label: t.handoversLink },
+  { to: '/volunteer/cash-in-hand', label: t.cashInHandLink },
 ]
 
 // Routed behind RequireRole role="volunteer" (see src/app/router.tsx), so
@@ -98,115 +110,110 @@ export function CollectionForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
-        <div className="flex gap-4">
-          <Link to="/volunteer/pending" className="text-sm text-orange-700 underline">
-            {t.pendingSendLink}
+    <AppShell title={t.title}>
+      <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {NAV.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            className="flex-none rounded-full border border-stone-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-stone-600 transition-colors hover:border-orange-300 hover:text-orange-700"
+          >
+            {item.label}
           </Link>
-          <Link to="/volunteer/collections" className="text-sm text-orange-700 underline">
-            {t.collectionsLink}
-          </Link>
-          <Link to="/volunteer/expenses" className="text-sm text-orange-700 underline">
-            {t.expensesLink}
-          </Link>
-          <Link to="/volunteer/handover" className="text-sm text-orange-700 underline">
-            {t.handoversLink}
-          </Link>
-          <Link to="/volunteer/cash-in-hand" className="text-sm text-orange-700 underline">
-            {t.cashInHandLink}
-          </Link>
+        ))}
+      </nav>
+
+      <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="donor-name" className={labelCls}>
+            {t.donorNameLabel}
+          </label>
+          <input
+            id="donor-name"
+            value={donorName}
+            onChange={(event) => setDonorName(event.target.value)}
+            className={fieldLg}
+          />
+          {errors.donorName && (
+            <p role="alert" className={errorText}>
+              {errors.donorName}
+            </p>
+          )}
         </div>
-      </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded border border-stone-300 p-4">
-        <label htmlFor="donor-name" className="text-sm text-stone-600">
-          {t.donorNameLabel}
-        </label>
-        <input
-          id="donor-name"
-          value={donorName}
-          onChange={(event) => setDonorName(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-        {errors.donorName && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.donorName}
-          </p>
-        )}
-
-        <label htmlFor="donor-phone" className="text-sm text-stone-600">
-          {t.donorPhoneLabel}
-        </label>
-        <input
-          id="donor-phone"
-          type="tel"
-          value={donorPhone}
-          onChange={(event) => setDonorPhone(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-        {errors.donorPhone && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.donorPhone}
-          </p>
-        )}
-
-        <label htmlFor="donor-amount" className="text-sm text-stone-600">
-          {t.amountLabel}
-        </label>
-        <input
-          id="donor-amount"
-          type="number"
-          step="0.01"
-          min="0"
-          value={amountRupees}
-          onChange={(event) => setAmountRupees(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-        {errors.amountRupees && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.amountRupees}
-          </p>
-        )}
-
-        <span className="text-sm text-stone-600">{t.modeLabel}</span>
-        <div role="group" aria-label={t.modeLabel} className="grid grid-cols-3 gap-2">
-          {MODE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={mode === option.value}
-              onClick={() => setMode(option.value)}
-              className={`rounded border px-3 py-6 text-lg font-medium ${
-                mode === option.value
-                  ? 'border-orange-700 bg-orange-700 text-white'
-                  : 'border-stone-300 text-stone-700'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2">
+          <label htmlFor="donor-phone" className={labelCls}>
+            {t.donorPhoneLabel}
+          </label>
+          <input
+            id="donor-phone"
+            type="tel"
+            value={donorPhone}
+            onChange={(event) => setDonorPhone(event.target.value)}
+            className={fieldLg}
+          />
+          {errors.donorPhone && (
+            <p role="alert" className={errorText}>
+              {errors.donorPhone}
+            </p>
+          )}
         </div>
-        {errors.mode && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.mode}
-          </p>
-        )}
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="donor-amount" className={labelCls}>
+            {t.amountLabel}
+          </label>
+          <input
+            id="donor-amount"
+            type="number"
+            step="0.01"
+            min="0"
+            value={amountRupees}
+            onChange={(event) => setAmountRupees(event.target.value)}
+            className={fieldLg}
+          />
+          {errors.amountRupees && (
+            <p role="alert" className={errorText}>
+              {errors.amountRupees}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className={labelCls}>{t.modeLabel}</span>
+          <div role="group" aria-label={t.modeLabel} className="grid grid-cols-3 gap-2.5">
+            {MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={mode === option.value}
+                onClick={() => setMode(option.value)}
+                className={`rounded-xl border px-3 py-5 text-lg font-semibold transition-colors ${
+                  mode === option.value
+                    ? 'border-orange-600 bg-orange-600 text-white shadow-md shadow-orange-600/25'
+                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {errors.mode && (
+            <p role="alert" className={errorText}>
+              {errors.mode}
+            </p>
+          )}
+        </div>
 
         <LanguagePicker lang={lang} onChange={setLang} label={t.languageLabel} />
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-orange-700 px-3 py-4 text-lg text-white disabled:opacity-50"
-        >
+        <button type="submit" disabled={submitting} className={btnPrimaryLg}>
           {submitting ? t.submitting : t.submitButton}
         </button>
 
         {lastDonation && (
-          <>
-            <p className="text-sm text-green-700">
+          <div className="flex flex-col gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
+            <p className="text-sm font-semibold text-green-800">
               {t.successPrefix}
               {lastDonation.receipt_no} — {t.nextDonation}
             </p>
@@ -218,31 +225,31 @@ export function CollectionForm() {
                 channels, volunteer picks: SMS auto-fires above already,
                 WhatsApp is opt-in only (opening a new tab isn't something
                 to do without a tap). */}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => sendReceiptSms(lastDonation, lang)}
-                className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
-              >
+            <div className="flex gap-2.5">
+              <button type="button" onClick={() => sendReceiptSms(lastDonation, lang)} className={`flex-1 ${btnGhost}`}>
                 {t.sendReceiptSmsButton}
               </button>
               <button
                 type="button"
                 onClick={() => sendReceiptWhatsApp(lastDonation, lang)}
-                className="flex-1 rounded border border-orange-700 px-3 py-3 text-orange-700"
+                className={`flex-1 ${btnGhost}`}
               >
                 {t.sendReceiptWhatsAppButton}
               </button>
             </div>
-          </>
+          </div>
         )}
-        {savedOffline && <p className="text-sm text-amber-700">{t.savedOffline}</p>}
+        {savedOffline && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800">
+            {t.savedOffline}
+          </p>
+        )}
         {error && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {error}
           </p>
         )}
       </form>
-    </main>
+    </AppShell>
   )
 }

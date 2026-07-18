@@ -7,6 +7,8 @@ import { validateExpenseInput, type PaidFrom, type ExpenseValidationErrors } fro
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
+import { AppShell } from '../../components/AppShell'
+import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
 
 const t = strings.expenses
 
@@ -96,94 +98,101 @@ export function ExpensesScreen() {
     }
   }
 
+  const isAdmin = appUser?.role === 'admin'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/volunteer', label: strings.collection.title }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
-
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded border border-stone-300 p-4">
-        <label htmlFor="expense-category" className="text-sm text-stone-600">
-          {t.categoryLabel}
-        </label>
-        <select
-          id="expense-category"
-          value={category}
-          onChange={(event) => setCategory(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        >
-          <option value="">{t.categoryPlaceholder}</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        {errors.category && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.category}
-          </p>
-        )}
-
-        <label htmlFor="expense-description" className="text-sm text-stone-600">
-          {t.descriptionLabel}
-        </label>
-        <input
-          id="expense-description"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-
-        <label htmlFor="expense-amount" className="text-sm text-stone-600">
-          {t.amountLabel}
-        </label>
-        <input
-          id="expense-amount"
-          type="number"
-          step="0.01"
-          min="0"
-          value={amountRupees}
-          onChange={(event) => setAmountRupees(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-        {errors.amountRupees && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.amountRupees}
-          </p>
-        )}
-
-        <span className="text-sm text-stone-600">{t.paidFromLabel}</span>
-        <div role="group" aria-label={t.paidFromLabel} className="grid grid-cols-2 gap-2">
-          {PAID_FROM_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={paidFrom === option.value}
-              onClick={() => setPaidFrom(option.value)}
-              className={`rounded border px-3 py-6 text-lg font-medium ${
-                paidFrom === option.value
-                  ? 'border-orange-700 bg-orange-700 text-white'
-                  : 'border-stone-300 text-stone-700'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+    <AppShell title={t.title} back={home}>
+      <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="expense-category" className={labelCls}>
+            {t.categoryLabel}
+          </label>
+          <select
+            id="expense-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className={fieldLg}
+          >
+            <option value="">{t.categoryPlaceholder}</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          {errors.category && (
+            <p role="alert" className={errorText}>
+              {errors.category}
+            </p>
+          )}
         </div>
-        {errors.paidFrom && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.paidFrom}
-          </p>
-        )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-orange-700 px-3 py-4 text-lg text-white disabled:opacity-50"
-        >
+        <div className="flex flex-col gap-2">
+          <label htmlFor="expense-description" className={labelCls}>
+            {t.descriptionLabel}
+          </label>
+          <input
+            id="expense-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            className={fieldLg}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="expense-amount" className={labelCls}>
+            {t.amountLabel}
+          </label>
+          <input
+            id="expense-amount"
+            type="number"
+            step="0.01"
+            min="0"
+            value={amountRupees}
+            onChange={(event) => setAmountRupees(event.target.value)}
+            className={fieldLg}
+          />
+          {errors.amountRupees && (
+            <p role="alert" className={errorText}>
+              {errors.amountRupees}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className={labelCls}>{t.paidFromLabel}</span>
+          <div role="group" aria-label={t.paidFromLabel} className="grid grid-cols-2 gap-2.5">
+            {PAID_FROM_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={paidFrom === option.value}
+                onClick={() => setPaidFrom(option.value)}
+                className={`rounded-xl border px-3 py-5 text-lg font-semibold transition-colors ${
+                  paidFrom === option.value
+                    ? 'border-orange-600 bg-orange-600 text-white shadow-md shadow-orange-600/25'
+                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {errors.paidFrom && (
+            <p role="alert" className={errorText}>
+              {errors.paidFrom}
+            </p>
+          )}
+        </div>
+
+        <button type="submit" disabled={submitting} className={btnPrimaryLg}>
           {submitting ? t.submitting : t.submitButton}
         </button>
         {error && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {error}
           </p>
         )}
@@ -192,35 +201,51 @@ export function ExpensesScreen() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : expenses.length === 0 ? (
-        <p className="text-stone-400">{t.empty}</p>
+        <EmptyState message={t.empty} />
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {expenses.map((expense) => (
-            <li key={expense.id} className="rounded border border-stone-200 p-3">
-              <div className={`flex items-center justify-between ${expense.voided ? 'text-stone-400 line-through' : ''}`}>
-                <span className="font-medium text-stone-900">{expense.category}</span>
-                <span>{formatINR(expense.amount_paise)}</span>
+            <li key={expense.id} className={`${card} p-4`}>
+              <div className={`flex items-center justify-between gap-3 ${expense.voided ? 'text-stone-400' : ''}`}>
+                <span className={`font-semibold ${expense.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
+                  {expense.category}
+                </span>
+                <span className={`flex-none font-bold tabular-nums ${expense.voided ? 'line-through' : 'text-stone-900'}`}>
+                  {formatINR(expense.amount_paise)}
+                </span>
               </div>
               {expense.description && (
-                <p className={`text-sm text-stone-600 ${expense.voided ? 'line-through' : ''}`}>{expense.description}</p>
+                <p className={`mt-0.5 text-sm text-stone-600 ${expense.voided ? 'line-through' : ''}`}>
+                  {expense.description}
+                </p>
               )}
-              <p className="text-sm text-stone-400">
+              <p className="mt-1 text-[13px] text-stone-400">
                 {t.paidByPrefix}
                 {expense.paid_by_user?.name ?? t.unknownUser} ·{' '}
                 {expense.paid_from === 'cash' ? t.paidFromCash : t.paidFromBank}
               </p>
               {expense.voided ? (
-                <p className="text-sm text-red-700">
+                <p className="mt-1 text-[13px] text-stone-400">
                   {t.voidedPrefix}
                   {expense.void_reason}
                 </p>
               ) : (
-                <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(expense, reason)} />
+                <div className="mt-1 flex justify-end">
+                  <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(expense, reason)} />
+                </div>
               )}
             </li>
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+      {message}
+    </div>
   )
 }

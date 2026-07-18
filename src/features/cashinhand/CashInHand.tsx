@@ -4,6 +4,8 @@ import { fetchLedgerRows, fetchActiveVolunteers } from '../../lib/db/ledger'
 import { volunteerCashInHand, type Ledger } from '../../lib/reconcile'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { card, errorText } from '../../components/ui'
 
 const t = strings.cashInHand
 
@@ -54,12 +56,15 @@ export function CashInHandScreen() {
     }
   }, [appUser])
 
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
+  const isAdmin = appUser?.role === 'admin'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/volunteer', label: strings.collection.title }
 
+  return (
+    <AppShell title={t.title} back={home}>
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className={errorText}>
           {error}
         </p>
       )}
@@ -67,19 +72,34 @@ export function CashInHandScreen() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : appUser?.role === 'volunteer' ? (
-        <p className="text-3xl font-semibold text-stone-900">{formatINR(rows[0]?.amountPaise ?? 0)}</p>
+        // A volunteer sees only their own single figure — give it the weight
+        // of a headline number, not a list row.
+        <div className={`${card} p-6`}>
+          <p className="text-xs font-semibold tracking-wide text-stone-500 uppercase">{t.title}</p>
+          <p className="mt-1 text-4xl font-bold tabular-nums text-stone-900">
+            {formatINR(rows[0]?.amountPaise ?? 0)}
+          </p>
+        </div>
       ) : rows.length === 0 ? (
-        <p className="text-stone-400">{t.empty}</p>
+        <EmptyState message={t.empty} />
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {rows.map((row) => (
-            <li key={row.id} className="flex items-center justify-between rounded border border-stone-200 p-3">
-              <span className="font-medium text-stone-900">{row.name}</span>
-              <span>{formatINR(row.amountPaise)}</span>
+            <li key={row.id} className={`flex items-center justify-between gap-3 ${card} p-4`}>
+              <span className="font-semibold text-stone-900">{row.name}</span>
+              <span className="flex-none font-bold tabular-nums text-stone-900">{formatINR(row.amountPaise)}</span>
             </li>
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+      {message}
+    </div>
   )
 }

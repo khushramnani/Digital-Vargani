@@ -1,5 +1,4 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import {
   getMandal,
   updateMandal,
@@ -11,11 +10,10 @@ import { INDIAN_STATES } from '../../lib/states'
 import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { field as inputCls } from '../../components/ui'
 
 const t = strings.mandalConfig
-
-const inputCls =
-  'w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-[15px] text-stone-900 outline-none placeholder:text-stone-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
 
 function Section({ title, help, children }: { title: string; help?: string; children: ReactNode }) {
   return (
@@ -206,21 +204,16 @@ export function MandalConfigScreen() {
   }
 
   if (loading) {
-    return <p className="mx-auto max-w-2xl px-4 py-8 text-stone-400">{strings.auth.loading}</p>
+    return (
+      <AppShell title={t.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+        <p className="text-stone-400">{strings.auth.loading}</p>
+      </AppShell>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 font-body">
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-8">
-        <div>
-          <Link to="/admin" className="text-sm font-semibold text-orange-600 hover:text-orange-700">
-            {t.backLink}
-          </Link>
-          <h1 className="font-display mt-2 text-2xl font-extrabold tracking-tight text-stone-900">{t.title}</h1>
-          <p className="mt-1 text-[15px] text-stone-500">{t.subtitle}</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <AppShell title={t.title} subtitle={t.subtitle} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <Section title={t.sectionIdentity} help={t.sectionIdentityHelp}>
             <Field label={t.nameLabel}>
               <input required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
@@ -380,7 +373,6 @@ export function MandalConfigScreen() {
             )}
           </div>
         </form>
-      </main>
-    </div>
+    </AppShell>
   )
 }

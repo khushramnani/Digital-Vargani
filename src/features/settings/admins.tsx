@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { card, field, label as labelCls, btnPrimary, errorText } from '../../components/ui'
 import type { Tables } from '../../lib/db/database.types'
 
 type Admin = Tables<'users'>
@@ -79,11 +81,9 @@ export function AdminsScreen() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{strings.admins.title}</h1>
-
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded border border-stone-300 p-4">
-        <label htmlFor="admin-name" className="text-sm text-stone-600">
+    <AppShell title={strings.admins.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+      <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${card} p-5`}>
+        <label htmlFor="admin-name" className={labelCls}>
           {strings.admins.nameLabel}
         </label>
         <input
@@ -91,9 +91,9 @@ export function AdminsScreen() {
           required
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-2"
+          className={field}
         />
-        <label htmlFor="admin-email" className="text-sm text-stone-600">
+        <label htmlFor="admin-email" className={labelCls}>
           {strings.admins.emailLabel}
         </label>
         <input
@@ -102,23 +102,19 @@ export function AdminsScreen() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-2"
+          className={field}
         />
         {emailError && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {emailError}
           </p>
         )}
-        <p className="text-sm text-stone-500">{strings.admins.loginHint}</p>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-orange-700 px-3 py-2 text-white disabled:opacity-50"
-        >
+        <p className="text-[13px] leading-relaxed text-stone-500">{strings.admins.loginHint}</p>
+        <button type="submit" disabled={submitting} className={btnPrimary}>
           {submitting ? strings.admins.adding : strings.admins.addButton}
         </button>
         {error && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {error}
           </p>
         )}
@@ -127,22 +123,40 @@ export function AdminsScreen() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : admins.length === 0 ? (
-        <p className="text-stone-400">{strings.admins.empty}</p>
+        <EmptyState message={strings.admins.empty} />
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {admins.map((admin) => (
-            <li key={admin.id} className="rounded border border-stone-200 p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-stone-900">{admin.name}</span>
-                <span className={admin.auth_user_id ? 'text-green-700' : 'text-amber-700'}>
-                  {admin.auth_user_id ? strings.admins.active : strings.admins.pending}
-                </span>
+            <li key={admin.id} className={`${card} p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-stone-900">{admin.name}</span>
+                <StatusPill active={!!admin.auth_user_id} activeLabel={strings.admins.active} pendingLabel={strings.admins.pending} />
               </div>
-              {admin.email && <p className="text-sm text-stone-600">{admin.email}</p>}
+              {admin.email && <p className="mt-0.5 text-sm text-stone-500">{admin.email}</p>}
             </li>
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
+  )
+}
+
+function StatusPill({ active, activeLabel, pendingLabel }: { active: boolean; activeLabel: string; pendingLabel: string }) {
+  return (
+    <span
+      className={`flex-none rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+      }`}
+    >
+      {active ? activeLabel : pendingLabel}
+    </span>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+      {message}
+    </div>
   )
 }

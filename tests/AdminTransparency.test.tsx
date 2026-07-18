@@ -1,7 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import { AdminTransparency } from '../src/features/transparency/AdminTransparency'
+
+// The screen now renders inside AppShell (persistent header + sign-out),
+// which pulls the session role from useAuth. Mock it so the test needs no
+// real AuthProvider.
+vi.mock('../src/features/auth/useAuth', () => ({
+  useAuth: () => ({
+    session: { user: { id: 'auth-uid-admin' } },
+    appUser: { role: 'admin' },
+    loading: false,
+    refreshAppUser: vi.fn(),
+  }),
+}))
+
+function renderScreen() {
+  return render(
+    <MemoryRouter>
+      <AdminTransparency />
+    </MemoryRouter>,
+  )
+}
 
 const { getMandal, updateMandal } = vi.hoisted(() => ({
   getMandal: vi.fn(),
@@ -49,7 +70,7 @@ beforeEach(() => {
 
 describe('AdminTransparency', () => {
   it('previews the aggregate even when unpublished, and toggling calls updateMandal with its own id', async () => {
-    render(<AdminTransparency />)
+    renderScreen()
 
     await waitFor(() => expect(screen.getByText('₹1,000')).toBeInTheDocument())
     expect(screen.getByText('Not visible to the public yet.')).toBeInTheDocument()
@@ -63,14 +84,14 @@ describe('AdminTransparency', () => {
   // slug-addressed now, and the migration's admin bypass is same-mandal
   // only, so passing anything but this slug returns zero rows.
   it('passes its own mandal slug to the transparency RPCs', async () => {
-    render(<AdminTransparency />)
+    renderScreen()
 
     await waitFor(() => expect(getTransparencyReport).toHaveBeenCalledWith('vinayak-mitra-mandal'))
     expect(getTransparencyCategories).toHaveBeenCalledWith('vinayak-mitra-mandal')
   })
 
   it('shows the shareable public link for its own slug', async () => {
-    render(<AdminTransparency />)
+    renderScreen()
 
     await waitFor(() =>
       expect(screen.getByText(`${window.location.origin}/transparency/vinayak-mitra-mandal`)).toBeInTheDocument(),

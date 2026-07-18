@@ -2,6 +2,9 @@
 export const strings = {
   appName: 'Vinayak Yuvak Mandal (VYM)',
   appTagline: 'Digital Vargani & Fund Management System',
+  app: {
+    signOut: 'Sign out',
+  },
   void: {
     button: 'Void',
     prompt: 'Reason (optional)',
@@ -53,6 +56,7 @@ export const strings = {
   },
   admin: {
     dashboardTitle: 'Admin Dashboard',
+    dashboardSubtitle: 'Your mandal at a glance',
     volunteersLink: 'Manage volunteers',
     settingsLink: 'Mandal settings',
     expensesLink: 'Expenses',
@@ -62,6 +66,18 @@ export const strings = {
     collectionsLink: 'All collections',
     collectDonationLink: 'Collect donation',
     adminsLink: 'Manage admins',
+    // One-line description under each dashboard nav card.
+    descriptions: {
+      collect: 'Log a cash, UPI or bank donation',
+      collections: 'Every donation, searchable',
+      expenses: 'Record what the mandal spent',
+      handovers: 'Cash handed to the treasurer',
+      cashInHand: 'What each volunteer is holding',
+      volunteers: 'Invite and manage collectors',
+      admins: 'Who can manage this mandal',
+      transparency: 'Publish your public fund report',
+      settings: 'Identity, branding & payments',
+    },
   },
   mandalConfig: {
     title: 'Mandal Settings',

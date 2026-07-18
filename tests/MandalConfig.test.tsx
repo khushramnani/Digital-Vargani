@@ -20,6 +20,17 @@ vi.mock('../src/lib/db/config', () => ({
   uploadMandalAsset,
 }))
 
+// The screen now renders inside AppShell, which reads the session role via
+// useAuth (home link + sign-out). Mock it so no real AuthProvider is needed.
+vi.mock('../src/features/auth/useAuth', () => ({
+  useAuth: () => ({
+    session: { user: { id: 'auth-uid-admin' } },
+    appUser: { role: 'admin' },
+    loading: false,
+    refreshAppUser: vi.fn(),
+  }),
+}))
+
 const MANDAL_ID = '11111111-1111-1111-1111-000000000001'
 
 const existingConfig: Tables<'mandals'> = {

@@ -2,7 +2,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Ledger } from '../src/lib/reconcile'
+import type { Tables } from '../src/lib/db/database.types'
 import { MasterLedgerScreen } from '../src/features/ledger/MasterLedger'
+
+// AppShell (the frame the dashboard now renders inside) reads the session
+// role via useAuth to pick its home link and show sign-out — mock it so the
+// screen renders without a real AuthProvider.
+const admin: Tables<'users'> = {
+  id: 'admin-1',
+  mandal_id: '11111111-1111-1111-1111-000000000001',
+  name: 'Admin User',
+  phone: null,
+  email: 'admin@example.com',
+  role: 'admin',
+  invite_token: null,
+  auth_user_id: 'auth-uid-admin',
+  active: true,
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+vi.mock('../src/features/auth/useAuth', () => ({
+  useAuth: () => ({ session: { user: { id: 'auth-uid-admin' } }, appUser: admin, loading: false, refreshAppUser: vi.fn() }),
+}))
 
 // Mock lib/db/ledger.ts directly (not the raw Supabase client) — this is a
 // component test of the screen's rendering, same pattern as
@@ -68,15 +89,17 @@ describe('MasterLedgerScreen', () => {
     fetchFullLedger.mockResolvedValue(balancedLedger)
     renderScreen()
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Collect donation' })).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: 'Collect donation' })).toHaveAttribute('href', '/volunteer')
+    // The dashboard nav is now a card grid: each link's accessible name is
+    // its label plus a one-line description, so match on the label substring.
+    await waitFor(() => expect(screen.getByRole('link', { name: /Collect donation/ })).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Collect donation/ })).toHaveAttribute('href', '/volunteer')
   })
 
   it('links to the admin management screen', async () => {
     fetchFullLedger.mockResolvedValue(balancedLedger)
     renderScreen()
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Manage admins' })).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: 'Manage admins' })).toHaveAttribute('href', '/admin/admins')
+    await waitFor(() => expect(screen.getByRole('link', { name: /Manage admins/ })).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Manage admins/ })).toHaveAttribute('href', '/admin/admins')
   })
 })

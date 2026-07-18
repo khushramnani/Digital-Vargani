@@ -6,6 +6,8 @@ import { validateHandoverInput, type HandoverValidationErrors } from '../../lib/
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
+import { AppShell } from '../../components/AppShell'
+import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
 
 const t = strings.handovers
 
@@ -88,70 +90,75 @@ export function HandoverScreen() {
     }
   }
 
+  const isAdmin = appUser?.role === 'admin'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/volunteer', label: strings.collection.title }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
+    <AppShell title={t.title} back={home}>
+      <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="handover-amount" className={labelCls}>
+            {t.amountLabel}
+          </label>
+          <input
+            id="handover-amount"
+            type="number"
+            step="0.01"
+            min="0"
+            value={amountRupees}
+            onChange={(event) => setAmountRupees(event.target.value)}
+            className={fieldLg}
+          />
+          {errors.amountRupees && (
+            <p role="alert" className={errorText}>
+              {errors.amountRupees}
+            </p>
+          )}
+        </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded border border-stone-300 p-4">
-        <label htmlFor="handover-amount" className="text-sm text-stone-600">
-          {t.amountLabel}
-        </label>
-        <input
-          id="handover-amount"
-          type="number"
-          step="0.01"
-          min="0"
-          value={amountRupees}
-          onChange={(event) => setAmountRupees(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-        {errors.amountRupees && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.amountRupees}
-          </p>
-        )}
+        <div className="flex flex-col gap-2">
+          <label htmlFor="handover-received-by" className={labelCls}>
+            {t.receivedByLabel}
+          </label>
+          <select
+            id="handover-received-by"
+            value={receivedBy}
+            onChange={(event) => setReceivedBy(event.target.value)}
+            className={fieldLg}
+          >
+            <option value="">{t.receivedByPlaceholder}</option>
+            {admins.map((admin) => (
+              <option key={admin.id} value={admin.id}>
+                {admin.name}
+              </option>
+            ))}
+          </select>
+          {errors.receivedBy && (
+            <p role="alert" className={errorText}>
+              {errors.receivedBy}
+            </p>
+          )}
+        </div>
 
-        <label htmlFor="handover-received-by" className="text-sm text-stone-600">
-          {t.receivedByLabel}
-        </label>
-        <select
-          id="handover-received-by"
-          value={receivedBy}
-          onChange={(event) => setReceivedBy(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        >
-          <option value="">{t.receivedByPlaceholder}</option>
-          {admins.map((admin) => (
-            <option key={admin.id} value={admin.id}>
-              {admin.name}
-            </option>
-          ))}
-        </select>
-        {errors.receivedBy && (
-          <p role="alert" className="text-sm text-red-700">
-            {errors.receivedBy}
-          </p>
-        )}
+        <div className="flex flex-col gap-2">
+          <label htmlFor="handover-note" className={labelCls}>
+            {t.noteLabel}
+          </label>
+          <input
+            id="handover-note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            className={fieldLg}
+          />
+        </div>
 
-        <label htmlFor="handover-note" className="text-sm text-stone-600">
-          {t.noteLabel}
-        </label>
-        <input
-          id="handover-note"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-3 text-lg"
-        />
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-orange-700 px-3 py-4 text-lg text-white disabled:opacity-50"
-        >
+        <button type="submit" disabled={submitting} className={btnPrimaryLg}>
           {submitting ? t.submitting : t.submitButton}
         </button>
         {error && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {error}
           </p>
         )}
@@ -160,37 +167,49 @@ export function HandoverScreen() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : handovers.length === 0 ? (
-        <p className="text-stone-400">{t.empty}</p>
+        <EmptyState message={t.empty} />
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {handovers.map((handover) => (
-            <li key={handover.id} className="rounded border border-stone-200 p-3">
-              <div className={`flex items-center justify-between ${handover.voided ? 'text-stone-400 line-through' : ''}`}>
-                <span className="font-medium text-stone-900">
+            <li key={handover.id} className={`${card} p-4`}>
+              <div className={`flex items-center justify-between gap-3 ${handover.voided ? 'text-stone-400' : ''}`}>
+                <span className={`font-semibold ${handover.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
                   {t.volunteerPrefix}
                   {handover.volunteer?.name ?? t.unknownUser}
                 </span>
-                <span>{formatINR(handover.amount_paise)}</span>
+                <span className={`flex-none font-bold tabular-nums ${handover.voided ? 'line-through' : 'text-stone-900'}`}>
+                  {formatINR(handover.amount_paise)}
+                </span>
               </div>
-              <p className={`text-sm text-stone-600 ${handover.voided ? 'line-through' : ''}`}>
+              <p className={`mt-0.5 text-sm text-stone-600 ${handover.voided ? 'line-through' : ''}`}>
                 {t.receivedByPrefix}
                 {handover.received_by_user?.name ?? t.unknownUser}
               </p>
               {handover.note && (
-                <p className={`text-sm text-stone-600 ${handover.voided ? 'line-through' : ''}`}>{handover.note}</p>
+                <p className={`text-sm text-stone-500 ${handover.voided ? 'line-through' : ''}`}>{handover.note}</p>
               )}
               {handover.voided ? (
-                <p className="text-sm text-red-700">
+                <p className="mt-1 text-[13px] text-stone-400">
                   {t.voidedPrefix}
                   {handover.void_reason}
                 </p>
               ) : (
-                <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(handover, reason)} />
+                <div className="mt-1 flex justify-end">
+                  <VoidButton label={t.voidButton} prompt={t.voidPrompt} onVoid={(reason) => handleVoid(handover, reason)} />
+                </div>
               )}
             </li>
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+      {message}
+    </div>
   )
 }

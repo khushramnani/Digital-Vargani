@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import type { Expense } from '../src/lib/db/expenses'
 import { ExpensesScreen } from '../src/features/expenses/ExpensesScreen'
@@ -115,7 +116,7 @@ beforeEach(() => {
 
 describe('ExpensesScreen', () => {
   it('renders existing expenses, including a voided one struck-through with its reason shown', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
     expect(screen.getByText('₹2,500')).toBeInTheDocument()
@@ -128,7 +129,7 @@ describe('ExpensesScreen', () => {
   })
 
   it('converts rupees to paise and sends paidBy from the session, not the form, on submit', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Category')).not.toBeDisabled())
     fillValidForm()
 
@@ -145,7 +146,7 @@ describe('ExpensesScreen', () => {
   })
 
   it('blocks submission and shows inline errors when the form is empty', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Category')).not.toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: 'Log Expense' }))
@@ -155,7 +156,7 @@ describe('ExpensesScreen', () => {
   })
 
   it('rejects a category that is not in the mandal-configured list', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Category')).not.toBeDisabled())
 
     // A category dropdown only ever offers configured options, but the
@@ -169,7 +170,7 @@ describe('ExpensesScreen', () => {
   })
 
   it('opens a confirm dialog and calls voidRow with the typed reason when Void is confirmed', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))
@@ -182,7 +183,7 @@ describe('ExpensesScreen', () => {
   })
 
   it('does not call voidRow when the confirm dialog is cancelled', async () => {
-    render(<ExpensesScreen />)
+    render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'Void' }))

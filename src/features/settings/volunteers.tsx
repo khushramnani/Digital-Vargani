@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { card, field, label as labelCls, btnPrimary, btnGhost, errorText } from '../../components/ui'
 import type { Tables } from '../../lib/db/database.types'
 
 type Volunteer = Tables<'users'>
@@ -79,11 +81,9 @@ export function VolunteersScreen() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{strings.volunteers.title}</h1>
-
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded border border-stone-300 p-4">
-        <label htmlFor="volunteer-name" className="text-sm text-stone-600">
+    <AppShell title={strings.volunteers.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+      <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${card} p-5`}>
+        <label htmlFor="volunteer-name" className={labelCls}>
           {strings.volunteers.nameLabel}
         </label>
         <input
@@ -91,26 +91,22 @@ export function VolunteersScreen() {
           required
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-2"
+          className={field}
         />
-        <label htmlFor="volunteer-phone" className="text-sm text-stone-600">
+        <label htmlFor="volunteer-phone" className={labelCls}>
           {strings.volunteers.phoneLabel}
         </label>
         <input
           id="volunteer-phone"
           value={phone}
           onChange={(event) => setPhone(event.target.value)}
-          className="rounded border border-stone-300 px-3 py-2"
+          className={field}
         />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-orange-700 px-3 py-2 text-white disabled:opacity-50"
-        >
+        <button type="submit" disabled={submitting} className={btnPrimary}>
           {submitting ? strings.volunteers.adding : strings.volunteers.addButton}
         </button>
         {error && (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className={errorText}>
             {error}
           </p>
         )}
@@ -119,30 +115,34 @@ export function VolunteersScreen() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : volunteers.length === 0 ? (
-        <p className="text-stone-400">{strings.volunteers.empty}</p>
+        <EmptyState message={strings.volunteers.empty} />
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {volunteers.map((volunteer) => (
-            <li key={volunteer.id} className="rounded border border-stone-200 p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-stone-900">{volunteer.name}</span>
-                <span className={volunteer.auth_user_id ? 'text-green-700' : 'text-amber-700'}>
+            <li key={volunteer.id} className={`${card} p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-stone-900">{volunteer.name}</span>
+                <span
+                  className={`flex-none rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    volunteer.auth_user_id ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
                   {volunteer.auth_user_id ? strings.volunteers.active : strings.volunteers.pending}
                 </span>
               </div>
-              {volunteer.phone && <p className="text-sm text-stone-600">{volunteer.phone}</p>}
+              {volunteer.phone && <p className="mt-0.5 text-sm text-stone-500">{volunteer.phone}</p>}
               {!volunteer.auth_user_id && volunteer.invite_token && (
-                <div className="mt-2 flex items-center gap-2">
+                <div className="mt-3 flex items-center gap-2">
                   <input
                     readOnly
                     value={inviteLink(volunteer.invite_token)}
                     aria-label={`${strings.volunteers.copyLink}: ${volunteer.name}`}
-                    className="flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
+                    className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-500"
                   />
                   <button
                     type="button"
                     onClick={() => copyLink(volunteer.id, volunteer.invite_token!)}
-                    className="rounded border border-stone-300 px-2 py-1 text-sm text-stone-700"
+                    className={`flex-none ${btnGhost} px-3 py-1.5`}
                   >
                     {copiedId === volunteer.id ? strings.volunteers.copied : strings.volunteers.copyLink}
                   </button>
@@ -152,6 +152,14 @@ export function VolunteersScreen() {
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+      {message}
+    </div>
   )
 }

@@ -162,7 +162,9 @@ describe('PendingSend', () => {
   it('has a back link to the collection form', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: 'Back to collection' })).toHaveAttribute('href', '/volunteer')
+    // AppShell renders the back link as "← <destination title>"; here the
+    // destination is the collection form.
+    expect(screen.getByRole('link', { name: /Collect Donation/ })).toHaveAttribute('href', '/volunteer')
   })
 
   it('shows the volunteer\'s own still-queued (not-yet-synced) outbox items with a "Waiting for signal" indicator and no Send button', async () => {

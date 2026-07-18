@@ -4,14 +4,34 @@ import { fetchFullLedger } from '../../lib/db/ledger'
 import { totalCollected, totalExpenses, netBalance, booksBalanceCheck, type Ledger } from '../../lib/reconcile'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { card } from '../../components/ui'
 
 const t = strings.ledger
+const a = strings.admin
 
-function StatTile({ label, value }: { label: string; value: string }) {
+// Emoji live here (route + icon are structure, not copy); the labels and
+// descriptions come from strings.admin so the operator UI stays translatable
+// in one place.
+const NAV: { to: string; icon: string; label: string; desc: string }[] = [
+  { to: '/volunteer', icon: '🪔', label: a.collectDonationLink, desc: a.descriptions.collect },
+  { to: '/admin/collections', icon: '🧾', label: a.collectionsLink, desc: a.descriptions.collections },
+  { to: '/admin/expenses', icon: '💸', label: a.expensesLink, desc: a.descriptions.expenses },
+  { to: '/admin/handovers', icon: '🤝', label: a.handoversLink, desc: a.descriptions.handovers },
+  { to: '/admin/cash-in-hand', icon: '💰', label: a.cashInHandLink, desc: a.descriptions.cashInHand },
+  { to: '/admin/volunteers', icon: '🧑‍🤝‍🧑', label: a.volunteersLink, desc: a.descriptions.volunteers },
+  { to: '/admin/admins', icon: '🛡️', label: a.adminsLink, desc: a.descriptions.admins },
+  { to: '/admin/transparency', icon: '🪷', label: a.transparencyLink, desc: a.descriptions.transparency },
+  { to: '/admin/settings', icon: '⚙️', label: a.settingsLink, desc: a.descriptions.settings },
+]
+
+function StatTile({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'balance' }) {
   return (
-    <div className="rounded border border-stone-200 p-4">
-      <p className="text-sm text-stone-500">{label}</p>
-      <p className="text-2xl font-semibold text-stone-900">{value}</p>
+    <div className={`${card} p-4`}>
+      <p className="text-xs font-semibold tracking-wide text-stone-500 uppercase">{label}</p>
+      <p className={`mt-1 text-2xl font-bold tabular-nums ${tone === 'balance' ? 'text-orange-700' : 'text-stone-900'}`}>
+        {value}
+      </p>
     </div>
   )
 }
@@ -46,31 +66,31 @@ export function MasterLedgerScreen() {
   const books = ledger ? booksBalanceCheck(ledger) : null
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold text-stone-900">{strings.admin.dashboardTitle}</h1>
-
+    <AppShell title={a.dashboardTitle} subtitle={a.dashboardSubtitle}>
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}
 
       {loading ? (
-        <p className="text-stone-400">{strings.auth.loading}</p>
+        <StatSkeleton />
       ) : (
         ledger && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <StatTile label={t.totalCollectedLabel} value={formatINR(totalCollected(ledger))} />
               <StatTile label={t.totalExpensesLabel} value={formatINR(totalExpenses(ledger))} />
-              <StatTile label={t.netBalanceLabel} value={formatINR(netBalance(ledger))} />
+              <StatTile label={t.netBalanceLabel} value={formatINR(netBalance(ledger))} tone="balance" />
             </div>
 
             {books && (
               <div
                 role="status"
-                className={`rounded border p-4 text-sm font-medium ${
-                  books.balanced ? 'border-green-700 text-green-700' : 'border-red-700 text-red-700'
+                className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                  books.balanced
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-700'
                 }`}
               >
                 {books.balanced ? `✓ ${t.balanced}` : `✗ ${t.discrepancyPrefix}${formatINR(books.discrepancyPaise)}`}
@@ -80,35 +100,36 @@ export function MasterLedgerScreen() {
         )
       )}
 
-      <div className="flex flex-col gap-2">
-        <Link to="/volunteer" className="text-orange-700 underline">
-          {strings.admin.collectDonationLink}
-        </Link>
-        <Link to="/admin/collections" className="text-orange-700 underline">
-          {strings.admin.collectionsLink}
-        </Link>
-        <Link to="/admin/volunteers" className="text-orange-700 underline">
-          {strings.admin.volunteersLink}
-        </Link>
-        <Link to="/admin/admins" className="text-orange-700 underline">
-          {strings.admin.adminsLink}
-        </Link>
-        <Link to="/admin/settings" className="text-orange-700 underline">
-          {strings.admin.settingsLink}
-        </Link>
-        <Link to="/admin/expenses" className="text-orange-700 underline">
-          {strings.admin.expensesLink}
-        </Link>
-        <Link to="/admin/handovers" className="text-orange-700 underline">
-          {strings.admin.handoversLink}
-        </Link>
-        <Link to="/admin/cash-in-hand" className="text-orange-700 underline">
-          {strings.admin.cashInHandLink}
-        </Link>
-        <Link to="/admin/transparency" className="text-orange-700 underline">
-          {strings.admin.transparencyLink}
-        </Link>
-      </div>
-    </main>
+      <nav className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {NAV.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            className={`group flex items-center gap-3.5 ${card} p-4 transition-all hover:border-orange-300 hover:shadow-md`}
+          >
+            <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-amber-50 text-xl transition-colors group-hover:bg-amber-100">
+              {item.icon}
+            </span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-stone-900">{item.label}</span>
+              <span className="block truncate text-[13px] text-stone-500">{item.desc}</span>
+            </span>
+          </Link>
+        ))}
+      </nav>
+    </AppShell>
+  )
+}
+
+function StatSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={`${card} p-4`}>
+          <div className="h-3 w-24 animate-pulse rounded bg-stone-200" />
+          <div className="mt-2 h-7 w-20 animate-pulse rounded bg-stone-200" />
+        </div>
+      ))}
+    </div>
   )
 }

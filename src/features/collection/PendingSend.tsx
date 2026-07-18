@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { getPendingSendDonations, type Donation } from '../../lib/db/donations'
 import { voidRow } from '../../lib/db/void'
@@ -10,6 +9,8 @@ import { sendReceiptSms, sendReceiptWhatsApp } from './send'
 import { LanguagePicker } from './LanguagePicker'
 import { useReceiptLang } from './useReceiptLang'
 import { VoidButton } from '../../components/VoidButton'
+import { AppShell } from '../../components/AppShell'
+import { card, btnGhost } from '../../components/ui'
 
 const t = strings.pendingSend
 
@@ -96,14 +97,7 @@ export function PendingSend() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
-        <Link to="/volunteer" className="text-sm text-orange-700 underline">
-          {t.backLink}
-        </Link>
-      </div>
-
+    <AppShell title={t.title} back={{ to: '/volunteer', label: strings.collection.title }}>
       <LanguagePicker lang={lang} onChange={setLang} label={strings.collection.languageLabel} />
 
       {/* Rendered independently of `loading` (which only tracks the
@@ -112,17 +106,19 @@ export function PendingSend() {
           entries immediately instead of waiting behind a server fetch
           that may never resolve while offline. */}
       {queuedItems.length > 0 && (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {queuedItems.map((item) => (
             <li
               key={item.localId}
-              className="flex items-center justify-between rounded border border-dashed border-stone-300 p-3"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-stone-300 bg-white p-4"
             >
-              <div>
-                <p className="font-medium text-stone-900">{item.donorName}</p>
-                <p className="text-sm text-stone-600">{formatINR(item.amountPaise)}</p>
+              <div className="min-w-0">
+                <p className="font-semibold text-stone-900">{item.donorName}</p>
+                <p className="text-sm text-stone-500">{formatINR(item.amountPaise)}</p>
               </div>
-              <span className="text-sm text-stone-500">{t.waitingForSignal}</span>
+              <span className="flex-none rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                {t.waitingForSignal}
+              </span>
             </li>
           ))}
         </ul>
@@ -131,41 +127,38 @@ export function PendingSend() {
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : donations.length === 0 ? (
-        queuedItems.length === 0 && <p className="text-stone-400">{t.empty}</p>
+        queuedItems.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+            {t.empty}
+          </div>
+        )
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {donations.map((donation) => (
-            <li
-              key={donation.id}
-              className="flex items-center justify-between rounded border border-stone-200 p-3"
-            >
-              <div>
-                <p className={`font-medium text-stone-900 ${donation.voided ? 'text-stone-400 line-through' : ''}`}>
+            <li key={donation.id} className={`flex items-center justify-between gap-3 ${card} p-4`}>
+              <div className="min-w-0">
+                <p className={`font-semibold ${donation.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
                   {donation.donor_name}
                 </p>
-                <p className={`text-sm text-stone-600 ${donation.voided ? 'line-through' : ''}`}>
+                <p className={`text-sm text-stone-500 ${donation.voided ? 'line-through' : ''}`}>
                   {formatINR(donation.amount_paise)}
                 </p>
                 {donation.voided && (
-                  <p className="text-sm text-red-700">
+                  <p className="text-[13px] text-stone-400">
                     {t.voidedPrefix}
                     {donation.void_reason}
                   </p>
                 )}
               </div>
               {donation.voided ? null : (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSendSms(donation)}
-                    className="rounded border border-orange-700 px-3 py-2 text-orange-700"
-                  >
+                <div className="flex flex-none items-center gap-2">
+                  <button type="button" onClick={() => handleSendSms(donation)} className={`${btnGhost} px-3 py-1.5`}>
                     {sentIds.has(donation.id) ? t.sent : t.sendSmsButton}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSendWhatsApp(donation)}
-                    className="rounded border border-orange-700 px-3 py-2 text-orange-700"
+                    className={`${btnGhost} px-3 py-1.5`}
                   >
                     {sentIds.has(donation.id) ? t.sent : t.sendWhatsAppButton}
                   </button>
@@ -176,6 +169,6 @@ export function PendingSend() {
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
   )
 }

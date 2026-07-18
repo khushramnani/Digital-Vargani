@@ -8,6 +8,8 @@ import {
 } from '../../lib/db/transparency'
 import { TransparencyReport } from './TransparencyReport'
 import { strings } from '../../lib/strings'
+import { AppShell } from '../../components/AppShell'
+import { card, btnPrimary, btnGhost, errorText } from '../../components/ui'
 
 const t = strings.transparency
 
@@ -69,56 +71,65 @@ export function AdminTransparency() {
     }
   }
 
+  const publicUrl = mandal ? `${window.location.origin}/transparency/${mandal.slug}` : ''
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-stone-900">{t.title}</h1>
+    <AppShell
+      title={t.title}
+      back={{ to: '/admin', label: strings.admin.dashboardTitle }}
+      actions={
         <button
           type="button"
           onClick={handleToggle}
           disabled={toggling || loading}
-          className={`rounded px-3 py-2 text-sm font-medium disabled:opacity-50 ${
-            published ? 'border border-stone-300 text-stone-700' : 'bg-orange-700 text-white'
-          }`}
+          className={published ? btnGhost : btnPrimary}
         >
           {published ? t.unpublishButton : t.publishButton}
         </button>
-      </div>
-
+      }
+    >
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className={errorText}>
           {error}
         </p>
       )}
 
-      <p className="text-sm text-stone-500">{published ? t.publishedStatus : t.unpublishedStatus}</p>
-
-      {/* The slug's whole purpose is a link pasted into a WhatsApp group —
-          without a visible copy affordance it's a column nobody uses. */}
-      {mandal && (
-        <div className="flex items-center gap-2 rounded border border-stone-200 p-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-stone-500">{t.publicLinkLabel}</p>
-            <p className="truncate text-sm text-stone-800">{`${window.location.origin}/transparency/${mandal.slug}`}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(`${window.location.origin}/transparency/${mandal.slug}`)
-              setCopied(true)
-            }}
-            className="flex-none rounded border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700"
-          >
-            {copied ? t.copied : t.copyLink}
-          </button>
+      {/* Status + shareable link. The slug's whole purpose is a link pasted
+          into a WhatsApp group — without a visible copy affordance it's a
+          column nobody uses. */}
+      <div className={`flex flex-col gap-3 ${card} p-4`}>
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 flex-none rounded-full ${published ? 'bg-green-500' : 'bg-amber-500'}`}
+            aria-hidden
+          />
+          <p className="text-sm font-medium text-stone-600">{published ? t.publishedStatus : t.unpublishedStatus}</p>
         </div>
-      )}
+        {mandal && (
+          <div className="flex items-center gap-2 border-t border-stone-100 pt-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold tracking-wide text-stone-400 uppercase">{t.publicLinkLabel}</p>
+              <p className="truncate text-sm text-stone-800">{publicUrl}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard.writeText(publicUrl)
+                setCopied(true)
+              }}
+              className={`flex-none ${btnGhost} px-3 py-1.5`}
+            >
+              {copied ? t.copied : t.copyLink}
+            </button>
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
       ) : (
         totals && <TransparencyReport totals={totals} categories={categories} mandalName={mandal?.name} />
       )}
-    </main>
+    </AppShell>
   )
 }
