@@ -49,7 +49,7 @@ export function CollectionsScreen() {
     if (!appUser) return
     setNotice(null)
     try {
-      await voidRow('donations', donation.id, reason, appUser.id)
+      await voidRow('donations', donation.id, reason)
       setDonations(await getDonations())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

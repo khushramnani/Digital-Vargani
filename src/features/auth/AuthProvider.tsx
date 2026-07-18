@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../../lib/db/client'
+import { clearOutbox } from '../../lib/queue/sync'
 import { AuthContext, type AppUser } from './useAuth'
 
 // Shared by the session-listener resolution below and refreshAppUser() —
@@ -65,7 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // Wipe this device's offline queue when the session ends, so the next
+      // person on a shared phone can't inherit the previous volunteer's
+      // queued donor details (audit 2026-07-18 #3). Fire-and-forget like the
+      // app's other IndexedDB calls.
+      if (event === 'SIGNED_OUT') clearOutbox().catch(() => {})
       resolve(nextSession)
     })
 

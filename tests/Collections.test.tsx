@@ -101,7 +101,7 @@ describe('CollectionsScreen', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete donation' }))
 
     await waitFor(() =>
-      expect(voidRow).toHaveBeenCalledWith('donations', 'donation-1', 'Wrong amount', 'volunteer-1'),
+      expect(voidRow).toHaveBeenCalledWith('donations', 'donation-1', 'Wrong amount'),
     )
   })
 

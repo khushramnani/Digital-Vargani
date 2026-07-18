@@ -426,6 +426,10 @@ export type Database = {
       }
       redeem_invite: { Args: { token: string }; Returns: undefined }
       slugify: { Args: { txt: string }; Returns: string }
+      void_row: {
+        Args: { reason: string; row_id: string; target_table: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

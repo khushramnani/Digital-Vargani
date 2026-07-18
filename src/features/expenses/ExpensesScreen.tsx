@@ -91,7 +91,7 @@ export function ExpensesScreen() {
   async function handleVoid(expense: Expense, reason: string) {
     if (!appUser) return
     try {
-      await voidRow('expenses', expense.id, reason, appUser.id)
+      await voidRow('expenses', expense.id, reason)
       setExpenses(await getExpenses())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

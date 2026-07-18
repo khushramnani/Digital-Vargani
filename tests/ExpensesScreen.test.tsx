@@ -179,7 +179,7 @@ describe('ExpensesScreen', () => {
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Wrong category' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Void' }))
 
-    await waitFor(() => expect(voidRow).toHaveBeenCalledWith('expenses', 'expense-1', 'Wrong category', 'admin-1'))
+    await waitFor(() => expect(voidRow).toHaveBeenCalledWith('expenses', 'expense-1', 'Wrong category'))
   })
 
   it('does not call voidRow when the confirm dialog is cancelled', async () => {

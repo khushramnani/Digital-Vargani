@@ -75,11 +75,21 @@ export function cashHeldByTreasurer(ledger: Ledger): number {
     ledger.users.filter((u) => u.role === 'admin').map((u) => u.id),
   )
   const handed = sumWhere(ledger.handovers, (h) => !h.voided)
+  // An admin who collects a cash donation directly is holding that cash
+  // themselves — it never passes through a volunteer or a handover — so it
+  // belongs in the treasurer's cash exactly like a handover does. Without
+  // this term an admin-collected cash donation inflates totalCollected (the
+  // RHS) with no matching LHS entry, and the books-balance indicator goes
+  // permanently red on a natural admin action.
+  const adminCashDonations = sumWhere(
+    ledger.donations,
+    (d) => d.mode === 'cash' && adminIds.has(d.collectedBy) && !d.voided,
+  )
   const adminCashExpenses = sumWhere(
     ledger.expenses,
     (e) => e.paidFrom === 'cash' && adminIds.has(e.paidBy) && !e.voided,
   )
-  return handed - adminCashExpenses
+  return handed + adminCashDonations - adminCashExpenses
 }
 
 export function bankBalance(ledger: Ledger): number {
@@ -99,22 +109,27 @@ export interface BooksBalanceResult {
   discrepancyPaise: number // signed: (computed LHS) − (netBalance + bankOpeningPaise)
 }
 
-// Books-balance identity. Only holds if cash donations are always
-// collected by a `role: 'volunteer'` user (never an admin), and
-// cashHeldByTreasurer only nets out admin-attributed cash expenses.
+// Books-balance identity. Cash donations may be collected by either a
+// volunteer or an admin: a volunteer's cash flows through volunteerCashInHand
+// (and a later handover), an admin's cash is held by the treasurer directly,
+// and cashHeldByTreasurer now accounts for both. The one remaining modelling
+// assumption is that every handover is FROM a volunteer (volunteer → admin) —
+// which the app enforces at the UI — since a handover is subtracted per
+// volunteer but added in full to the treasurer's cash.
 //
-// Proof: let C_v = cash donations per volunteer, E_v = cash expenses per
-// volunteer, H_v = handovers per volunteer, E_admin = admin's cash
-// expenses, D_online = all upi+bank donations, E_bank = all bank
-// expenses, B0 = bankOpeningPaise.
+// Proof: let C_v = cash donations per volunteer, C_a = admin cash donations,
+// E_v = cash expenses per volunteer, H_v = handovers per volunteer,
+// E_admin = admin's cash expenses, D_online = all upi+bank donations,
+// E_bank = all bank expenses, B0 = bankOpeningPaise.
 //
 //   Σ_v volunteerCashInHand(v) = Σ_v(C_v − E_v − H_v) = ΣC_v − ΣE_v − ΣH_v
-//   cashHeldByTreasurer        = ΣH_v − E_admin
+//   cashHeldByTreasurer        = ΣH_v + C_a − E_admin
 //   bankBalance                = B0 + D_online − E_bank
 //
-//   LHS = (ΣC_v − ΣE_v − ΣH_v) + (ΣH_v − E_admin) + (B0 + D_online − E_bank)
-//       = ΣC_v + D_online − ΣE_v − E_admin − E_bank + B0
-//       = totalCollected − totalExpenses + B0
+//   LHS = (ΣC_v − ΣE_v − ΣH_v) + (ΣH_v + C_a − E_admin) + (B0 + D_online − E_bank)
+//       = (ΣC_v + C_a + D_online) − (ΣE_v + E_admin + E_bank) + B0
+//       = totalCollected − totalExpenses + B0   (every donation and every
+//         expense is attributed to exactly one of the buckets above)
 //       = netBalance + B0
 //       = RHS  ✓
 export function booksBalanceCheck(ledger: Ledger): BooksBalanceResult {

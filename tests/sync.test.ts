@@ -14,6 +14,14 @@ vi.mock('../src/lib/db/donations', () => ({
   getDonationByIdempotencyKey,
 }))
 
+// enqueue stamps each row with the current session's auth user id, and sync
+// only pushes rows matching the current session (audit 2026-07-18 #3), so the
+// auth client is now part of the queue's dependencies.
+const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }))
+vi.mock('../src/lib/db/client', () => ({
+  supabase: { auth: { getSession } },
+}))
+
 // Fake in-memory stand-in for the Dexie `outbox` table — jsdom doesn't
 // implement IndexedDB, so this mocks the Dexie layer the same way this
 // repo's other tests mock the Supabase client: exactly what the module
@@ -21,7 +29,7 @@ vi.mock('../src/lib/db/donations', () => ({
 const { outbox, outboxRows } = vi.hoisted(() => {
   const outboxRows = new Map<string, Record<string, unknown>>()
   const outbox = {
-    add: vi.fn((row: { localId: string }) => {
+    add: vi.fn((row: { localId: string } & Record<string, unknown>) => {
       outboxRows.set(row.localId, row)
       return Promise.resolve(row.localId)
     }),
@@ -80,6 +88,7 @@ function captureQueueChanged() {
 beforeEach(() => {
   vi.clearAllMocks()
   outboxRows.clear()
+  getSession.mockResolvedValue({ data: { session: { user: { id: 'auth-user-1' } } } })
 })
 
 afterEach(() => {
@@ -96,6 +105,7 @@ describe('enqueueDonation', () => {
     const stored = await outbox.get(localId)
     expect(stored).toEqual({
       localId,
+      authUserId: 'auth-user-1',
       donorName: donationInput.donorName,
       donorPhone: donationInput.donorPhone,
       amountPaise: donationInput.amountPaise,
@@ -190,6 +200,31 @@ describe('syncAllPending', () => {
     expect(createDonation.mock.calls[1][0]).toMatchObject({ clientIdempotencyKey: second.localId })
     expect(await outbox.get(first.localId)).toBeUndefined()
     expect(await outbox.get(second.localId)).toBeUndefined()
+  })
+
+  it('syncs only the current session\'s own rows, leaving another user\'s queued rows untouched', async () => {
+    vi.stubGlobal('navigator', { ...navigator, onLine: true })
+    // Mine (stamped with the current session by enqueueDonation)…
+    const mine = await enqueueDonation(donationInput)
+    // …and someone else's, left behind on this shared device.
+    await outbox.add({
+      localId: 'other-local-id',
+      authUserId: 'auth-user-2',
+      donorName: 'Not mine',
+      donorPhone: '9000000000',
+      amountPaise: 999,
+      mode: 'cash',
+      collectedBy: 'volunteer-2',
+      queuedAt: '2000-01-01T00:00:00Z',
+    })
+    createDonation.mockResolvedValue(serverDonation)
+
+    await syncAllPending()
+
+    expect(createDonation).toHaveBeenCalledTimes(1)
+    expect(createDonation.mock.calls[0][0]).toMatchObject({ clientIdempotencyKey: mine.localId })
+    // The other user's row is fenced out — still queued, never synced.
+    expect(await outbox.get('other-local-id')).toBeDefined()
   })
 
   it('guards against overlapping concurrent runs with an in-memory re-entrant flag', async () => {

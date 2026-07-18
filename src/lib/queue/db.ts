@@ -9,6 +9,7 @@ import type { DonationMode } from '../validation/donation'
 
 export interface OutboxDonation {
   localId: string // crypto.randomUUID(); also doubles as client_idempotency_key on sync
+  authUserId: string // session.user.id at enqueue time; sync only pushes the current session's own rows (audit 2026-07-18 #3)
   donorName: string
   donorPhone: string
   amountPaise: number
@@ -21,6 +22,10 @@ export const db = new Dexie('vinayak-mandal') as Dexie & {
   outbox: EntityTable<OutboxDonation, 'localId'>
 }
 
+// authUserId is a plain (non-indexed) property — sync filters it in JS — so
+// no schema/version bump is needed for it. Rows queued before this field
+// existed carry it as undefined and are treated as belonging to no current
+// session (fenced out of sync).
 db.version(1).stores({
   outbox: 'localId, queuedAt',
 })

@@ -4,6 +4,7 @@
 // (syncOutboxItem/syncAllPending). This is the mechanism behind SPEC.md's
 // "no data loss with network off" promise.
 import { db, type OutboxDonation } from './db'
+import { supabase } from '../db/client'
 import {
   createDonation,
   getDonationByIdempotencyKey,
@@ -15,10 +16,19 @@ function dispatchQueueChanged(): void {
   window.dispatchEvent(new Event('queue:changed'))
 }
 
+// The auth user id (not the users.id) of the current session. The outbox is
+// device-global; binding rows to the session that queued them is what stops a
+// shared phone from syncing one mandal's queued donation into another's books.
+async function currentAuthUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession()
+  return data.session?.user.id ?? null
+}
+
 export async function enqueueDonation(input: CreateDonationInput): Promise<{ localId: string }> {
   const localId = crypto.randomUUID()
   await db.outbox.add({
     localId,
+    authUserId: (await currentAuthUserId()) ?? '',
     donorName: input.donorName,
     donorPhone: input.donorPhone,
     amountPaise: input.amountPaise,
@@ -27,6 +37,13 @@ export async function enqueueDonation(input: CreateDonationInput): Promise<{ loc
     queuedAt: new Date().toISOString(),
   })
   return { localId }
+}
+
+// Fence + PII hygiene on sign-out: the outbox is device-local, so clearing it
+// when the session ends stops the next person on a shared phone from seeing
+// (or syncing) the previous volunteer's queued donor details.
+export async function clearOutbox(): Promise<void> {
+  await db.outbox.clear()
 }
 
 // The only unique column this insert can ever collide on is
@@ -82,10 +99,18 @@ export async function syncAllPending(): Promise<void> {
   if (!navigator.onLine) return
   if (syncInFlight) return
 
+  // Set the re-entrancy flag synchronously, before any await, so a second
+  // call racing in behind this one sees it and bails.
   syncInFlight = true
   try {
+    const authUserId = await currentAuthUserId()
+    if (!authUserId) return // no session to attribute a sync to
     const items: OutboxDonation[] = await db.outbox.orderBy('queuedAt').toArray()
     for (const item of items) {
+      // Only push the signed-in user's own queued rows. Another session's
+      // rows (a different volunteer on a shared device) stay put rather than
+      // syncing into THIS mandal's books (audit 2026-07-18 #3).
+      if (item.authUserId !== authUserId) continue
       await syncOutboxItem(item.localId)
     }
   } finally {

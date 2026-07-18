@@ -92,7 +92,7 @@ export function PendingSend() {
   // task list yet.
   async function handleVoid(donation: Donation, reason: string) {
     if (!appUser) return
-    await voidRow('donations', donation.id, reason, appUser.id)
+    await voidRow('donations', donation.id, reason)
     setDonations(await getPendingSendDonations(appUser.id))
   }
 

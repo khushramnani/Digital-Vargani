@@ -83,7 +83,7 @@ export function HandoverScreen() {
   async function handleVoid(handover: Handover, reason: string) {
     if (!appUser) return
     try {
-      await voidRow('handovers', handover.id, reason, appUser.id)
+      await voidRow('handovers', handover.id, reason)
       setHandovers(await getHandovers())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
