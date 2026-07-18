@@ -95,11 +95,16 @@ export async function getPendingSendDonations(collectedBy: string): Promise<Dona
 // donations_admin_select, Task 2 migration) already scopes rows per-role
 // server-side, same transparent pattern as getExpenses/getHandovers, so
 // this one query works unmodified for either caller.
+// Bounded (audit 2026-07-18 #9): most-recent-first with an explicit cap, so a
+// big mandal's ledger doesn't fetch-and-render thousands of rows on a low-end
+// phone. ponytail: a hard cap, not pagination — add a "load more" when a
+// mandal legitimately needs to browse past the most recent 1000 donations.
 export async function getDonations(): Promise<Donation[]> {
   const { data, error } = await supabase
     .from('donations')
     .select('*')
     .order('created_at', { ascending: false })
+    .limit(1000)
   if (error) throw error
   return data ?? []
 }

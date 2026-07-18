@@ -191,6 +191,7 @@ export function ExpensesScreen() {
         <button type="submit" disabled={submitting} className={btnPrimaryLg}>
           {submitting ? t.submitting : t.submitButton}
         </button>
+        <p className="text-center text-xs text-stone-400">{strings.app.onlineOnlyHint}</p>
         {error && (
           <p role="alert" className={errorText}>
             {error}

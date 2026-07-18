@@ -23,21 +23,29 @@ describe('toPaise', () => {
 })
 
 describe('formatINR', () => {
-  it('formats whole rupees with the rupee sign', () => {
-    expect(formatINR(10000)).toBe('₹100')
+  it('formats whole rupees with two fraction digits', () => {
+    expect(formatINR(10000)).toBe('₹100.00')
   })
 
   it('formats zero paise', () => {
-    expect(formatINR(0)).toBe('₹0')
+    expect(formatINR(0)).toBe('₹0.00')
+  })
+
+  it('keeps two fraction digits for a half-rupee (never ₹10.5)', () => {
+    expect(formatINR(1050)).toBe('₹10.50')
+  })
+
+  it('places the sign before the rupee symbol for a negative amount', () => {
+    expect(formatINR(-4000)).toBe('-₹40.00')
   })
 
   it('groups lakhs using en-IN digit grouping', () => {
     // ₹1,00,000 (Indian grouping), not ₹100,000 (Western grouping)
-    expect(formatINR(10000000)).toBe('₹1,00,000')
+    expect(formatINR(10000000)).toBe('₹1,00,000.00')
   })
 
   it('groups crores using en-IN digit grouping', () => {
-    expect(formatINR(1000000000)).toBe('₹1,00,00,000')
+    expect(formatINR(1000000000)).toBe('₹1,00,00,000.00')
   })
 })
 

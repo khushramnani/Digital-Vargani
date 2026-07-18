@@ -79,7 +79,7 @@ describe('CollectionsScreen', () => {
     render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    expect(screen.getByText('₹500')).toBeInTheDocument()
+    expect(screen.getByText('₹500.00')).toBeInTheDocument()
     // A voided donation is removed from the current ledger — hidden by default.
     expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)

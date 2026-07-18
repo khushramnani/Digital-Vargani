@@ -7,7 +7,7 @@
 
 ## Assumptions (correct these before building)
 
-1. **Stack:** React 18 + TypeScript + Vite, Tailwind CSS, PWA via `vite-plugin-pwa`, IndexedDB (Dexie) for the offline write-queue, Supabase (Postgres + RLS) as the backend, Recharts for the transparency pie chart, deployed to Vercel or Cloudflare Pages. All chosen because they are free-tier / zero running cost. **Swap freely — nothing below depends on a specific vendor except the SQL, which is Postgres-flavored.**
+1. **Stack:** React 18 + TypeScript + Vite, Tailwind CSS, PWA via `vite-plugin-pwa`, IndexedDB (Dexie) for the offline write-queue, Supabase (Postgres + RLS) as the backend, a hand-rolled inline-SVG donut (`src/components/FundDonut.tsx`) for the transparency breakdown, deployed to Vercel or Cloudflare Pages. All chosen because they are free-tier / zero running cost. **Swap freely — nothing below depends on a specific vendor except the SQL, which is Postgres-flavored.**
 2. **Multi-tenant.** Each mandal is a row in `mandals`, holding its identity (name, slug, logo, signature, UPI VPA/QR, expense categories, receipt-number prefix). Every table carries a `mandal_id`; `users.mandal_id` is the tenant key, read through `app_mandal_id()` and enforced by RLS on every policy. One account belongs to exactly one mandal. Mandals are created only by the `create_mandal()` RPC (self-serve signup, one mandal per verified email).
 3. **Trust-based payments.** No payment gateway, no payment-status/pending state, no UTR capture, no online-payment verification. Donor shows they paid → volunteer logs it → receipt sent → entry is final.
 4. **Zero messaging cost.** Receipts are sent by the volunteer's own SMS app via an `sms:` deep link. No SMS gateway.
@@ -40,7 +40,7 @@ Give a neighborhood Ganesh Mandal three things at zero cost:
 - `vite-plugin-pwa` (+ Workbox) for installability and the service worker
 - Dexie (IndexedDB) for the offline write-queue
 - Supabase: Postgres, Row Level Security, Auth (admin email magic link), Storage (legacy branding assets; new uploads go to Cloudinary via the sign-upload edge function)
-- Recharts (transparency pie chart)
+- Hand-rolled inline-SVG donut for the transparency breakdown (`src/components/FundDonut.tsx`) — no chart library
 - React Router
 - Deploy: Vercel or Cloudflare Pages (free tier)
 

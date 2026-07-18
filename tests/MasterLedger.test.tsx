@@ -73,8 +73,8 @@ describe('MasterLedgerScreen', () => {
     fetchFullLedger.mockResolvedValue(balancedLedger)
     renderScreen()
 
-    // Total Collected and Net Balance are both ₹1,000 here (no expenses).
-    await waitFor(() => expect(screen.getAllByText('₹1,000')).toHaveLength(2))
+    // Total Collected and Net Balance are both ₹1,000.00 here (no expenses).
+    await waitFor(() => expect(screen.getAllByText('₹1,000.00')).toHaveLength(2))
     expect(screen.getByRole('status')).toHaveTextContent('Books balanced')
   })
 
@@ -83,7 +83,7 @@ describe('MasterLedgerScreen', () => {
     renderScreen()
 
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument())
-    expect(screen.getByRole('status')).toHaveTextContent('Discrepancy: ₹1,000')
+    expect(screen.getByRole('status')).toHaveTextContent('Discrepancy: ₹1,000.00')
   })
 
   it('links to the volunteer collection form so an admin can log a donation as themselves', async () => {

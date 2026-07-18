@@ -1,9 +1,12 @@
 // All user-facing copy lives here (i18n-ready) per SPEC.md Code Style.
 export const strings = {
-  appName: 'Vinayak Yuvak Mandal (VYM)',
+  appName: 'Digital Vargani',
   appTagline: 'Digital Vargani & Fund Management System',
   app: {
     signOut: 'Sign out',
+    // Only donation collection has an offline queue; expenses/handovers write
+    // straight to the server, so set that expectation up front (audit #10).
+    onlineOnlyHint: 'Needs a connection — this saves online now, it does not queue offline like collecting donations.',
   },
   void: {
     button: 'Void',

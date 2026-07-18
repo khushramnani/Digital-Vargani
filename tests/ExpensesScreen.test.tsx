@@ -119,7 +119,7 @@ describe('ExpensesScreen', () => {
     render(<MemoryRouter><ExpensesScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('Tent rental')).toBeInTheDocument())
-    expect(screen.getByText('₹2,500')).toBeInTheDocument()
+    expect(screen.getByText('₹2,500.00')).toBeInTheDocument()
     expect(screen.getAllByText(/Sita Volunteer/)).toHaveLength(2)
 
     expect(screen.getByText('Sweets')).toBeInTheDocument()

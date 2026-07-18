@@ -70,7 +70,7 @@ describe('ReceiptPage', () => {
     renderReceiptPage('tok-abc')
 
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
-    expect(screen.getByText('₹501')).toBeInTheDocument()
+    expect(screen.getByText('₹501.00')).toBeInTheDocument()
     expect(screen.getByText('VM-000042')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'RECEIVED: CASH' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'RECEIVED: ONLINE' })).not.toBeInTheDocument()
