@@ -180,9 +180,10 @@ describe('syncOutboxItem', () => {
     window.removeEventListener('queue:changed', spy)
   })
 
-  it('server rejection: records a failed attempt + reason and dispatches queue:changed (audit #6)', async () => {
+  it('permanent server rejection: records a failed attempt + reason and dispatches queue:changed (audit #6)', async () => {
     const { localId } = await enqueueDonation(donationInput)
-    // A Postgrest error carries a code — a poison payload, not an offline blip.
+    // A constraint/FK violation (SQLSTATE class 23) is poison — it fails
+    // identically on every retry.
     createDonation.mockRejectedValue({ code: '23503', message: 'insert violates foreign key' })
     const spy = captureQueueChanged()
 
@@ -191,6 +192,22 @@ describe('syncOutboxItem', () => {
     expect(result).toBeNull()
     expect(await outbox.get(localId)).toMatchObject({ attempts: 1, failedReason: 'insert violates foreign key' })
     expect(spy).toHaveBeenCalledTimes(1)
+    window.removeEventListener('queue:changed', spy)
+  })
+
+  it('transient coded error (e.g. statement timeout): left queued for retry, NOT counted as poison', async () => {
+    const { localId } = await enqueueDonation(donationInput)
+    // 57014 = statement timeout — transient (DB overload), must not strand the row.
+    createDonation.mockRejectedValue({ code: '57014', message: 'canceling statement due to statement timeout' })
+    const spy = captureQueueChanged()
+
+    const result = await syncOutboxItem(localId)
+
+    expect(result).toBeNull()
+    const stored = await outbox.get(localId)
+    expect(stored).toBeDefined()
+    expect(stored?.attempts).toBeUndefined() // untouched — will retry
+    expect(spy).not.toHaveBeenCalled()
     window.removeEventListener('queue:changed', spy)
   })
 })
@@ -244,6 +261,28 @@ describe('syncAllPending', () => {
     expect(createDonation.mock.calls[0][0]).toMatchObject({ clientIdempotencyKey: mine.localId })
     // The other user's row is fenced out — still queued, never synced.
     expect(await outbox.get('other-local-id')).toBeDefined()
+  })
+
+  it('syncs a row with no authUserId (queued before the field existed), not stranding it', async () => {
+    vi.stubGlobal('navigator', { ...navigator, onLine: true })
+    // A pre-upgrade row: no authUserId. It belongs to the current, still
+    // signed-in user and must sync rather than be fenced out forever.
+    await outbox.add({
+      localId: 'pre-upgrade-id',
+      donorName: 'Legacy',
+      donorPhone: '9000000000',
+      amountPaise: 111,
+      mode: 'cash',
+      collectedBy: 'volunteer-1',
+      queuedAt: '2000-01-01T00:00:00Z',
+    })
+    createDonation.mockResolvedValue(serverDonation)
+
+    await syncAllPending()
+
+    expect(createDonation).toHaveBeenCalledTimes(1)
+    expect(createDonation.mock.calls[0][0]).toMatchObject({ clientIdempotencyKey: 'pre-upgrade-id' })
+    expect(await outbox.get('pre-upgrade-id')).toBeUndefined() // synced + removed
   })
 
   it('skips a poison item that has already exhausted MAX_SYNC_ATTEMPTS', async () => {

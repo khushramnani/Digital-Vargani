@@ -20,16 +20,19 @@ function dispatchQueueChanged(): void {
   window.dispatchEvent(new Event('queue:changed'))
 }
 
-// A server rejection carries a Postgrest error code (bad payload / RLS denial
-// / FK or check violation) and will fail identically on every retry. A plain
-// network failure (offline, fetch aborted) has no code and is worth retrying.
-function isServerRejection(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    (err as { code: string }).code.length > 0
-  )
+// A PERMANENT rejection: the payload or the caller's permissions are wrong, so
+// every retry fails identically — a constraint/FK/check/not-null violation
+// (SQLSTATE class 23), an RLS/privilege/undefined-object error (class 42), or a
+// data exception (class 22). Transient coded errors — connection (08),
+// too-many-connections (53), statement timeout (57014), serialization/deadlock
+// (40) — and errors with no code (offline/network) are NOT poison: they're left
+// queued to retry once the server recovers (audit review 2026-07-18).
+function isPermanentRejection(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const code = (err as { code?: unknown }).code
+  if (typeof code !== 'string' || code.length < 2) return false
+  const cls = code.slice(0, 2)
+  return cls === '22' || cls === '23' || cls === '42'
 }
 
 function errorMessage(err: unknown): string {
@@ -62,12 +65,15 @@ export async function enqueueDonation(input: CreateDonationInput): Promise<{ loc
   return { localId }
 }
 
-// Fence + PII hygiene on sign-out: the outbox is device-local, so clearing it
-// when the session ends stops the next person on a shared phone from seeing
-// (or syncing) the previous volunteer's queued donor details.
-export async function clearOutbox(): Promise<void> {
-  await db.outbox.clear()
-}
+// NOTE: we deliberately do NOT clear the outbox on sign-out. Every outbox row
+// is a collected-but-unsynced donation; wiping them on SIGNED_OUT silently
+// destroyed money records (a volunteer signing out — or re-opening their invite
+// link, which signs out first — while offline lost everything queued), breaking
+// the "no data loss with network off" guarantee. Cross-mandal safety instead
+// comes from the composite actor FKs (a row can't sync into another tenant's
+// books) plus the authUserId fence in syncAllPending below; donor PII in
+// IndexedDB is never shown to the next user, since PendingSend filters the tray
+// by collectedBy. No-data-loss wins over PII-scrub for a money ledger.
 
 // Manual discard of a poison item the volunteer chooses to give up on
 // (audit #6). Dispatches queue:changed so the tray drops it immediately.
@@ -110,10 +116,11 @@ export async function syncOutboxItem(localId: string): Promise<Donation | null> 
       dispatchQueueChanged()
       return recovered
     }
-    // A server rejection (audit #6): record the failure so it stops being an
-    // invisible "waiting for signal" forever. After MAX_SYNC_ATTEMPTS the UI
-    // flags it for attention and syncAllPending skips it.
-    if (isServerRejection(err)) {
+    // A PERMANENT server rejection (audit #6): record the failure so it stops
+    // being an invisible "waiting for signal" forever. After MAX_SYNC_ATTEMPTS
+    // the UI flags it for attention and syncAllPending skips it. A transient
+    // error falls through to the retry path below.
+    if (isPermanentRejection(err)) {
       await db.outbox.update(localId, {
         attempts: (item.attempts ?? 0) + 1,
         failedReason: errorMessage(err),
@@ -148,10 +155,12 @@ export async function syncAllPending(): Promise<void> {
     if (!authUserId) return // no session to attribute a sync to
     const items: OutboxDonation[] = await db.outbox.orderBy('queuedAt').toArray()
     for (const item of items) {
-      // Only push the signed-in user's own queued rows. Another session's
-      // rows (a different volunteer on a shared device) stay put rather than
-      // syncing into THIS mandal's books (audit 2026-07-18 #3).
-      if (item.authUserId !== authUserId) continue
+      // Only fence out rows explicitly tagged for a DIFFERENT session (a
+      // different volunteer on a shared device) — audit 2026-07-18 #3. A row
+      // with no authUserId predates that field (queued on an older build by
+      // this same, still-signed-in user), so sync it rather than stranding it
+      // forever (audit review 2026-07-18).
+      if (item.authUserId && item.authUserId !== authUserId) continue
       // Skip poison items — they've failed on the server MAX_SYNC_ATTEMPTS
       // times and won't succeed on retry; the UI surfaces them instead.
       if ((item.attempts ?? 0) >= MAX_SYNC_ATTEMPTS) continue
