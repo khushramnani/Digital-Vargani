@@ -93,7 +93,7 @@ describe('MasterLedgerScreen', () => {
     // The dashboard nav is now a card grid: each link's accessible name is
     // its label plus a one-line description, so match on the label substring.
     await waitFor(() => expect(screen.getByRole('link', { name: /Collect donation/ })).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: /Collect donation/ })).toHaveAttribute('href', '/volunteer')
+    expect(screen.getByRole('link', { name: /Collect donation/ })).toHaveAttribute('href', '/collect')
   })
 
   it('links to the admin management screen', async () => {

@@ -99,7 +99,7 @@ test('submitting a donation shows the receipt number, the Send via SMS fallback,
     return route.continue()
   })
 
-  await page.goto('/volunteer')
+  await page.goto('/collect')
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
 
   await page.getByLabel('Donor Name').fill('SMS Donor')

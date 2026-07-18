@@ -97,7 +97,7 @@ export function PendingSend() {
   }
 
   return (
-    <AppShell title={t.title} back={{ to: '/volunteer', label: strings.collection.title }}>
+    <AppShell title={t.title} back={{ to: '/collect', label: strings.collection.title }}>
       <LanguagePicker lang={lang} onChange={setLang} label={strings.collection.languageLabel} />
 
       {/* Rendered independently of `loading` (which only tracks the

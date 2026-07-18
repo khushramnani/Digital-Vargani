@@ -78,7 +78,7 @@ export function CollectionsScreen() {
   const visible = showRemoved ? donations : active
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/volunteer', label: strings.collection.title }
+    : { to: '/collect', label: strings.collection.title }
 
   return (
     <AppShell

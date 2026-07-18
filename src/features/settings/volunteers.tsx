@@ -24,6 +24,14 @@ async function fetchVolunteers(): Promise<Volunteer[]> {
   return data ?? []
 }
 
+// Mints a fresh invite token server-side and clears the old binding, so a
+// volunteer who lost their session can re-redeem (audit 2026-07-18 #4).
+async function reissueInvite(volunteerId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('reissue_invite', { volunteer_id: volunteerId })
+  if (error) throw error
+  return data
+}
+
 // Admin-only screen (routed behind RequireRole role="admin"). List +
 // create-with-invite-link form only, per the brief: no editing/deleting
 // volunteers, no re-invite-generation UI — a lost session is fixed by the
@@ -36,6 +44,7 @@ export function VolunteersScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [reissuingId, setReissuingId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -78,6 +87,23 @@ export function VolunteersScreen() {
     await navigator.clipboard.writeText(inviteLink(token))
     setCopiedId(volunteerId)
     setTimeout(() => setCopiedId((current) => (current === volunteerId ? null : current)), 2000)
+  }
+
+  async function handleReissue(volunteerId: string) {
+    setReissuingId(volunteerId)
+    setError(null)
+    try {
+      const token = await reissueInvite(volunteerId)
+      // Reflect the reset locally: the volunteer becomes "pending" again with
+      // the new link shown, no refetch needed.
+      setVolunteers((current) =>
+        current.map((v) => (v.id === volunteerId ? { ...v, invite_token: token, auth_user_id: null } : v)),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReissuingId(null)
+    }
   }
 
   return (
@@ -131,23 +157,45 @@ export function VolunteersScreen() {
                 </span>
               </div>
               {volunteer.phone && <p className="mt-0.5 text-sm text-stone-500">{volunteer.phone}</p>}
-              {!volunteer.auth_user_id && volunteer.invite_token && (
-                <div className="mt-3 flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={inviteLink(volunteer.invite_token)}
-                    aria-label={`${strings.volunteers.copyLink}: ${volunteer.name}`}
-                    className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-500"
-                  />
+              {!volunteer.auth_user_id && volunteer.invite_token ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={inviteLink(volunteer.invite_token)}
+                      aria-label={`${strings.volunteers.copyLink}: ${volunteer.name}`}
+                      className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyLink(volunteer.id, volunteer.invite_token!)}
+                      className={`flex-none ${btnGhost} px-3 py-1.5`}
+                    >
+                      {copiedId === volunteer.id ? strings.volunteers.copied : strings.volunteers.copyLink}
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => copyLink(volunteer.id, volunteer.invite_token!)}
-                    className={`flex-none ${btnGhost} px-3 py-1.5`}
+                    onClick={() => handleReissue(volunteer.id)}
+                    disabled={reissuingId === volunteer.id}
+                    className="self-start text-xs font-semibold text-stone-500 hover:text-stone-700 disabled:opacity-50"
                   >
-                    {copiedId === volunteer.id ? strings.volunteers.copied : strings.volunteers.copyLink}
+                    {reissuingId === volunteer.id ? strings.volunteers.regenerating : strings.volunteers.regenerate}
                   </button>
                 </div>
-              )}
+              ) : volunteer.auth_user_id ? (
+                <div className="mt-3 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleReissue(volunteer.id)}
+                    disabled={reissuingId === volunteer.id}
+                    className={`self-start ${btnGhost} px-3 py-1.5`}
+                  >
+                    {reissuingId === volunteer.id ? strings.volunteers.regenerating : strings.volunteers.resetInvite}
+                  </button>
+                  <p className="text-xs leading-relaxed text-stone-400">{strings.volunteers.resetHint}</p>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

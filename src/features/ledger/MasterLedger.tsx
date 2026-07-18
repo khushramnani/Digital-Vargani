@@ -14,7 +14,7 @@ const a = strings.admin
 // descriptions come from strings.admin so the operator UI stays translatable
 // in one place.
 const NAV: { to: string; icon: string; label: string; desc: string }[] = [
-  { to: '/volunteer', icon: '🪔', label: a.collectDonationLink, desc: a.descriptions.collect },
+  { to: '/collect', icon: '🪔', label: a.collectDonationLink, desc: a.descriptions.collect },
   { to: '/admin/collections', icon: '🧾', label: a.collectionsLink, desc: a.descriptions.collections },
   { to: '/admin/expenses', icon: '💸', label: a.expensesLink, desc: a.descriptions.expenses },
   { to: '/admin/handovers', icon: '🤝', label: a.handoversLink, desc: a.descriptions.handovers },

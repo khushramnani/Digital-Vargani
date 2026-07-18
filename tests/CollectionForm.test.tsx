@@ -259,7 +259,7 @@ describe('CollectionForm', () => {
 
   it('links to the Pending Send tray', () => {
     renderForm()
-    expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/volunteer/pending')
+    expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/collect/pending')
   })
 
   it('presets the language picker from the mandal default and sends the receipt in it', async () => {

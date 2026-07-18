@@ -94,7 +94,7 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
   await expect(page.getByRole('heading', { name: 'Cash in Hand' })).toBeVisible()
   await expect(page.getByText('₹500')).toBeVisible()
 
-  await page.goto('/volunteer/collections')
+  await page.goto('/collect/history')
   await expect(page.getByText('Void Test Donor')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept('Wrong amount entered'))

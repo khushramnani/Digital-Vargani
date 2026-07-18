@@ -23,8 +23,8 @@ const MODE_OPTIONS: { value: DonationMode; label: string }[] = [
 // The volunteer home's own nav to the other volunteer screens. Route is
 // structure; the label is copy from strings.collection.
 const NAV: { to: string; label: string }[] = [
-  { to: '/volunteer/pending', label: t.pendingSendLink },
-  { to: '/volunteer/collections', label: t.collectionsLink },
+  { to: '/collect/pending', label: t.pendingSendLink },
+  { to: '/collect/history', label: t.collectionsLink },
   { to: '/volunteer/expenses', label: t.expensesLink },
   { to: '/volunteer/handover', label: t.handoversLink },
   { to: '/volunteer/cash-in-hand', label: t.cashInHandLink },

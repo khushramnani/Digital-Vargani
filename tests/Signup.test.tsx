@@ -20,6 +20,17 @@ vi.mock('react-router-dom', async () => ({
 
 beforeEach(() => vi.clearAllMocks())
 
+// /signup opens on a fork now (create vs. "I was invited"), so every test
+// clicks into the create form before touching its fields.
+function renderCreateForm() {
+  render(
+    <MemoryRouter>
+      <Signup />
+    </MemoryRouter>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
+}
+
 // State is a required field now, so every submit selects one (otherwise the
 // browser's constraint validation blocks the submit and createMandal never
 // runs).
@@ -38,11 +49,7 @@ function fillAndSubmit(mandalName: string, adminName: string, opts: { slug?: str
 describe('Signup', () => {
   it('creates the mandal, refreshes the session user, and lands on the admin dashboard', async () => {
     createMandal.mockResolvedValue('11111111-1111-1111-1111-000000000001')
-    render(
-      <MemoryRouter>
-        <Signup />
-      </MemoryRouter>,
-    )
+    renderCreateForm()
 
     fillAndSubmit('Shivaji Nagar Mandal', 'New Founder', { slug: 'shivaji-nagar', state: 'Maharashtra' })
 
@@ -63,11 +70,7 @@ describe('Signup', () => {
   // applies and the server derives the slug from the name instead.
   it('passes undefined for a blank public link', async () => {
     createMandal.mockResolvedValue('11111111-1111-1111-1111-000000000001')
-    render(
-      <MemoryRouter>
-        <Signup />
-      </MemoryRouter>,
-    )
+    renderCreateForm()
 
     fillAndSubmit('गणेश मंडळ', 'New Founder')
 
@@ -81,11 +84,7 @@ describe('Signup', () => {
   })
 
   it('previews the public transparency URL the chosen link will produce', async () => {
-    render(
-      <MemoryRouter>
-        <Signup />
-      </MemoryRouter>,
-    )
+    renderCreateForm()
 
     fireEvent.change(screen.getByLabelText(/Public link/), { target: { value: 'Shivaji Nagar!' } })
 
@@ -94,11 +93,7 @@ describe('Signup', () => {
 
   it('shows the database error verbatim when the account already has a mandal', async () => {
     createMandal.mockRejectedValue(new Error('this account already belongs to a mandal'))
-    render(
-      <MemoryRouter>
-        <Signup />
-      </MemoryRouter>,
-    )
+    renderCreateForm()
 
     fillAndSubmit('Second Mandal', 'New Founder')
 

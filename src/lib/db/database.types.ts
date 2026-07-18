@@ -425,6 +425,7 @@ export type Database = {
         }[]
       }
       redeem_invite: { Args: { token: string }; Returns: undefined }
+      reissue_invite: { Args: { volunteer_id: string }; Returns: string }
       slugify: { Args: { txt: string }; Returns: string }
       void_row: {
         Args: { reason: string; row_id: string; target_table: string }

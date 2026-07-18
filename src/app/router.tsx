@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
 import { InviteRedeem } from '../features/auth/InviteRedeem'
@@ -61,8 +61,12 @@ export function AppRoutes() {
           </RequireRole>
         }
       />
+      {/* Role-neutral collection flow: both an admin and a volunteer collect
+          money the same way, so the route encodes the task, not the role
+          (audit 2026-07-18 #q2). /volunteer/* below stay as redirects for old
+          links (invite emails, bookmarks). */}
       <Route
-        path="/volunteer"
+        path="/collect"
         element={
           <RequireRole role={['admin', 'volunteer']}>
             <CollectionForm />
@@ -70,13 +74,24 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/volunteer/pending"
+        path="/collect/pending"
         element={
           <RequireRole role={['admin', 'volunteer']}>
             <PendingSend />
           </RequireRole>
         }
       />
+      <Route
+        path="/collect/history"
+        element={
+          <RequireRole role={['admin', 'volunteer']}>
+            <CollectionsScreen />
+          </RequireRole>
+        }
+      />
+      <Route path="/volunteer" element={<Navigate to="/collect" replace />} />
+      <Route path="/volunteer/pending" element={<Navigate to="/collect/pending" replace />} />
+      <Route path="/volunteer/collections" element={<Navigate to="/collect/history" replace />} />
       <Route
         path="/volunteer/expenses"
         element={
@@ -130,14 +145,6 @@ export function AppRoutes() {
         element={
           <RequireRole role="admin">
             <AdminTransparency />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/volunteer/collections"
-        element={
-          <RequireRole role={['admin', 'volunteer']}>
-            <CollectionsScreen />
           </RequireRole>
         }
       />
