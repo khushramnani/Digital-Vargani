@@ -11,9 +11,26 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { signParams } from './signature.ts'
 
+// Browser calls (supabase.functions.invoke from the app) are cross-origin, so
+// the browser sends a preflight OPTIONS first and reads CORS headers off every
+// response. Without these the upload fails with "Failed to send a request to
+// the Edge Function". Origin '*' is fine — auth is enforced by the JWT check
+// below, not by the origin. This function is deployed with verify_jwt = false
+// (see config.toml) precisely so the platform lets the un-authenticated
+// preflight through to us; we still authenticate every real request here.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader) return new Response('missing authorization', { status: 401 })
+  if (!authHeader) return new Response('missing authorization', { status: 401, headers: corsHeaders })
 
   // Resolve the caller with THEIR jwt, so RLS applies exactly as it would in
   // the browser — users_self_select is what lets them read their own row.
@@ -24,7 +41,7 @@ Deno.serve(async (req) => {
   )
 
   const { data: authUser } = await supabase.auth.getUser()
-  if (!authUser?.user) return new Response('not authenticated', { status: 401 })
+  if (!authUser?.user) return new Response('not authenticated', { status: 401, headers: corsHeaders })
 
   const { data: appUser } = await supabase
     .from('users')
@@ -34,7 +51,7 @@ Deno.serve(async (req) => {
 
   // Only an active admin of some mandal may upload branding for it.
   if (!appUser || !appUser.active || appUser.role !== 'admin') {
-    return new Response('admin only', { status: 403 })
+    return new Response('admin only', { status: 403, headers: corsHeaders })
   }
 
   // The folder comes from the caller's OWN row — never from the request body.
@@ -53,6 +70,6 @@ Deno.serve(async (req) => {
       api_key: Deno.env.get('CLOUDINARY_API_KEY')!,
       cloud_name: Deno.env.get('CLOUDINARY_CLOUD_NAME')!,
     }),
-    { headers: { 'Content-Type': 'application/json' } },
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   )
 })

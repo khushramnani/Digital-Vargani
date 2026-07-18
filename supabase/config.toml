@@ -406,3 +406,12 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# sign-upload authenticates every request itself (reads the Authorization
+# header, validates it via auth.getUser(), and checks the admin role). The
+# platform's own JWT pre-check is therefore redundant — and worse, it rejects
+# the browser's un-authenticated CORS preflight (OPTIONS carries no auth),
+# which is what broke logo/signature uploads with "Failed to send a request to
+# the Edge Function". Turn it off so the preflight reaches the function.
+[functions.sign-upload]
+verify_jwt = false
