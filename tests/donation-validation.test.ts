@@ -20,13 +20,13 @@ describe('validateDonationInput', () => {
     expect(result.errors.donorName).toBeDefined()
   })
 
-  it('rejects an empty phone number', () => {
+  it('accepts an empty phone number (phone is optional)', () => {
     const result = validateDonationInput({ ...validInput, donorPhone: '' })
-    expect(result.valid).toBe(false)
-    expect(result.errors.donorPhone).toBeDefined()
+    expect(result.valid).toBe(true)
+    expect(result.errors.donorPhone).toBeUndefined()
   })
 
-  it('rejects a phone number that is too short to be plausible', () => {
+  it('still rejects a non-empty phone number that is too short to be plausible', () => {
     const result = validateDonationInput({ ...validInput, donorPhone: '12345' })
     expect(result.valid).toBe(false)
     expect(result.errors.donorPhone).toBeDefined()
@@ -57,7 +57,9 @@ describe('validateDonationInput', () => {
   })
 
   it('reports every field error at once when everything is invalid', () => {
-    const result = validateDonationInput({ donorName: '', donorPhone: '', amountRupees: '', mode: '' })
+    // A too-short (but non-empty) phone so it still errors; empty phone is now
+    // valid and would otherwise drop out of this set.
+    const result = validateDonationInput({ donorName: '', donorPhone: '123', amountRupees: '', mode: '' })
     expect(result.valid).toBe(false)
     expect(Object.keys(result.errors).sort()).toEqual(['amountRupees', 'donorName', 'donorPhone', 'mode'])
   })

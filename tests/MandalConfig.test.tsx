@@ -70,7 +70,7 @@ describe('MandalConfigScreen', () => {
     expect(screen.getByText('Prasad')).toBeInTheDocument()
     // formatINR display alongside the input, proving toRupees/formatINR are
     // both actually wired up (not reimplemented).
-    expect(screen.getByText('₹5,000')).toBeInTheDocument()
+    expect(screen.getByText('₹5,000.00')).toBeInTheDocument()
   })
 
   it('submits with bank_opening_paise converted from the rupees input via toPaise (5000 -> 500000)', async () => {

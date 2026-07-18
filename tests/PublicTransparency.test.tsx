@@ -62,7 +62,7 @@ describe('PublicTransparency', () => {
 
     renderAt('mandal-one')
 
-    await waitFor(() => expect(screen.getByText('₹5,000')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('₹5,000.00')).toBeInTheDocument())
     // Category rows sum to totalExpensesPaise (300000) — the invariant the
     // migration's `not voided` group-by guarantees; asserted here at the
     // fixture level rather than reimplementing the sum.

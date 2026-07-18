@@ -47,11 +47,14 @@ export async function createExpense(input: CreateExpenseInput): Promise<Expense>
 // resolves the payer's display name in one query instead of a second
 // users fetch + client-side id->name map; the fkey name disambiguates
 // against expenses' other users FK (voided_by).
+// Bounded most-recent-first (audit 2026-07-18 #9) — same cap/rationale as
+// getDonations; pagination is the follow-up if a mandal exceeds it.
 export async function getExpenses(): Promise<Expense[]> {
   const { data, error } = await supabase
     .from('expenses')
     .select('*, paid_by_user:users!expenses_paid_by_fkey(name)')
     .order('created_at', { ascending: false })
+    .limit(1000)
   if (error) throw error
   return data ?? []
 }

@@ -56,6 +56,8 @@ export async function createHandover(input: CreateHandoverInput): Promise<Handov
 // role-branching RLS already does server-side. The volunteer/received_by_user
 // embeds resolve both display names in one query; the fkey names disambiguate
 // against handovers' other users FK (voided_by).
+// Bounded most-recent-first (audit 2026-07-18 #9) — same cap/rationale as
+// getDonations; pagination is the follow-up if a mandal exceeds it.
 export async function getHandovers(): Promise<Handover[]> {
   const { data, error } = await supabase
     .from('handovers')
@@ -63,6 +65,7 @@ export async function getHandovers(): Promise<Handover[]> {
       '*, volunteer:users!handovers_volunteer_id_fkey(name), received_by_user:users!handovers_received_by_fkey(name)',
     )
     .order('created_at', { ascending: false })
+    .limit(1000)
   if (error) throw error
   return data ?? []
 }

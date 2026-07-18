@@ -44,6 +44,10 @@ function Field({ label, optional, help, children }: { label: string; optional?: 
 export function Signup() {
   const { session, appUser, loading, refreshAppUser } = useAuth()
   const navigate = useNavigate()
+  // /signup is a fork, not a create-only form: a volunteer/admin who signed
+  // in directly (Google/magic link) instead of tapping their invite link lands
+  // here too, and must have a path that isn't "create a mandal" (audit #4).
+  const [mode, setMode] = useState<'choose' | 'create' | 'invited'>('choose')
   const [mandalName, setMandalName] = useState('')
   const [adminName, setAdminName] = useState('')
   const [stateVal, setStateVal] = useState('')
@@ -83,6 +87,53 @@ export function Signup() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const c = strings.signupChoice
+
+  if (mode === 'choose') {
+    return (
+      <AuthShell title={c.title}>
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setMode('create')}
+            className="flex flex-col gap-1 rounded-2xl border border-stone-200 bg-white p-5 text-left transition-colors hover:border-orange-300"
+          >
+            <span className="text-base font-bold text-stone-900">{c.createTitle}</span>
+            <span className="text-[13px] leading-relaxed text-stone-500">{c.createBody}</span>
+            <span className="mt-1 text-sm font-semibold text-orange-600">{c.createCta}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('invited')}
+            className="flex flex-col gap-1 rounded-2xl border border-stone-200 bg-white p-5 text-left transition-colors hover:border-orange-300"
+          >
+            <span className="text-base font-bold text-stone-900">{c.invitedTitle}</span>
+            <span className="text-[13px] leading-relaxed text-stone-500">{c.invitedBody}</span>
+          </button>
+        </div>
+      </AuthShell>
+    )
+  }
+
+  if (mode === 'invited') {
+    return (
+      <AuthShell title={c.invitedTitle} subtitle={c.invitedBody}>
+        <div className="flex flex-col gap-4">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800">
+            {c.invitedHint}
+          </p>
+          <button
+            type="button"
+            onClick={() => setMode('choose')}
+            className="text-center text-sm font-semibold text-stone-500 hover:text-stone-700"
+          >
+            {c.back}
+          </button>
+        </div>
+      </AuthShell>
+    )
   }
 
   return (
@@ -158,6 +209,13 @@ export function Signup() {
           {submitting ? t.submitting : t.submit}
         </button>
         <p className="text-center text-xs text-stone-400">{t.stepHint}</p>
+        <button
+          type="button"
+          onClick={() => setMode('choose')}
+          className="text-center text-sm font-semibold text-stone-500 hover:text-stone-700"
+        >
+          {strings.signupChoice.back}
+        </button>
 
         {error && (
           <p role="alert" className="text-sm text-red-600">

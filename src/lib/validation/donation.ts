@@ -30,10 +30,12 @@ export function validateDonationInput(
     errors.donorName = t.donorName
   }
 
-  // Light format check, not full E.164 validation: strip non-digits and
-  // require a plausible phone-number length.
+  // Phone is optional (nullable in the schema): a donor may decline to share
+  // one and must still be loggable (audit 2026-07-18 #8). Only validate the
+  // format when something was actually entered — a light length check, not
+  // full E.164.
   const phoneDigits = input.donorPhone.replace(/\D/g, '')
-  if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+  if (phoneDigits.length > 0 && (phoneDigits.length < 7 || phoneDigits.length > 15)) {
     errors.donorPhone = t.donorPhone
   }
 

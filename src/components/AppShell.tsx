@@ -28,7 +28,7 @@ export function AppShell({
   children: ReactNode
 }) {
   const { appUser } = useAuth()
-  const home = appUser?.role === 'admin' ? '/admin' : '/volunteer'
+  const home = appUser?.role === 'admin' ? '/admin' : '/collect'
 
   return (
     <div className="min-h-screen bg-stone-50 font-body text-stone-900">

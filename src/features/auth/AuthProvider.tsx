@@ -4,26 +4,39 @@ import { supabase } from '../../lib/db/client'
 import { AuthContext, type AppUser } from './useAuth'
 
 // Shared by the session-listener resolution below and refreshAppUser() —
-// the "look up my users row" query has exactly one implementation.
+// the "look up my users row" query has exactly one implementation. Throws on
+// a real fetch failure (network/RLS): callers must distinguish that from a
+// genuine "no row" (data null, no error), because the two mean opposite
+// things — a fetch failure must NOT be read as "not a member" and dump the
+// user into create-a-mandal (audit 2026-07-18 #4).
 async function fetchAppUser(authUserId: string): Promise<AppUser | null> {
-  try {
-    const { data } = await supabase.from('users').select('*').eq('auth_user_id', authUserId).maybeSingle()
-    return data ?? null
-  } catch {
-    return null
-  }
+  const { data, error } = await supabase.from('users').select('*').eq('auth_user_id', authUserId).maybeSingle()
+  if (error) throw error
+  return data ?? null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
+  const [appUserError, setAppUserError] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const refreshAppUser = useCallback(async () => {
     const { data } = await supabase.auth.getSession()
     const nextSession = data.session
     setSession(nextSession)
-    setAppUser(nextSession ? await fetchAppUser(nextSession.user.id) : null)
+    if (!nextSession) {
+      setAppUser(null)
+      setAppUserError(false)
+      return
+    }
+    try {
+      setAppUser(await fetchAppUser(nextSession.user.id))
+      setAppUserError(false)
+    } catch {
+      setAppUser(null)
+      setAppUserError(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -35,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!nextSession) {
         setAppUser(null)
+        setAppUserError(false)
         setLoading(false)
         return
       }
@@ -51,8 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // null below, which every route guard already treats as "no role".
       }
 
-      const user = await fetchAppUser(nextSession.user.id)
-      if (active) setAppUser(user)
+      try {
+        const user = await fetchAppUser(nextSession.user.id)
+        if (active) {
+          setAppUser(user)
+          setAppUserError(false)
+        }
+      } catch {
+        // The lookup itself failed (network/RLS) — not the same as "no row".
+        // Flag it so RequireRole shows a retry instead of a create-mandal
+        // redirect.
+        if (active) {
+          setAppUser(null)
+          setAppUserError(true)
+        }
+      }
       if (active) setLoading(false)
     }
 
@@ -76,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, appUser, loading, refreshAppUser }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ session, appUser, appUserError, loading, refreshAppUser }}>
+      {children}
+    </AuthContext.Provider>
   )
 }

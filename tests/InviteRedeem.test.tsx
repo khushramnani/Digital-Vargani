@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { StrictMode } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import type { Tables } from '../src/lib/db/database.types'
@@ -53,7 +53,7 @@ function renderInviteRedeem(token: string) {
       <AuthProvider>
         <Routes>
           <Route path="/invite/:token" element={<InviteRedeem />} />
-          <Route path="/volunteer" element={<div>Volunteer Home</div>} />
+          <Route path="/collect" element={<div>Volunteer Home</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -70,7 +70,7 @@ function renderInviteRedeemStrict(token: string) {
         <AuthProvider>
           <Routes>
             <Route path="/invite/:token" element={<InviteRedeem />} />
-            <Route path="/volunteer" element={<div>Volunteer Home</div>} />
+            <Route path="/collect" element={<div>Volunteer Home</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>
@@ -98,7 +98,7 @@ beforeEach(() => {
 })
 
 describe('InviteRedeem', () => {
-  it('redeems a valid invite, refreshes appUser, and redirects to /volunteer', async () => {
+  it('redeems a valid invite, refreshes appUser, and redirects to /collect', async () => {
     succeedAnonymousSignIn()
     rpc.mockResolvedValue({ data: null, error: null })
     maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
@@ -111,8 +111,10 @@ describe('InviteRedeem', () => {
     expect(signOut).not.toHaveBeenCalled() // no lingering session to sign out
   })
 
-  it("signs out an existing session before redeeming, so it can't bind someone else's session", async () => {
-    const staleSession = { user: { id: 'stale-uid' } } as unknown as Session
+  it("asks before switching when a real session is present, then signs it out on confirm", async () => {
+    // A logged-in admin (non-anonymous) tapping a volunteer link must not be
+    // silently signed out and burn the token — confirm first (audit #4).
+    const staleSession = { user: { id: 'stale-uid', is_anonymous: false } } as unknown as Session
     getSession.mockResolvedValue({ data: { session: staleSession }, error: null })
     succeedAnonymousSignIn()
     rpc.mockResolvedValue({ data: null, error: null })
@@ -120,7 +122,31 @@ describe('InviteRedeem', () => {
 
     renderInviteRedeem('good-token')
 
+    // The confirm prompt appears; nothing destructive has happened yet.
+    // (AuthProvider fires link_admin_account on mount, so assert specifically
+    // that the invite hasn't been redeemed, not that rpc is untouched.)
+    await waitFor(() => expect(screen.getByText('Continue and switch')).toBeInTheDocument())
+    expect(signOut).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalledWith('redeem_invite', expect.anything())
+
+    fireEvent.click(screen.getByText('Continue and switch'))
+
     await waitFor(() => expect(screen.getByText('Volunteer Home')).toBeInTheDocument())
+    expect(signOut).toHaveBeenCalled()
+    expect(rpc).toHaveBeenCalledWith('redeem_invite', { token: 'good-token' })
+  })
+
+  it('proceeds without a prompt when the existing session is anonymous (volunteer re-opening their link)', async () => {
+    const anonExisting = { user: { id: 'anon-old', is_anonymous: true } } as unknown as Session
+    getSession.mockResolvedValue({ data: { session: anonExisting }, error: null })
+    succeedAnonymousSignIn()
+    rpc.mockResolvedValue({ data: null, error: null })
+    maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
+
+    renderInviteRedeem('good-token')
+
+    await waitFor(() => expect(screen.getByText('Volunteer Home')).toBeInTheDocument())
+    expect(screen.queryByText('Continue and switch')).not.toBeInTheDocument()
     expect(signOut).toHaveBeenCalled()
   })
 

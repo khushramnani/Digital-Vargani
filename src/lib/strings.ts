@@ -1,9 +1,12 @@
 // All user-facing copy lives here (i18n-ready) per SPEC.md Code Style.
 export const strings = {
-  appName: 'Vinayak Yuvak Mandal (VYM)',
+  appName: 'Digital Vargani',
   appTagline: 'Digital Vargani & Fund Management System',
   app: {
     signOut: 'Sign out',
+    // Only donation collection has an offline queue; expenses/handovers write
+    // straight to the server, so set that expectation up front (audit #10).
+    onlineOnlyHint: 'Needs a connection — this saves online now, it does not queue offline like collecting donations.',
   },
   void: {
     button: 'Void',
@@ -29,10 +32,30 @@ export const strings = {
     or: 'or',
     loading: 'Loading…',
     inviteInvalid: 'This invite link is invalid or has already been used.',
+    inviteInvalidHelp: 'Ask your mandal admin to resend your invite link on WhatsApp, then open the new one.',
+    inviteSwitchTitle: "You're already signed in",
+    inviteSwitchBody: 'Opening this invite will sign you out and switch to it. Continue?',
+    inviteSwitchContinue: 'Continue and switch',
+    inviteSwitchCancel: 'Stay signed in',
     volunteerHint: 'Collecting for a mandal? Open the invite link your admin shared — volunteers need no login.',
+    retryTitle: "Couldn't load your account",
+    retryBody: 'We reached the server but your account details did not load. Check your connection and try again.',
+    retryButton: 'Try again',
     newHereTitle: 'First time?',
     newHere: "Sign in above with Google or email, and we'll walk you through creating your mandal.",
     backToLogin: 'Use a different email',
+  },
+  // The /signup fork: someone authenticated but with no mandal yet picks
+  // between founding one and joining an existing one as an invited volunteer.
+  signupChoice: {
+    title: 'Welcome! What brings you here?',
+    createTitle: 'Create a new mandal',
+    createBody: "Start fresh — you'll be its first admin and can invite your team.",
+    createCta: 'Create a mandal →',
+    invitedTitle: 'I was invited to a mandal',
+    invitedBody: 'Volunteers and admins join through the invite link their mandal shares on WhatsApp — no login needed. Open that link on this phone to continue.',
+    invitedHint: "Don't have it? Ask your mandal admin to send (or resend) your invite link.",
+    back: '← Back',
   },
   signup: {
     title: 'Start your mandal',
@@ -138,6 +161,10 @@ export const strings = {
     active: 'Active',
     copyLink: 'Copy invite link',
     copied: 'Copied!',
+    regenerate: 'Regenerate link',
+    regenerating: 'Regenerating…',
+    resetInvite: 'Reset & resend',
+    resetHint: 'Lost their session (new phone, cleared browser)? Reset to give them a fresh link. Their current access ends until they open it.',
   },
   admins: {
     title: 'Admins',
@@ -217,6 +244,9 @@ export const strings = {
     sendWhatsAppButton: 'WhatsApp',
     sent: 'Sent!',
     waitingForSignal: 'Waiting for signal',
+    needsAttention: 'Needs attention',
+    failedPrefix: "Couldn't save: ",
+    remove: 'Remove',
     voidButton: 'Delete',
     voidPrompt: 'Reason (optional)',
     voidedPrefix: 'Removed — ',

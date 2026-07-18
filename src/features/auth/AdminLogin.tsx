@@ -50,7 +50,7 @@ export function AdminLogin() {
   // back — a loop). A session with no `users` row is a fresh account that
   // still has to create its mandal, so send it to onboarding.
   if (session) {
-    if (appUser) return <Navigate to={appUser.role === 'admin' ? '/admin' : '/volunteer'} replace />
+    if (appUser) return <Navigate to={appUser.role === 'admin' ? '/admin' : '/collect'} replace />
     return <Navigate to="/signup" replace />
   }
 

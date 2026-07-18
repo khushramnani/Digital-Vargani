@@ -23,8 +23,8 @@ const MODE_OPTIONS: { value: DonationMode; label: string }[] = [
 // The volunteer home's own nav to the other volunteer screens. Route is
 // structure; the label is copy from strings.collection.
 const NAV: { to: string; label: string }[] = [
-  { to: '/volunteer/pending', label: t.pendingSendLink },
-  { to: '/volunteer/collections', label: t.collectionsLink },
+  { to: '/collect/pending', label: t.pendingSendLink },
+  { to: '/collect/history', label: t.collectionsLink },
   { to: '/volunteer/expenses', label: t.expensesLink },
   { to: '/volunteer/handover', label: t.handoversLink },
   { to: '/volunteer/cash-in-hand', label: t.cashInHandLink },
@@ -84,8 +84,9 @@ export function CollectionForm() {
         // a direct synchronous consequence of a user gesture, and this runs
         // after an `await`, so it may silently no-op — the always-rendered
         // "Send Receipt" button below is the required fallback, not an
-        // extra affordance.
-        sendReceiptSms(synced, lang)
+        // extra affordance. Skipped when the donor gave no phone (audit #8) —
+        // there's nobody to text.
+        if (synced.donor_phone) sendReceiptSms(synced, lang)
       } else {
         // Offline (or a transient failure) — the entry is safely queued in
         // Dexie and will sync once connectivity returns (App.tsx's

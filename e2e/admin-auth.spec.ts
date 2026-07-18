@@ -60,7 +60,7 @@ test('an admin session can also reach the volunteer collection form to log a don
     }),
   )
 
-  await page.goto('/volunteer')
+  await page.goto('/collect')
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
   await expect(page).not.toHaveURL(/\/login$/)
 })

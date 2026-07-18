@@ -97,10 +97,10 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "donations_collected_by_fkey"
-            columns: ["collected_by"]
+            columns: ["collected_by", "mandal_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "mandal_id"]
           },
           {
             foreignKeyName: "donations_mandal_id_fkey"
@@ -171,10 +171,10 @@ export type Database = {
           },
           {
             foreignKeyName: "expenses_paid_by_fkey"
-            columns: ["paid_by"]
+            columns: ["paid_by", "mandal_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "mandal_id"]
           },
           {
             foreignKeyName: "expenses_voided_by_fkey"
@@ -235,10 +235,10 @@ export type Database = {
           },
           {
             foreignKeyName: "handovers_received_by_fkey"
-            columns: ["received_by"]
+            columns: ["received_by", "mandal_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "mandal_id"]
           },
           {
             foreignKeyName: "handovers_voided_by_fkey"
@@ -249,10 +249,10 @@ export type Database = {
           },
           {
             foreignKeyName: "handovers_volunteer_id_fkey"
-            columns: ["volunteer_id"]
+            columns: ["volunteer_id", "mandal_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "mandal_id"]
           },
         ]
       }
@@ -425,7 +425,12 @@ export type Database = {
         }[]
       }
       redeem_invite: { Args: { token: string }; Returns: undefined }
+      reissue_invite: { Args: { volunteer_id: string }; Returns: string }
       slugify: { Args: { txt: string }; Returns: string }
+      void_row: {
+        Args: { reason: string; row_id: string; target_table: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

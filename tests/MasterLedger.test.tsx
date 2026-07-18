@@ -42,16 +42,17 @@ const balancedLedger: Ledger = {
   bankOpeningPaise: 0,
 }
 
-// Same imbalance reconcile.test.ts proves: a cash donation collected by an
-// admin breaks the "cash always collected by a volunteer" modeling
-// assumption the identity depends on (see lib/reconcile.ts's proof
-// comment) — it inflates totalCollected without landing in any
-// volunteer's cash-in-hand or in cashHeldByTreasurer.
+// A genuine imbalance the indicator must still catch: a handover recorded as
+// coming FROM an admin. The identity assumes every handover is volunteer ->
+// admin (see lib/reconcile.ts's proof comment); an admin-sourced handover is
+// added to the treasurer's cash but subtracted from no volunteer, so LHS
+// exceeds RHS. (Admin-collected *cash donations* used to imbalance too, but
+// that is now handled by cashHeldByTreasurer — audit 2026-07-18 #1.)
 const unbalancedLedger: Ledger = {
   users: [{ id: 'admin-1', role: 'admin' }],
-  donations: [{ amountPaise: 100000, mode: 'cash', collectedBy: 'admin-1', voided: false }],
+  donations: [],
   expenses: [],
-  handovers: [],
+  handovers: [{ amountPaise: 100000, volunteerId: 'admin-1', receivedBy: 'admin-1', voided: false }],
   bankOpeningPaise: 0,
 }
 
@@ -72,8 +73,8 @@ describe('MasterLedgerScreen', () => {
     fetchFullLedger.mockResolvedValue(balancedLedger)
     renderScreen()
 
-    // Total Collected and Net Balance are both ₹1,000 here (no expenses).
-    await waitFor(() => expect(screen.getAllByText('₹1,000')).toHaveLength(2))
+    // Total Collected and Net Balance are both ₹1,000.00 here (no expenses).
+    await waitFor(() => expect(screen.getAllByText('₹1,000.00')).toHaveLength(2))
     expect(screen.getByRole('status')).toHaveTextContent('Books balanced')
   })
 
@@ -82,7 +83,7 @@ describe('MasterLedgerScreen', () => {
     renderScreen()
 
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument())
-    expect(screen.getByRole('status')).toHaveTextContent('Discrepancy: ₹-1,000')
+    expect(screen.getByRole('status')).toHaveTextContent('Discrepancy: ₹1,000.00')
   })
 
   it('links to the volunteer collection form so an admin can log a donation as themselves', async () => {
@@ -92,7 +93,7 @@ describe('MasterLedgerScreen', () => {
     // The dashboard nav is now a card grid: each link's accessible name is
     // its label plus a one-line description, so match on the label substring.
     await waitFor(() => expect(screen.getByRole('link', { name: /Collect donation/ })).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: /Collect donation/ })).toHaveAttribute('href', '/volunteer')
+    expect(screen.getByRole('link', { name: /Collect donation/ })).toHaveAttribute('href', '/collect')
   })
 
   it('links to the admin management screen', async () => {

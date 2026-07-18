@@ -122,7 +122,7 @@ describe('PendingSend', () => {
   it('renders each pending row with donor name and formatted amount', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
-    expect(screen.getByText('₹501')).toBeInTheDocument()
+    expect(screen.getByText('₹501.00')).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no pending donations', async () => {
@@ -164,7 +164,7 @@ describe('PendingSend', () => {
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
     // AppShell renders the back link as "← <destination title>"; here the
     // destination is the collection form.
-    expect(screen.getByRole('link', { name: /Collect Donation/ })).toHaveAttribute('href', '/volunteer')
+    expect(screen.getByRole('link', { name: /Collect Donation/ })).toHaveAttribute('href', '/collect')
   })
 
   it('shows the volunteer\'s own still-queued (not-yet-synced) outbox items with a "Waiting for signal" indicator and no Send button', async () => {
@@ -182,7 +182,7 @@ describe('PendingSend', () => {
     renderPendingSend()
 
     await waitFor(() => expect(screen.getByText('Queued Donor')).toBeInTheDocument())
-    expect(screen.getByText('₹200')).toBeInTheDocument()
+    expect(screen.getByText('₹200.00')).toBeInTheDocument()
     expect(screen.getByText('Waiting for signal')).toBeInTheDocument()
     // The server-fetched row still gets its send buttons — only the queued
     // (not-yet-synced) row has none, since it has no public_token yet.

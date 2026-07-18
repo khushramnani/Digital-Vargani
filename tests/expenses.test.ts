@@ -77,8 +77,9 @@ describe('createExpense', () => {
 })
 
 describe('getExpenses', () => {
-  it('selects all columns plus the joined payer name, most recent first', async () => {
-    const order = vi.fn(() => Promise.resolve({ data: [expenseRow], error: null }))
+  it('selects all columns plus the joined payer name, most recent first, capped', async () => {
+    const limit = vi.fn(() => Promise.resolve({ data: [expenseRow], error: null }))
+    const order = vi.fn(() => ({ limit }))
     const select = vi.fn(() => ({ order }))
     from.mockReturnValue({ select })
 
@@ -87,19 +88,20 @@ describe('getExpenses', () => {
     expect(from).toHaveBeenCalledWith('expenses')
     expect(select).toHaveBeenCalledWith(expect.stringContaining('paid_by_user:users!expenses_paid_by_fkey'))
     expect(order).toHaveBeenCalledWith('created_at', { ascending: false })
+    expect(limit).toHaveBeenCalledWith(1000)
     expect(result).toEqual([expenseRow])
   })
 
   it('returns an empty array (not null) when there are no rows', async () => {
-    const order = vi.fn(() => Promise.resolve({ data: null, error: null }))
-    from.mockReturnValue({ select: () => ({ order }) })
+    const limit = vi.fn(() => Promise.resolve({ data: null, error: null }))
+    from.mockReturnValue({ select: () => ({ order: () => ({ limit }) }) })
 
     expect(await getExpenses()).toEqual([])
   })
 
   it('throws when the query errors', async () => {
-    const order = vi.fn(() => Promise.resolve({ data: null, error: new Error('boom') }))
-    from.mockReturnValue({ select: () => ({ order }) })
+    const limit = vi.fn(() => Promise.resolve({ data: null, error: new Error('boom') }))
+    from.mockReturnValue({ select: () => ({ order: () => ({ limit }) }) })
 
     await expect(getExpenses()).rejects.toThrow('boom')
   })

@@ -14,19 +14,22 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Vinayak Yuvak Mandal',
-        short_name: 'VYM',
+        name: 'Digital Vargani',
+        short_name: 'Vargani',
         description: 'Digital Vargani & Fund Management System',
         theme_color: '#c2410c',
         background_color: '#ffffff',
         display: 'standalone',
+        // 'any' and 'maskable' are split into separate entries: a maskable
+        // icon is authored with safe-zone padding and looks shrunken when the
+        // OS renders it un-masked, so a single 'any maskable' entry is an
+        // anti-pattern (audit 2026-07-18 #14).
+        // ponytail: still SVG-only — no raster toolchain in this env to emit
+        // the 192/512 PNGs iOS/older Androids prefer; add real PNGs (+ an
+        // apple-touch-icon <link> in index.html) when generating assets.
         icons: [
-          {
-            src: 'icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
-          },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
         ],
       },
     }),

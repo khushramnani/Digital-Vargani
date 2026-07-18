@@ -91,7 +91,7 @@ export function ExpensesScreen() {
   async function handleVoid(expense: Expense, reason: string) {
     if (!appUser) return
     try {
-      await voidRow('expenses', expense.id, reason, appUser.id)
+      await voidRow('expenses', expense.id, reason)
       setExpenses(await getExpenses())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -101,7 +101,7 @@ export function ExpensesScreen() {
   const isAdmin = appUser?.role === 'admin'
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/volunteer', label: strings.collection.title }
+    : { to: '/collect', label: strings.collection.title }
 
   return (
     <AppShell title={t.title} back={home}>
@@ -191,6 +191,7 @@ export function ExpensesScreen() {
         <button type="submit" disabled={submitting} className={btnPrimaryLg}>
           {submitting ? t.submitting : t.submitButton}
         </button>
+        <p className="text-center text-xs text-stone-400">{strings.app.onlineOnlyHint}</p>
         {error && (
           <p role="alert" className={errorText}>
             {error}

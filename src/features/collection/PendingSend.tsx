@@ -3,6 +3,7 @@ import { useAuth } from '../auth/useAuth'
 import { getPendingSendDonations, type Donation } from '../../lib/db/donations'
 import { voidRow } from '../../lib/db/void'
 import { db, type OutboxDonation } from '../../lib/queue/db'
+import { MAX_SYNC_ATTEMPTS, discardOutboxItem } from '../../lib/queue/sync'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms, sendReceiptWhatsApp } from './send'
@@ -92,12 +93,12 @@ export function PendingSend() {
   // task list yet.
   async function handleVoid(donation: Donation, reason: string) {
     if (!appUser) return
-    await voidRow('donations', donation.id, reason, appUser.id)
+    await voidRow('donations', donation.id, reason)
     setDonations(await getPendingSendDonations(appUser.id))
   }
 
   return (
-    <AppShell title={t.title} back={{ to: '/volunteer', label: strings.collection.title }}>
+    <AppShell title={t.title} back={{ to: '/collect', label: strings.collection.title }}>
       <LanguagePicker lang={lang} onChange={setLang} label={strings.collection.languageLabel} />
 
       {/* Rendered independently of `loading` (which only tracks the
@@ -107,20 +108,42 @@ export function PendingSend() {
           that may never resolve while offline. */}
       {queuedItems.length > 0 && (
         <ul className="flex flex-col gap-2.5">
-          {queuedItems.map((item) => (
-            <li
-              key={item.localId}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-stone-300 bg-white p-4"
-            >
-              <div className="min-w-0">
-                <p className="font-semibold text-stone-900">{item.donorName}</p>
-                <p className="text-sm text-stone-500">{formatINR(item.amountPaise)}</p>
-              </div>
-              <span className="flex-none rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                {t.waitingForSignal}
-              </span>
-            </li>
-          ))}
+          {queuedItems.map((item) => {
+            const failed = (item.attempts ?? 0) >= MAX_SYNC_ATTEMPTS
+            return (
+              <li
+                key={item.localId}
+                className={`flex items-center justify-between gap-3 rounded-2xl border bg-white p-4 ${
+                  failed ? 'border-red-200' : 'border-dashed border-stone-300'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-stone-900">{item.donorName}</p>
+                  <p className="text-sm text-stone-500">{formatINR(item.amountPaise)}</p>
+                  {failed && item.failedReason && (
+                    <p className="mt-0.5 text-[13px] text-red-600">
+                      {t.failedPrefix}
+                      {item.failedReason}
+                    </p>
+                  )}
+                </div>
+                {failed ? (
+                  <div className="flex flex-none items-center gap-2">
+                    <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                      {t.needsAttention}
+                    </span>
+                    <button type="button" onClick={() => discardOutboxItem(item.localId)} className={`${btnGhost} px-3 py-1.5`}>
+                      {t.remove}
+                    </button>
+                  </div>
+                ) : (
+                  <span className="flex-none rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                    {t.waitingForSignal}
+                  </span>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 

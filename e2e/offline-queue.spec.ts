@@ -62,7 +62,7 @@ test('offline: a submitted donation lands in the local queue, shows "Waiting for
   // offline emulation (below) blocks every network request the browser
   // makes, including the dev server's own asset requests, so the initial
   // load has to happen before going offline.
-  await page.goto('/volunteer')
+  await page.goto('/collect')
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
 
   // Real offline emulation, not a mock. This is the point of the test:

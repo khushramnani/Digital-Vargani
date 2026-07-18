@@ -109,6 +109,19 @@ describe('RequireRole', () => {
     expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
   })
 
+  // A failed users lookup (network/RLS) is NOT "no membership": show a retry,
+  // never the create-a-mandal redirect a real member would then be trapped in.
+  it('shows a retry (not /signup) when the users lookup errors', async () => {
+    getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
+    maybeSingle.mockResolvedValue({ data: null, error: { message: 'network error' } })
+
+    renderGuardedRoute('admin')
+
+    await waitFor(() => expect(screen.getByText("Couldn't load your account")).toBeInTheDocument())
+    expect(screen.queryByText('Signup Page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
+  })
+
   it('blocks a volunteer appUser from an admin-gated route', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
     maybeSingle.mockResolvedValue({ data: volunteerUser, error: null })

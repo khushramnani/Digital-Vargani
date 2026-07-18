@@ -10,6 +10,10 @@ export type AppUser = Tables<'users'>
 export type AuthContextValue = {
   session: Session | null
   appUser: AppUser | null
+  // True when the `users` lookup for the current session FAILED (network/RLS),
+  // as opposed to succeeding with no row. RequireRole shows a retry for this
+  // rather than redirecting to create-a-mandal (audit 2026-07-18 #4).
+  appUserError: boolean
   loading: boolean
   // Re-runs the `users` lookup for the current session on demand. Needed
   // after a redeem-style RPC (e.g. Task 5's redeem_invite) links a row that

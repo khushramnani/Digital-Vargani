@@ -13,30 +13,27 @@ beforeEach(() => {
 
 describe('voidRow', () => {
   it.each(['donations', 'expenses', 'handovers'] as const)(
-    'sets exactly voided/void_reason/voided_by/voided_at on %s, filtered by id',
+    'calls the void_row rpc with target_table/row_id/reason on %s (voided_by/voided_at stamped server-side)',
     async (table) => {
-      const eq = vi.fn(() => Promise.resolve({ error: null }))
-      const update = vi.fn(() => ({ eq }))
-      from.mockReturnValue({ update })
+      rpc.mockResolvedValue({ error: null })
 
-      await voidRow(table, 'row-1', 'Wrong entry', 'admin-1')
+      await voidRow(table, 'row-1', 'Wrong entry')
 
-      expect(from).toHaveBeenCalledWith(table)
-      expect(update).toHaveBeenCalledWith({
-        voided: true,
-        void_reason: 'Wrong entry',
-        voided_by: 'admin-1',
-        voided_at: expect.any(String),
+      expect(rpc).toHaveBeenCalledWith('void_row', {
+        target_table: table,
+        row_id: 'row-1',
+        reason: 'Wrong entry',
       })
-      expect(eq).toHaveBeenCalledWith('id', 'row-1')
+      // The client never touches .from(table).update(...) anymore — voiding
+      // is not a plain UPDATE the client could forge void metadata through.
+      expect(from).not.toHaveBeenCalled()
     },
   )
 
-  it('throws when the update errors', async () => {
-    const eq = vi.fn(() => Promise.resolve({ error: new Error('permission denied') }))
-    from.mockReturnValue({ update: () => ({ eq }) })
+  it('throws when the rpc errors (e.g. not yours to void)', async () => {
+    rpc.mockResolvedValue({ error: new Error('permission denied') })
 
-    await expect(voidRow('expenses', 'row-1', 'reason', 'admin-1')).rejects.toThrow('permission denied')
+    await expect(voidRow('expenses', 'row-1', 'reason')).rejects.toThrow('permission denied')
   })
 })
 

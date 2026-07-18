@@ -72,7 +72,7 @@ describe('AdminTransparency', () => {
   it('previews the aggregate even when unpublished, and toggling calls updateMandal with its own id', async () => {
     renderScreen()
 
-    await waitFor(() => expect(screen.getByText('₹1,000')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('₹1,000.00')).toBeInTheDocument())
     expect(screen.getByText('Not visible to the public yet.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Publish' }))

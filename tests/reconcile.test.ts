@@ -344,6 +344,50 @@ describe('cashHeldByTreasurer', () => {
     }
     expect(cashHeldByTreasurer(ledger)).toBe(2000)
   })
+
+  it("includes an admin's own cash donation (held directly, not via a handover)", () => {
+    const ledger: Ledger = {
+      ...emptyLedger,
+      users: [
+        { id: 'v1', role: 'volunteer' },
+        { id: 'a1', role: 'admin' },
+      ],
+      donations: [
+        { amountPaise: 4000, mode: 'cash', collectedBy: 'a1', voided: false },
+        // a volunteer's cash is theirs until handed over — not the treasurer's
+        { amountPaise: 5000, mode: 'cash', collectedBy: 'v1', voided: false },
+      ],
+      handovers: [
+        { amountPaise: 2000, volunteerId: 'v1', receivedBy: 'a1', voided: false },
+      ],
+    }
+    // 2000 (handover) + 4000 (admin cash) - 0 = 6000
+    expect(cashHeldByTreasurer(ledger)).toBe(6000)
+    // the volunteer's own cash-in-hand is unaffected by the admin's collection
+    expect(volunteerCashInHand('v1', ledger)).toBe(3000) // 5000 - 2000
+  })
+
+  it("excludes a voided admin cash donation", () => {
+    const ledger: Ledger = {
+      ...emptyLedger,
+      users: [{ id: 'a1', role: 'admin' }],
+      donations: [
+        { amountPaise: 4000, mode: 'cash', collectedBy: 'a1', voided: true },
+      ],
+    }
+    expect(cashHeldByTreasurer(ledger)).toBe(0)
+  })
+
+  it("ignores an admin's online (upi/bank) donation — only cash is held as cash", () => {
+    const ledger: Ledger = {
+      ...emptyLedger,
+      users: [{ id: 'a1', role: 'admin' }],
+      donations: [
+        { amountPaise: 4000, mode: 'upi', collectedBy: 'a1', voided: false },
+      ],
+    }
+    expect(cashHeldByTreasurer(ledger)).toBe(0)
+  })
 })
 
 describe('bankBalance', () => {
@@ -500,13 +544,12 @@ describe('booksBalanceCheck', () => {
     expect(netBalance(ledger)).toBe(expectedNetBalance)
   })
 
-  it('detects a discrepancy when a cash donation is collected by an admin (violates the modeling assumption)', () => {
+  it('stays balanced when a cash donation is collected by an admin (the flagship-feature fix)', () => {
     // Same ledger as the identity-proof test, plus one extra cash donation
-    // collected by the admin a1 instead of a volunteer. This breaks the
-    // required assumption that cash donations are always collected by a
-    // volunteer, so it inflates totalCollected/netBalance without being
-    // reflected in any volunteer's cash-in-hand or in cashHeldByTreasurer
-    // (which only nets admin *expenses*, not admin *donations*).
+    // collected by the admin a1 (a natural action: the "Collect donation"
+    // card is on the admin dashboard). This used to break the books; now the
+    // admin's cash is held by the treasurer directly, so cashHeldByTreasurer
+    // accounts for it and the identity still holds.
     const ledger: Ledger = {
       users: [
         { id: 'v1', role: 'volunteer' },
@@ -531,20 +574,19 @@ describe('booksBalanceCheck', () => {
       bankOpeningPaise: 10000,
     }
 
-    // LHS unchanged from the balanced case (5000 + 1500 + 12300 = 18800):
-    // the admin's cash donation isn't a volunteer's cash-in-hand and isn't
-    // netted by cashHeldByTreasurer.
-    const expectedLHS = 18800
-    // RHS grows by the extra 4000 collected: netBalance rises to 12800,
-    // so RHS = 12800 + 10000 = 22800.
+    // LHS now includes the admin's 4000 cash inside cashHeldByTreasurer:
+    //   Σ volunteers   = 2000 (v1) + 3000 (v2)                        = 5000
+    //   cashHeldByTreasurer = 2000 (handover) + 4000 (admin cash) - 500 = 5500
+    //   bankBalance    = 10000 + 2000 + 1000 - 700                     = 12300
+    const expectedLHS = 5000 + 5500 + 12300
     const expectedNetBalance = (5000 + 3000 + 2000 + 1000 + 4000) - (1000 + 500 + 700)
     const expectedRHS = expectedNetBalance + 10000
+    expect(expectedLHS).toBe(22800)
     expect(expectedRHS).toBe(22800)
-    expect(expectedLHS).not.toBe(expectedRHS)
+    expect(expectedLHS).toBe(expectedRHS) // the identity holds with admin cash
 
     const result = booksBalanceCheck(ledger)
-    expect(result.balanced).toBe(false)
-    expect(result.discrepancyPaise).toBe(expectedLHS - expectedRHS)
-    expect(result.discrepancyPaise).toBe(-4000)
+    expect(result).toEqual({ balanced: true, discrepancyPaise: 0 })
+    expect(cashHeldByTreasurer(ledger)).toBe(5500)
   })
 })
