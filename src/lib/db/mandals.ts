@@ -22,6 +22,10 @@ export async function createMandal(
     mandal_state: opts.state,
     mandal_address: opts.address,
   })
-  if (error) throw error
+  // supabase-js returns a PostgrestError (a plain object, NOT an Error
+  // instance), so throwing it raw makes every `err instanceof Error` check
+  // downstream fall through to String(err) === '[object Object]', hiding the
+  // DB's already-user-facing message. Re-wrap as a real Error carrying it.
+  if (error) throw new Error(error.message || 'Could not create your mandal.')
   return data
 }
