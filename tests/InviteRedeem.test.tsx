@@ -97,10 +97,23 @@ beforeEach(() => {
   signOut.mockResolvedValue({ error: null })
 })
 
+// The page now resolves invite_preview BEFORE redeeming — it names the mandal
+// in the welcome copy and, crucially, tells a dead token apart from a failed
+// sign-in. So the rpc mock has to answer by function name: `preview: []` is an
+// unknown/already-redeemed token, `redeem` controls only the redeem_invite leg.
+// (AuthProvider's own link_admin_account call falls through harmlessly.)
+function mockRpc(opts: { preview?: unknown[]; redeem?: { data: unknown; error: unknown } } = {}) {
+  const preview = opts.preview ?? [{ mandal_name: 'Vinayak Mitra Mandal', volunteer_name: 'Sita Volunteer' }]
+  const redeem = opts.redeem ?? { data: null, error: null }
+  rpc.mockImplementation((fn: string) =>
+    Promise.resolve(fn === 'invite_preview' ? { data: preview, error: null } : redeem),
+  )
+}
+
 describe('InviteRedeem', () => {
   it('redeems a valid invite, refreshes appUser, and redirects to /collect', async () => {
     succeedAnonymousSignIn()
-    rpc.mockResolvedValue({ data: null, error: null })
+    mockRpc()
     maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
 
     renderInviteRedeem('good-token')
@@ -117,7 +130,7 @@ describe('InviteRedeem', () => {
     const staleSession = { user: { id: 'stale-uid', is_anonymous: false } } as unknown as Session
     getSession.mockResolvedValue({ data: { session: staleSession }, error: null })
     succeedAnonymousSignIn()
-    rpc.mockResolvedValue({ data: null, error: null })
+    mockRpc()
     maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
 
     renderInviteRedeem('good-token')
@@ -140,7 +153,7 @@ describe('InviteRedeem', () => {
     const anonExisting = { user: { id: 'anon-old', is_anonymous: true } } as unknown as Session
     getSession.mockResolvedValue({ data: { session: anonExisting }, error: null })
     succeedAnonymousSignIn()
-    rpc.mockResolvedValue({ data: null, error: null })
+    mockRpc()
     maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
 
     renderInviteRedeem('good-token')
@@ -150,22 +163,56 @@ describe('InviteRedeem', () => {
     expect(signOut).toHaveBeenCalled()
   })
 
-  it('shows an error state (not a redirect) when signInAnonymously fails', async () => {
+  // A LIVE token whose sign-in fails is NOT a bad link. Reporting it as
+  // "invalid or already used" is what made a disabled anonymous-sign-in
+  // provider look like a broken invite and sent an admin hunting a token bug.
+  it('reports a failed sign-in as a session problem, not an invalid link', async () => {
+    mockRpc() // the token itself is live
     signInAnonymously.mockResolvedValue({
       data: { session: null, user: null },
       error: { message: 'Anonymous sign-ins are disabled', name: 'AuthApiError', status: 422 },
     })
 
-    renderInviteRedeem('bad-token')
+    renderInviteRedeem('good-token')
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/couldn't start your volunteer session/i))
+    expect(screen.getByText(/your link is fine/i)).toBeInTheDocument()
+    expect(rpc).not.toHaveBeenCalledWith('redeem_invite', expect.anything())
+    expect(screen.queryByText('Volunteer Home')).not.toBeInTheDocument()
+  })
+
+  it('shows the invalid-link state for an unknown token without attempting a sign-in', async () => {
+    mockRpc({ preview: [] }) // unknown or already-redeemed
+
+    renderInviteRedeem('used-token')
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/invalid or has already been used/i))
-    expect(rpc).not.toHaveBeenCalled()
-    expect(screen.queryByText('Volunteer Home')).not.toBeInTheDocument()
+    expect(signInAnonymously).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalledWith('redeem_invite', expect.anything())
+  })
+
+  it('names the inviting mandal once the token is confirmed live', async () => {
+    succeedAnonymousSignIn()
+    // Hold redeem_invite open so the component stays on the setting-up screen;
+    // otherwise it redirects to /collect before the welcome copy can be read.
+    rpc.mockImplementation((fn: string) =>
+      fn === 'invite_preview'
+        ? Promise.resolve({
+            data: [{ mandal_name: 'Vinayak Mitra Mandal', volunteer_name: 'Sita Volunteer' }],
+            error: null,
+          })
+        : new Promise(() => {}),
+    )
+
+    renderInviteRedeem('good-token')
+
+    await waitFor(() => expect(screen.getByText('Vinayak Mitra Mandal')).toBeInTheDocument())
+    expect(screen.getByText(/invited as a volunteer for/i)).toBeInTheDocument()
   })
 
   it('shows an error state (not a redirect) when redeem_invite rejects an invalid/used token', async () => {
     succeedAnonymousSignIn()
-    rpc.mockResolvedValue({ data: null, error: { message: 'invalid or already-used invite link' } })
+    mockRpc({ redeem: { data: null, error: { message: 'invalid or already-used invite link' } } })
 
     renderInviteRedeem('used-token')
 
@@ -182,13 +229,16 @@ describe('InviteRedeem', () => {
   // an actual <StrictMode> (matching src/main.tsx) to reproduce that.
   it('calls redeem_invite exactly once under StrictMode double-invoke', async () => {
     succeedAnonymousSignIn()
-    rpc.mockResolvedValue({ data: null, error: null })
+    mockRpc()
     maybeSingle.mockResolvedValue({ data: linkedVolunteer, error: null })
 
     renderInviteRedeemStrict('good-token')
 
     await waitFor(() => expect(screen.getByText('Volunteer Home')).toBeInTheDocument())
     expect(signInAnonymously).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledTimes(1)
+    // Count the REDEEM calls specifically — the page also calls invite_preview
+    // (and AuthProvider calls link_admin_account), so a bare total would no
+    // longer isolate the one-time-token race this guards.
+    expect(rpc.mock.calls.filter((c: unknown[]) => c[0] === 'redeem_invite')).toHaveLength(1)
   })
 })

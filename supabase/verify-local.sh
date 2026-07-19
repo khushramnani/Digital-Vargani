@@ -1898,6 +1898,46 @@ END $$;
 reset role;
 SQL
 
+echo "== assertion: invite_preview names the mandal for a live token and reveals nothing for a used one =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- A fresh, unredeemed volunteer invite in mandal one.
+insert into users (id, mandal_id, name, role, invite_token, active) values
+  ('00000000-0000-0000-0000-0000000000e1', '11111111-1111-1111-1111-000000000001',
+   'Preview Volunteer', 'volunteer', 'preview-invite-token', true);
+
+-- The invite page has NO session, so anon must be able to read it.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE m text; v text; n int;
+BEGIN
+  SELECT mandal_name, volunteer_name INTO m, v FROM invite_preview('preview-invite-token');
+  ASSERT m = 'Vinayak Mitra Mandal', format('FAIL: invite_preview should name the mandal, saw %s', m);
+  ASSERT v = 'Preview Volunteer', format('FAIL: invite_preview should name the volunteer, saw %s', v);
+
+  SELECT count(*) INTO n FROM invite_preview('no-such-token');
+  ASSERT n = 0, format('FAIL: an unknown token must reveal nothing, saw %s rows', n);
+  RAISE NOTICE 'PASS: invite_preview names the mandal for a live token, nothing for an unknown one';
+END $$;
+reset role;
+
+-- Once redeemed (auth_user_id set), the token must stop previewing.
+insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-0000000000e1');
+update users set auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000e1', invite_token = null
+  where id = '00000000-0000-0000-0000-0000000000e1';
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM invite_preview('preview-invite-token');
+  ASSERT n = 0, format('FAIL: a redeemed token must not preview, saw %s rows', n);
+  RAISE NOTICE 'PASS: invite_preview goes dark once the invite is redeemed';
+END $$;
+reset role;
+delete from users where id = '00000000-0000-0000-0000-0000000000e1';
+SQL
+
 echo "== assertion: v4 donors_summary is not exposed to anon =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role anon;

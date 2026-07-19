@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
 import { card, field, label as labelCls, btnPrimary, btnGhost, errorText } from '../../components/ui'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PhoneInput } from '../../components/PhoneInput'
 import type { Tables } from '../../lib/db/database.types'
 
@@ -19,6 +20,9 @@ async function fetchVolunteers(): Promise<Volunteer[]> {
     .from('users')
     .select('*')
     .eq('role', 'volunteer')
+    // Removed volunteers are deactivated, not deleted (their donations must
+    // keep their collector), so the list shows only the current team.
+    .eq('active', true)
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -45,6 +49,8 @@ export function VolunteersContent() {
   const [error, setError] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [reissuingId, setReissuingId] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<Volunteer | null>(null)
+  const [removingBusy, setRemovingBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -80,6 +86,30 @@ export function VolunteersContent() {
     }
     setName('')
     setPhone('')
+    setVolunteers(await fetchVolunteers())
+  }
+
+  // Removing a volunteer DEACTIVATES them rather than deleting the row:
+  // donations.collected_by references users(id), so a hard delete would either
+  // be refused or orphan money records. active=false is a real revocation —
+  // app_user_id()/app_user_role()/app_mandal_id() are all gated on `active`
+  // (audit v3), so their session loses every permission immediately — while the
+  // donations they already collected stay attributed and keep the books
+  // balanced. Clearing invite_token also kills any link already sent.
+  async function handleRemove() {
+    if (!removing) return
+    setRemovingBusy(true)
+    setError(null)
+    const { error: removeError } = await supabase
+      .from('users')
+      .update({ active: false, invite_token: null })
+      .eq('id', removing.id)
+    setRemovingBusy(false)
+    if (removeError) {
+      setError(removeError.message)
+      return
+    }
+    setRemoving(null)
     setVolunteers(await fetchVolunteers())
   }
 
@@ -146,13 +176,23 @@ export function VolunteersContent() {
             <li key={volunteer.id} className={`${card} p-4`}>
               <div className="flex items-center justify-between gap-3">
                 <span className="font-semibold text-stone-900">{volunteer.name}</span>
-                <span
-                  className={`flex-none rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    volunteer.auth_user_id ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                  }`}
-                >
-                  {volunteer.auth_user_id ? strings.volunteers.active : strings.volunteers.pending}
-                </span>
+                <div className="flex flex-none items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      volunteer.auth_user_id ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {volunteer.auth_user_id ? strings.volunteers.active : strings.volunteers.pending}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRemoving(volunteer)}
+                    aria-label={`${strings.volunteers.removeButton}: ${volunteer.name}`}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                  >
+                    {strings.volunteers.removeButton}
+                  </button>
+                </div>
               </div>
               {volunteer.phone && <p className="mt-0.5 text-sm text-stone-500">{volunteer.phone}</p>}
               {!volunteer.auth_user_id && volunteer.invite_token ? (
@@ -198,6 +238,17 @@ export function VolunteersContent() {
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={removing !== null}
+        title={strings.volunteers.removeTitle}
+        body={strings.volunteers.removeBody}
+        confirmLabel={strings.volunteers.removeConfirm}
+        cancelLabel={strings.void.cancel}
+        onConfirm={handleRemove}
+        onCancel={() => setRemoving(null)}
+        busy={removingBusy}
+      />
     </>
   )
 }

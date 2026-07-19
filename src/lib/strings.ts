@@ -35,6 +35,15 @@ export const strings = {
     loading: 'Loading…',
     inviteInvalid: 'This invite link is invalid or has already been used.',
     inviteInvalidHelp: 'Ask your mandal admin to resend your invite link on WhatsApp, then open the new one.',
+    // Shown once the token is confirmed live, so the volunteer knows who
+    // invited them before anything happens.
+    inviteInvitedAs: 'You have been invited as a volunteer for',
+    inviteSettingUp: 'Setting up your access…',
+    // A FAILED SIGN-IN is not a bad link — saying "invalid or already used"
+    // here sent an admin hunting a token problem that did not exist.
+    inviteSessionFailed: "Couldn't start your volunteer session",
+    inviteSessionFailedHelp:
+      'Your link is fine — this is a setup problem on the mandal’s side. Please tell your mandal admin, then open the link again.',
     inviteSwitchTitle: "You're already signed in",
     inviteSwitchBody: 'Opening this invite will sign you out and switch to it. Continue?',
     inviteSwitchContinue: 'Continue and switch',
@@ -209,6 +218,11 @@ export const strings = {
     regenerate: 'Regenerate link',
     regenerating: 'Regenerating…',
     resetInvite: 'Reset & resend',
+    removeButton: 'Remove',
+    removeTitle: 'Remove this volunteer?',
+    removeBody:
+      'They lose access immediately and their invite link stops working. Donations they already collected stay in your records.',
+    removeConfirm: 'Remove volunteer',
     resetHint: 'Lost their session (new phone, cleared browser)? Reset to give them a fresh link. Their current access ends until they open it.',
   },
   admins: {
