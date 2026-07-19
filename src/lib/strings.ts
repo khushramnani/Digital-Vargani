@@ -433,9 +433,11 @@ export const strings = {
     booksBalanceTitle: 'Books balance — everything reconciles',
     booksImbalanceTitle: 'Books don’t balance yet',
     equationNetLabel: 'Net Balance',
+    equationOpeningLabel: 'Opening balance',
     equationVolunteers: 'Volunteers',
     equationTreasurer: 'Treasurer cash',
     equationBank: 'Bank',
+    inactiveVolunteersLabel: 'Inactive volunteers',
     // stat trio
     fundPoolLabel: 'Total fund pool',
     donationsCountSuffix: ' donations collected',

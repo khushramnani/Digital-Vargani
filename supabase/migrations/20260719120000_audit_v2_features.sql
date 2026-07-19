@@ -127,9 +127,11 @@ language sql stable security definer set search_path = public as $$
                where not voided and mandal_id = (select id from m)), 0),
     coalesce((select sum(amount_paise) from expenses
                where not voided and mandal_id = (select id from m)), 0),
-    -- F5 design: "across N families" — the count of non-voided donations for
-    -- this mandal (kept aggregate-only, no donor identities are exposed).
-    coalesce((select count(*) from donations
+    -- F5 design: "across N families" — distinct contributing donors, deduped by
+    -- phone (falling back to name) so a family that gives more than once counts
+    -- once. Aggregate-only; no donor identities are exposed by this count.
+    coalesce((select count(distinct coalesce(nullif(btrim(donor_phone), ''), donor_name))
+               from donations
                where not voided and mandal_id = (select id from m)), 0)
   from m
   where (

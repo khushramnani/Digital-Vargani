@@ -162,7 +162,14 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
 
   return (
     <>
-      <EquationBanner books={books} net={netBalance(ledger)} volunteers={volunteersTotal} treasurer={treasurerCash} bank={bank} />
+      <EquationBanner
+        books={books}
+        net={netBalance(ledger)}
+        opening={ledger.bankOpeningPaise}
+        volunteers={volunteersTotal}
+        treasurer={treasurerCash}
+        bank={bank}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
@@ -181,7 +188,7 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <CashTracker ledger={ledger} volunteers={volunteers} />
+        <CashTracker ledger={ledger} volunteers={volunteers} volunteersTotal={volunteersTotal} />
         <div className={`${card} p-5`}>
           <h2 className="font-display text-lg font-bold text-stone-900">{t.whereMoneyWentTitle}</h2>
           <div className="mt-5">
@@ -203,21 +210,22 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
 // Books-balance equation banner (design F9): the real reconcile components in
 // words, so the treasurer sees what "balanced" means — and a red state stays
 // debuggable via the same equation plus the signed discrepancy.
-// ponytail: the 3-term equation reads exactly when bankOpening = 0 (the app
-// default and the design's example); with an opening balance the reconcile
-// identity folds it into the Bank term, so left/right differ by exactly the
-// opening balance. The ✓/✗ verdict itself comes from booksBalanceCheck, which
-// uses the full identity (opening balance included) — so the verdict is always
-// honest even where the shorthand equation's arithmetic is offset.
+// The identity booksBalanceCheck enforces is
+//   Volunteers + Treasurer cash + Bank = Net Balance + Bank opening,
+// so the banner puts Net (+ opening, when non-zero) on the left and the three
+// buckets on the right — the printed arithmetic always closes, at any opening
+// balance, matching the ✓/✗ verdict exactly.
 function EquationBanner({
   books,
   net,
+  opening,
   volunteers,
   treasurer,
   bank,
 }: {
   books: BooksBalanceResult
   net: number
+  opening: number
   volunteers: number
   treasurer: number
   bank: number
@@ -248,6 +256,14 @@ function EquationBanner({
         <span>
           <span className="font-semibold">{t.equationNetLabel}</span> {formatINR(net)}
         </span>
+        {opening !== 0 && (
+          <>
+            <span className="text-stone-400">+</span>
+            <span>
+              {t.equationOpeningLabel} <span className="font-semibold">{formatINR(opening)}</span>
+            </span>
+          </>
+        )}
         <span className="text-stone-400">=</span>
         <span>
           {t.equationVolunteers} <span className="font-semibold">{formatINR(volunteers)}</span>
@@ -293,9 +309,23 @@ function StatCard({
   )
 }
 
-// Per active-volunteer cash-in-hand rows. Names come from fetchActiveVolunteers
-// (the Ledger only carries ids); every rupee figure comes from the ledger.
-function CashTracker({ ledger, volunteers }: { ledger: Ledger; volunteers: VolunteerSummary[] }) {
+// Per-volunteer cash-in-hand rows. Names come from fetchActiveVolunteers (the
+// Ledger only carries ids); every rupee figure comes from the ledger. The
+// header total is `volunteersTotal` — the SAME figure the equation banner's
+// "Volunteers" term uses (Σ volunteerCashInHand over every volunteer-role user,
+// signed) — so the two never disagree. A deactivated volunteer who still holds
+// collected cash is absent from `volunteers` (active-only) but present in that
+// sum, so any remainder they hold is surfaced as an "Inactive volunteers" row
+// rather than silently vanishing from the breakdown.
+function CashTracker({
+  ledger,
+  volunteers,
+  volunteersTotal,
+}: {
+  ledger: Ledger
+  volunteers: VolunteerSummary[]
+  volunteersTotal: number
+}) {
   const rows = volunteers.map((v) => {
     const inHand = volunteerCashInHand(v.id, ledger)
     const collected = ledger.donations
@@ -304,19 +334,22 @@ function CashTracker({ ledger, volunteers }: { ledger: Ledger; volunteers: Volun
     const handed = ledger.handovers.filter((h) => h.volunteerId === v.id && !h.voided).reduce((sum, h) => sum + h.amountPaise, 0)
     return { id: v.id, name: v.name, inHand, collected, handed }
   })
-  const withVolunteers = rows.reduce((sum, r) => sum + Math.max(0, r.inHand), 0)
+  // Whatever the active rows don't account for is held by volunteers no longer
+  // in the active list — show it so no cash is invisible.
+  const accountedActive = rows.reduce((sum, r) => sum + r.inHand, 0)
+  const inactiveRemainder = volunteersTotal - accountedActive
 
   return (
     <div className={`${card} p-5`}>
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="font-display text-lg font-bold text-stone-900">{t.cashTrackerTitle}</h2>
         <span className="text-sm tabular-nums text-stone-700">
-          <span className="font-bold">{formatINR(withVolunteers)}</span>
+          <span className="font-bold">{formatINR(volunteersTotal)}</span>
           <span className="font-medium text-stone-400">{t.withVolunteersSuffix}</span>
         </span>
       </div>
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && inactiveRemainder === 0 ? (
         <p className="py-6 text-center text-sm text-stone-400">{strings.cashInHand.empty}</p>
       ) : (
         <ul className="mt-3">
@@ -339,6 +372,20 @@ function CashTracker({ ledger, volunteers }: { ledger: Ledger; volunteers: Volun
               </div>
             </li>
           ))}
+          {inactiveRemainder !== 0 && (
+            <li className="flex items-center gap-3 border-t border-stone-100 py-3 first:border-0">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-stone-100 text-sm font-bold text-stone-500">
+                …
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-stone-500">{t.inactiveVolunteersLabel}</p>
+              </div>
+              <div className="flex-none text-right">
+                <p className="font-bold tabular-nums text-stone-900">{formatINR(inactiveRemainder)}</p>
+                {inactiveRemainder > 0 && <p className="text-[11px] font-semibold text-orange-600">{t.stillOwesLabel}</p>}
+              </div>
+            </li>
+          )}
         </ul>
       )}
     </div>

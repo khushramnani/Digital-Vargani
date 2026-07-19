@@ -209,8 +209,10 @@ export function MandalConfigScreen() {
     setContacts((current) => current.filter((_, i) => i !== index))
   }
 
-  // Drop rows the admin left completely blank so an empty pair never persists.
-  const cleanContacts = contacts.filter((c) => c.name.trim() || c.phone.trim())
+  // A receipt contact renders as "<name> — <phone>", so both parts are
+  // required: drop any row missing either, so a nameless "— 99999" line or a
+  // silently-discarded phoneless contact can never reach a donor's receipt.
+  const cleanContacts = contacts.filter((c) => c.name.trim() && c.phone.trim())
 
   // F3: the exact receipt a donor gets, from the CURRENT (unsaved) form values.
   const sampleReceipt: PublicReceipt = {

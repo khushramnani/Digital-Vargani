@@ -80,7 +80,7 @@ function formatReceiptNumber(prefix: string, receiptNo: number, iso: string): st
 // contacts from the mandal profile. A contact needs a phone to appear at all.
 function inquiryContactsFor(receipt: PublicReceipt): InquiryContact[] {
   const extra = parseInquiryContacts(receipt.inquiry_contacts)
-    .filter((c) => c.phone.trim())
+    .filter((c) => c.name.trim() && c.phone.trim())
     .slice(0, 2)
   const showPresident = !!receipt.creator_phone && (!receipt.hide_president_contact || extra.length === 0)
   return [
