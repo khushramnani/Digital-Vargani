@@ -53,10 +53,12 @@ export function CityTypeahead({
       const c = matches[i]
       onChange({ city: c.city, state: c.state })
     } else {
-      // "Use as typed": a free-text city has no known state, so clear it —
-      // otherwise a state left over from a previously-picked suggestion
-      // (e.g. Vadodara→Gujarat, then retype "Xyz") would linger, wrongly.
-      onChange({ city: city.trim(), state: '' })
+      // "Use as typed": keep whatever state is currently set. Editing the city
+      // text already cleared a stale picked-state (see the input onChange), so
+      // here `state` is either '' (they retyped a new city) or a legitimate
+      // legacy value the admin is simply confirming — which must NOT be wiped
+      // (the settings form has no separate state field to re-enter it).
+      onChange({ city: city.trim(), state })
     }
     setOpen(false)
   }
@@ -100,7 +102,12 @@ export function CityTypeahead({
           value={city}
           placeholder={placeholder}
           onChange={(e) => {
-            onChange({ city: e.target.value, state })
+            // Typing over the city invalidates any auto-filled state (it
+            // belonged to the previously-picked city). A real re-pick sets both
+            // again; an untouched legacy city+state is preserved because no
+            // keystroke fires. This is what makes "Use as typed" safe to keep
+            // the current state.
+            onChange({ city: e.target.value, state: '' })
             setOpen(true)
             setActive(0)
           }}
