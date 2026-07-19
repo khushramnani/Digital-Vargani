@@ -405,6 +405,8 @@ export const strings = {
     // F5 admin badge
     visibilityBadgePrefix: 'Visibility · ',
     visibilityLabel: 'Who can see it',
+    // v3: floating home link on the public report / landing sample
+    homeLink: 'Digital Vargani',
   },
   // Top-level (shared by Mandal Settings' radio picker and the admin
   // transparency badge), same rationale as `languages` above — one place for
@@ -438,6 +440,8 @@ export const strings = {
     equationTreasurer: 'Treasurer cash',
     equationBank: 'Bank',
     inactiveVolunteersLabel: 'Inactive volunteers',
+    // v3: 4th stat tile on the mobile 2×2 dashboard grid
+    cashWithVolunteersLabel: 'Cash w/ volunteers',
     // stat trio
     fundPoolLabel: 'Total fund pool',
     donationsCountSuffix: ' donations collected',

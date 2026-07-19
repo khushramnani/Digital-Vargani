@@ -8,17 +8,16 @@ import {
 } from '../../lib/db/transparency'
 import { TransparencyReport } from './TransparencyReport'
 import { strings } from '../../lib/strings'
-import { AppShell } from '../../components/AppShell'
 import { card, btnPrimary, btnGhost, errorText } from '../../components/ui'
 
 const t = strings.transparency
 
-// Admin-only preview + publish toggle (routed at /admin/transparency). The
-// preview reuses the exact same RPCs the public page calls — the
-// migration's is_admin() bypass means an admin always sees the live
-// aggregate here regardless of the publish flag, so preview can never
-// drift from what publishing will actually show.
-export function AdminTransparency() {
+// Admin-only preview + publish toggle content body (rendered inside
+// AdminLayout's console frame at /admin/transparency). The preview reuses the
+// exact same RPCs the public page calls — the migration's is_admin() bypass
+// means an admin always sees the live aggregate here regardless of the publish
+// flag, so preview can never drift from what publishing will actually show.
+export function AdminTransparencyContent() {
   // The mandal is fetched before the RPCs rather than alongside them: its
   // slug is what addresses them, so this is a genuine dependency, not an
   // avoidable waterfall.
@@ -74,10 +73,10 @@ export function AdminTransparency() {
   const publicUrl = mandal ? `${window.location.origin}/transparency/${mandal.slug}` : ''
 
   return (
-    <AppShell
-      title={t.title}
-      back={{ to: '/admin', label: strings.admin.dashboardTitle }}
-      actions={
+    <>
+      {/* The publish toggle lived in the AppShell action slot; the console frame
+          has none, so it heads the content body as a right-aligned action row. */}
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={handleToggle}
@@ -86,8 +85,8 @@ export function AdminTransparency() {
         >
           {published ? t.unpublishButton : t.publishButton}
         </button>
-      }
-    >
+      </div>
+
       {error && (
         <p role="alert" className={errorText}>
           {error}
@@ -145,6 +144,6 @@ export function AdminTransparency() {
       ) : (
         totals && <TransparencyReport totals={totals} categories={categories} mandalName={mandal?.name} />
       )}
-    </AppShell>
+    </>
   )
 }

@@ -23,13 +23,14 @@ function shortTime(iso: string): string {
 }
 
 // SPEC.md's "my collections" (volunteer) / "all collections" (admin) screen.
-// One screen, reused behind both /volunteer/collections and
-// /admin/collections — RLS on `donations` scopes getDonations per-role
-// server-side. Deleting a donation is a soft void (it drops out of every
-// total and the public report while the record survives for the audit
-// trail); removed rows are hidden behind a toggle so the list reads as a
-// clean, current ledger. Admins additionally get a bulk "clear everything".
-export function CollectionsScreen() {
+// Content-only body: rendered inside AdminLayout's <Outlet/> at
+// /admin/collections (console frame) and inside the AppShell wrapper below at
+// /collect/history (volunteer/collect flow). RLS on `donations` scopes
+// getDonations per-role server-side. Deleting a donation is a soft void (it
+// drops out of every total and the public report while the record survives for
+// the audit trail); removed rows are hidden behind a toggle so the list reads
+// as a clean, current ledger. Admins additionally get a bulk "clear everything".
+export function CollectionsContent() {
   const { appUser } = useAuth()
   const [donations, setDonations] = useState<Donation[]>([])
   const [loading, setLoading] = useState(true)
@@ -87,18 +88,12 @@ export function CollectionsScreen() {
   const active = donations.filter((d) => !d.voided)
   const removed = donations.filter((d) => d.voided)
   const isAdmin = appUser?.role === 'admin'
-  const isVolunteer = appUser?.role === 'volunteer'
   const visible = showRemoved ? donations : active
-  const home = isAdmin
-    ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/collect', label: strings.collection.title }
 
   return (
-    <AppShell
-      title={t.title}
-      back={home}
-      actions={
-        removed.length > 0 ? (
+    <>
+      {removed.length > 0 && (
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => setShowRemoved((s) => !s)}
@@ -106,9 +101,8 @@ export function CollectionsScreen() {
           >
             {showRemoved ? t.removedHide : `${t.removedShow} (${removed.length})`}
           </button>
-        ) : undefined
-      }
-    >
+        </div>
+      )}
       {notice && (
         <p role="status" className="rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-800">
           {notice}
@@ -213,7 +207,25 @@ export function CollectionsScreen() {
         onCancel={() => setClearOpen(false)}
         busy={clearing}
       />
+    </>
+  )
+}
 
+// Volunteer/collect wrapper (/collect/history) — the console owns the admin
+// frame, so the wrapper only exists for the AppShell + bottom tab bar variant.
+// An admin who reaches /collect/history gets AppShell here (no tab bar, since
+// isVolunteer is false) — expected.
+export function CollectionsScreen() {
+  const { appUser } = useAuth()
+  const isAdmin = appUser?.role === 'admin'
+  const isVolunteer = appUser?.role === 'volunteer'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/collect', label: strings.collection.title }
+
+  return (
+    <AppShell title={t.title} back={home}>
+      <CollectionsContent />
       {isVolunteer && (
         <>
           <div aria-hidden="true" className="h-16" />

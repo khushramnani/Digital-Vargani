@@ -10,12 +10,12 @@ import { test, expect } from '@playwright/test'
 // resolves it as an unknown protocol and silently no-ops, with no request
 // ever reaching the network layer and no property setter ever firing. So
 // this test verifies the flow's real, observable side effects instead:
-// the donation is created and shows its receipt number, the always-present
-// "Send Receipt" fallback (Task 8's explicit-tap affordance) is there, and
-// markSmsSent's PATCH — the one part of sendReceiptSms that *does* hit the
-// network — fires automatically right after a successful submit. buildSmsLink
-// itself (the sms:/iOS-vs-Android separator logic) is covered by its own
-// unit test (send.test.ts).
+// the donation is created and shows its receipt number, the send card offers
+// BOTH the SMS and WhatsApp choice (audit v3 §2.1 — no on-submit auto-fire),
+// nothing is marked sent until a button is tapped, and tapping "Send via SMS"
+// is what fires markSmsSent's PATCH — the one part of sendReceiptSms that
+// *does* hit the network. buildSmsLink itself (the sms:/iOS-vs-Android
+// separator logic) is covered by its own unit test (send.test.ts).
 const SUPABASE_URL = 'http://127.0.0.1:54321'
 const STORAGE_KEY = 'sb-127-auth-token'
 
@@ -36,7 +36,7 @@ function fakeStoredSession(userId: string) {
   }
 }
 
-test('submitting a donation shows the receipt number, the Send via SMS fallback, and auto-fires markSmsSent', async ({
+test('submitting a donation shows the SMS/WhatsApp choice and only fires markSmsSent when Send via SMS is tapped', async ({
   page,
 }) => {
   const authUserId = 'fake-volunteer-auth-id-sms'
@@ -112,13 +112,16 @@ test('submitting a donation shows the receipt number, the Send via SMS fallback,
   const sendButton = page.getByRole('button', { name: 'Send via SMS' })
   await expect(sendButton).toBeVisible()
   await expect(sendButton).toBeEnabled()
+  // The choice is offered, not forced: the WhatsApp option is right there too.
+  await expect(page.getByRole('button', { name: 'Send via WhatsApp' })).toBeVisible()
 
-  // The auto-send attempt (CollectionForm calls sendReceiptSms right after
-  // a successful sync, no click needed) already fired markSmsSent by now.
+  // Nothing sends until the volunteer chooses — no receipt PATCH has fired yet.
+  expect(patchBodies).toHaveLength(0)
+
+  // Tapping "Send via SMS" is what fires markSmsSent's PATCH.
+  await sendButton.click()
   await expect.poll(() => patchBodies.length).toBeGreaterThan(0)
   expect(patchBodies[0]).toMatchObject({ sms_sent_at: expect.any(String) })
-
-  // The explicit-tap fallback must also work without crashing the app.
-  await sendButton.click()
+  // The sms: navigation no-ops in Chromium, so the app is still here.
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
 })

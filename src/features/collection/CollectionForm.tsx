@@ -11,7 +11,7 @@ import { useReceiptLang } from './useReceiptLang'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 import { AppShell } from '../../components/AppShell'
 import { VolunteerTabBar } from './VolunteerTabBar'
-import { card, fieldLg, label as labelCls, btnPrimary, btnPrimaryLg, btnGhost, errorText } from '../../components/ui'
+import { card, fieldLg, label as labelCls, btnPrimaryLg, btnGhost, errorText } from '../../components/ui'
 
 const t = strings.collection
 
@@ -25,9 +25,10 @@ const MODE_OPTIONS: { value: DonationMode; label: string; icon: string }[] = [
 const QUICK_AMOUNTS = [101, 251, 501, 1100]
 const WIDE_AMOUNT = 2100
 
-// F1: the volunteer's last-used send channel is remembered so the next submit
-// auto-opens the same one and the tray emphasises it. Default (and every
-// fresh device) is SMS — the zero-cost, arrives-from-you channel.
+// The volunteer's last-used send channel is remembered so the send card
+// emphasises it as the primary button. Default (and every fresh device) is
+// SMS — the zero-cost, arrives-from-you channel. Nothing sends on its own:
+// the volunteer taps a button (audit v3 §2.1 — no auto-fire).
 const CHANNEL_KEY = 'vm:lastSendChannel'
 type SendChannel = 'sms' | 'whatsapp'
 function readChannel(): SendChannel {
@@ -126,17 +127,13 @@ export function CollectionForm() {
       // old direct insert did, so the online-path UX is unchanged.
       const synced = await syncOutboxItem(localId)
       if (synced) {
+        // No auto-fire (audit v3 §2.1): show the send card and let the
+        // volunteer tap SMS or WhatsApp. The old auto-open raced the OS
+        // composer onto the screen before the choice ever painted, and
+        // marked the donation "sent" even when the composer was cancelled —
+        // dropping it out of the Pending Send tray (the one place the
+        // WhatsApp button persistently lives).
         setLastDonation(synced)
-        // Auto-open the volunteer's last-used channel (default SMS). Some
-        // browsers block non-http navigation that follows an `await`, so this
-        // may silently no-op — the always-rendered tray buttons below are the
-        // required fallback. Skipped when the donor gave no phone (audit #4):
-        // there's nobody to text, and an empty number would build a broken
-        // sms:/wa.me link.
-        if (synced.donor_phone) {
-          if (readChannel() === 'whatsapp') sendReceiptWhatsApp(synced, lang)
-          else sendReceiptSms(synced, lang)
-        }
       } else {
         // Offline (or a transient failure) — safely queued in Dexie, will sync
         // once connectivity returns. No receipt number and no send attempt:
@@ -170,22 +167,11 @@ export function CollectionForm() {
     else sendReceiptSms(lastDonation, lang)
   }
 
-  const smsButton = (primary: boolean) => (
-    <button
-      type="button"
-      onClick={() => sendVia('sms')}
-      className={`flex-1 ${primary ? btnPrimary : btnGhost}`}
-    >
-      {t.sendReceiptSmsButton}
-    </button>
-  )
-  const whatsAppButton = (primary: boolean) => (
-    <button
-      type="button"
-      onClick={() => sendVia('whatsapp')}
-      className={`flex-1 ${primary ? btnPrimary : btnGhost}`}
-    >
-      {t.sendReceiptWhatsAppButton}
+  // One helper, two channels: the primary (last-used) gets the big orange
+  // btnPrimaryLg so the next step is unmistakable; the other is a ghost.
+  const sendButton = (ch: SendChannel, primary: boolean) => (
+    <button type="button" onClick={() => sendVia(ch)} className={primary ? btnPrimaryLg : btnGhost}>
+      {ch === 'whatsapp' ? t.sendReceiptWhatsAppButton : t.sendReceiptSmsButton}
     </button>
   )
 
@@ -345,21 +331,22 @@ export function CollectionForm() {
                   </p>
                   <p className="text-[13px] break-words text-stone-600">{buildReceiptMessage(lastDonation, lang)}</p>
                 </div>
-                {/* Both channels render every time; the last-used one is
-                    emphasised as primary (also what auto-fired above). */}
-                <div className="flex gap-2.5">
+                {/* Both channels render every time; the last-used one is the
+                    primary. Nothing sends until one is tapped (no auto-fire). */}
+                <div className="flex flex-col gap-2.5">
                   {channel === 'whatsapp' ? (
                     <>
-                      {whatsAppButton(true)}
-                      {smsButton(false)}
+                      {sendButton('whatsapp', true)}
+                      {sendButton('sms', false)}
                     </>
                   ) : (
                     <>
-                      {smsButton(true)}
-                      {whatsAppButton(false)}
+                      {sendButton('sms', true)}
+                      {sendButton('whatsapp', false)}
                     </>
                   )}
                 </div>
+                <p className="text-center text-[13px] text-stone-500">{t.offlineMicrocopy}</p>
               </>
             ) : (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">

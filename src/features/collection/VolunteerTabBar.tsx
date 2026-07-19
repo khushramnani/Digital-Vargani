@@ -48,7 +48,9 @@ const TABS: Tab[] = [
     label: 'More',
     icon: '⋯',
     ariaLabel: t.expensesLink,
-    isActive: (p) => p.includes('/expenses'),
+    // "More" is the catch-all for the non-primary volunteer screens, so it
+    // stays lit on both Expenses and Handover (both mount the tab bar).
+    isActive: (p) => p.includes('/expenses') || p.includes('/handover'),
   },
 ]
 

@@ -7,16 +7,17 @@ import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
 import { AppShell } from '../../components/AppShell'
+import { VolunteerTabBar } from '../collection/VolunteerTabBar'
 import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
 
 const t = strings.handovers
 
-// One screen, reused behind both /volunteer/handover (RequireRole
-// role="volunteer") and /admin/handovers (RequireRole role="admin") — RLS on
-// `handovers` already scopes createHandover/getHandovers per-role
+// Content-only body, reused behind /admin/handovers (inside AdminLayout's
+// console frame) and /volunteer/handover (inside the AppShell wrapper below) —
+// RLS on `handovers` already scopes createHandover/getHandovers per-role
 // server-side (see src/lib/db/handovers.ts), same pattern as
 // features/expenses/ExpensesScreen.tsx.
-export function HandoverScreen() {
+export function HandoverContent() {
   const { appUser } = useAuth()
   const [admins, setAdmins] = useState<Admin[]>([])
   const [handovers, setHandovers] = useState<Handover[]>([])
@@ -90,13 +91,8 @@ export function HandoverScreen() {
     }
   }
 
-  const isAdmin = appUser?.role === 'admin'
-  const home = isAdmin
-    ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/collect', label: strings.collection.title }
-
   return (
-    <AppShell title={t.title} back={home}>
+    <>
       <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
         <div className="flex flex-col gap-2">
           <label htmlFor="handover-amount" className={labelCls}>
@@ -202,6 +198,31 @@ export function HandoverScreen() {
             </li>
           ))}
         </ul>
+      )}
+    </>
+  )
+}
+
+// Volunteer wrapper (/volunteer/handover) — AppShell + bottom tab bar. Step-4
+// fix: like Expenses, this screen mounted no tab bar before; the spacer +
+// VolunteerTabBar restore navigation. The admin route renders HandoverContent
+// bare inside AdminLayout instead.
+export function HandoverScreen() {
+  const { appUser } = useAuth()
+  const isAdmin = appUser?.role === 'admin'
+  const isVolunteer = appUser?.role === 'volunteer'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/collect', label: strings.collection.title }
+
+  return (
+    <AppShell title={t.title} back={home}>
+      <HandoverContent />
+      {isVolunteer && (
+        <>
+          <div aria-hidden="true" className="h-16" />
+          <VolunteerTabBar />
+        </>
       )}
     </AppShell>
   )

@@ -8,8 +8,10 @@ import { CollectionForm } from '../src/features/collection/CollectionForm'
 // Supabase client) — this is a component test of the form's behavior, and
 // mock useAuth so appUser is a fixed, non-editable session identity, the
 // same way every prior screen's tests mock only what the component itself
-// calls. Task 8 adds markSmsSent (send.ts's markSmsSent is re-exported from
-// this module) since CollectionForm now fires the SMS-send flow on submit.
+// calls. markSmsSent (send.ts's markSmsSent is re-exported from this module)
+// is mocked because CollectionForm reaches it through the send helpers — but
+// only when a send button is tapped. Audit v3 removed the on-submit auto-fire,
+// so a bare submit no longer calls it.
 // Task 10: CollectionForm no longer calls createDonation directly — it goes
 // through the offline queue (enqueueDonation/syncOutboxItem from
 // src/lib/queue/sync), which is mocked here instead so this test doesn't
@@ -211,36 +213,31 @@ describe('CollectionForm', () => {
     expect(screen.getByLabelText('Amount (₹)')).toHaveValue(null)
   })
 
-  it('auto-attempts the SMS composer with the correct phone/message/receipt link right after a successful submit', async () => {
+  it('does NOT auto-fire on submit — it shows the send-choice card with both channels and marks nothing sent', async () => {
     renderForm()
     fillValidForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
 
-    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
-    // jsdom's default UA isn't an iOS one, so this exercises the Android/
-    // default `?body=` branch of buildSmsLink.
-    const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
-    )
-    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
-    expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+    await waitFor(() => expect(screen.getByText(/Receipt #42/)).toBeInTheDocument())
+    // Nothing sends silently: the OS composer is never navigated to, and the
+    // donation is not marked sent, so it stays in Pending Send.
+    expect(window.location.href).toBe('https://vinayak-mandal.example/volunteer')
+    expect(markSmsSent).not.toHaveBeenCalled()
+    // Both channels are offered as an explicit choice.
+    expect(screen.getByRole('button', { name: 'Send via SMS' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send via WhatsApp' })).toBeInTheDocument()
   })
 
-  it('always renders a fallback "Send via SMS" button after submit, which re-fires the same SMS link when tapped', async () => {
+  it('fires the SMS link and marks the donation sent only once "Send via SMS" is tapped', async () => {
     renderForm()
     fillValidForm()
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
-    await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send via SMS' })).toBeInTheDocument())
 
-    // Simulate the auto-redirect having been blocked (some browsers refuse
-    // non-http navigation after an `await`) by resetting href, then tap the
-    // always-visible fallback button and confirm it fires the identical link.
-    window.location.href = 'https://vinayak-mandal.example/volunteer'
-    markSmsSent.mockClear()
-
-    const sendButton = screen.getByRole('button', { name: 'Send via SMS' })
-    fireEvent.click(sendButton)
+    // jsdom's default UA isn't an iOS one, so this exercises the Android/
+    // default `?body=` branch of buildSmsLink.
+    fireEvent.click(screen.getByRole('button', { name: 'Send via SMS' }))
 
     const expectedMessage = encodeURIComponent(
       'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
@@ -296,13 +293,15 @@ describe('CollectionForm', () => {
 
     fillValidForm()
     fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send via SMS' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Send via SMS' }))
 
     // The Marathi copy, and the link carries ?lang=mr so the receipt page
     // reads the same language straight back out.
     const expectedMessage = encodeURIComponent(
       'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
-    await waitFor(() => expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`))
+    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 })

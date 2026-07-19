@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
-import { AppShell } from '../../components/AppShell'
 import { card, field, label as labelCls, btnPrimary, btnGhost, errorText } from '../../components/ui'
 import type { Tables } from '../../lib/db/database.types'
 
@@ -32,11 +31,11 @@ async function reissueInvite(volunteerId: string): Promise<string> {
   return data
 }
 
-// Admin-only screen (routed behind RequireRole role="admin"). List +
-// create-with-invite-link form only, per the brief: no editing/deleting
-// volunteers, no re-invite-generation UI — a lost session is fixed by the
-// admin creating a brand-new volunteer invite instead.
-export function VolunteersScreen() {
+// Admin-only content body (rendered inside AdminLayout's console frame at
+// /admin/volunteers). List + create-with-invite-link form only, per the brief:
+// no editing/deleting volunteers, no re-invite-generation UI — a lost session
+// is fixed by the admin creating a brand-new volunteer invite instead.
+export function VolunteersContent() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([])
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
@@ -107,7 +106,7 @@ export function VolunteersScreen() {
   }
 
   return (
-    <AppShell title={strings.volunteers.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+    <>
       <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${card} p-5`}>
         <label htmlFor="volunteer-name" className={labelCls}>
           {strings.volunteers.nameLabel}
@@ -200,7 +199,7 @@ export function VolunteersScreen() {
           ))}
         </ul>
       )}
-    </AppShell>
+    </>
   )
 }
 

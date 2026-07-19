@@ -29,6 +29,16 @@ describe('receiptStrings', () => {
       'Thank you for your ₹500 contribution. View your official receipt here: https://x.test/r/abc',
     )
   })
+
+  // Only the wrapper phrase is localized; the number words stay English and
+  // must appear verbatim inside every language's phrase.
+  it('wraps the (English) amount-in-words with a localized phrase per language', () => {
+    expect(receiptStrings.en.amountInWordsLine('five hundred one')).toBe('Rupees five hundred one only')
+    expect(receiptStrings.mr.amountInWordsLine('five hundred one')).toBe('रुपये five hundred one फक्त')
+    expect(receiptStrings.hi.amountInWordsLine('five hundred one')).toBe('रुपये five hundred one मात्र')
+    expect(receiptStrings.gu.amountInWordsLine('five hundred one')).toBe('રૂપિયા five hundred one પૂરા')
+    for (const lang of LANGS) expect(receiptStrings[lang].amountInWordsLine('X')).toContain('X')
+  })
 })
 
 describe('every language is complete', () => {
