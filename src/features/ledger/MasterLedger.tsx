@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { fetchFullLedger, fetchActiveVolunteers, type VolunteerSummary } from '../../lib/db/ledger'
 import { getExpenses, type Expense } from '../../lib/db/expenses'
+import { getDonations, type Donation } from '../../lib/db/donations'
+import { normalizeToE164 } from '../../lib/phone'
 import {
   totalCollected,
   totalExpenses,
@@ -56,17 +58,19 @@ export function MasterLedgerContent() {
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [volunteers, setVolunteers] = useState<VolunteerSummary[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [donations, setDonations] = useState<Donation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchFullLedger(), fetchActiveVolunteers(), getExpenses()])
-      .then(([l, v, e]) => {
+    Promise.all([fetchFullLedger(), fetchActiveVolunteers(), getExpenses(), getDonations()])
+      .then(([l, v, e, d]) => {
         if (!active) return
         setLedger(l)
         setVolunteers(v)
         setExpenses(e)
+        setDonations(d)
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : String(err))
@@ -87,12 +91,26 @@ export function MasterLedgerContent() {
         </p>
       )}
 
-      {loading ? <DashboardSkeleton /> : ledger && <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} />}
+      {loading ? (
+        <DashboardSkeleton />
+      ) : (
+        ledger && <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} donations={donations} />
+      )}
     </>
   )
 }
 
-function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteers: VolunteerSummary[]; expenses: Expense[] }) {
+function Dashboard({
+  ledger,
+  volunteers,
+  expenses,
+  donations,
+}: {
+  ledger: Ledger
+  volunteers: VolunteerSummary[]
+  expenses: Expense[]
+  donations: Donation[]
+}) {
   const donationCount = ledger.donations.filter((d) => !d.voided).length
   const paymentCount = ledger.expenses.filter((e) => !e.voided).length
 
@@ -154,7 +172,100 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
           </div>
         </div>
       </div>
+
+      {/* v4 §2: where the money CAME from (source split) + the collections
+          insight, both computed from the getDonations rows (non-voided). */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SourceCard donations={donations} />
+        <InsightCard donations={donations} />
+      </div>
     </>
+  )
+}
+
+// v4 §2: per-source (Society/Shop/Other) amount + donation count. `category` is
+// constrained to those three at the DB level; any stray value buckets into
+// Society (the column default) so no rupee is dropped.
+function SourceCard({ donations }: { donations: Donation[] }) {
+  const rows = [
+    { key: 'society', label: t.sourceSocietyLabel, color: '#2f7d44' },
+    { key: 'shop', label: t.sourceShopLabel, color: '#e2680f' },
+    { key: 'other', label: t.sourceOtherLabel, color: '#dca02c' },
+  ] as const
+  const acc: Record<string, { paise: number; count: number }> = {
+    society: { paise: 0, count: 0 },
+    shop: { paise: 0, count: 0 },
+    other: { paise: 0, count: 0 },
+  }
+  let any = false
+  for (const d of donations) {
+    if (d.voided) continue
+    any = true
+    const key = d.category === 'shop' || d.category === 'other' ? d.category : 'society'
+    acc[key].paise += d.amount_paise
+    acc[key].count += 1
+  }
+
+  return (
+    <div className={`${card} p-5`}>
+      <h2 className="font-display text-lg font-bold text-stone-900">{t.whereMoneyCameFromTitle}</h2>
+      {!any ? (
+        <p className="py-6 text-center text-sm text-stone-400">{t.noDonationsYet}</p>
+      ) : (
+        <ul className="mt-4 flex flex-col gap-2.5">
+          {rows.map((r) => (
+            <li key={r.key} className="flex items-center gap-3 text-sm">
+              <span className="h-3 w-3 flex-none rounded-full" style={{ backgroundColor: r.color }} />
+              <span className="min-w-0 flex-1 truncate font-medium text-stone-700">{r.label}</span>
+              <span className="flex-none tabular-nums text-stone-400">
+                {acc[r.key].count} {t.donationsCountLabel}
+              </span>
+              <span className="w-24 flex-none text-right font-semibold tabular-nums text-stone-800">
+                {formatINR(acc[r.key].paise)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// v4 §2 / §1 stats: total count, unique donors (distinct phone-or-lowercased
+// name, phones normalized so a 10-digit legacy row and its +91 twin count once),
+// average and largest — all over non-voided donations.
+function InsightCard({ donations }: { donations: Donation[] }) {
+  const active = donations.filter((d) => !d.voided)
+  const total = active.reduce((sum, d) => sum + d.amount_paise, 0)
+  const uniqueDonors = new Set(
+    active.map((d) => (d.donor_phone ? normalizeToE164(d.donor_phone) : d.donor_name.trim().toLowerCase())),
+  ).size
+  const average = active.length ? Math.round(total / active.length) : 0
+  const largest = active.reduce((max, d) => Math.max(max, d.amount_paise), 0)
+
+  const stats = [
+    { label: t.insightTotalDonations, value: String(active.length) },
+    { label: t.insightUniqueDonors, value: String(uniqueDonors) },
+    { label: t.insightAvgDonation, value: formatINR(average) },
+    { label: t.insightLargestDonation, value: formatINR(largest) },
+  ]
+
+  return (
+    <div className={`${card} p-5`}>
+      <h2 className="font-display text-lg font-bold text-stone-900">{t.insightTitle}</h2>
+      {active.length === 0 ? (
+        <p className="py-6 text-center text-sm text-stone-400">{t.noDonationsYet}</p>
+      ) : (
+        <dl className="mt-4 grid grid-cols-2 gap-3">
+          {stats.map((s) => (
+            <div key={s.label} className="rounded-xl border border-stone-100 bg-stone-50 px-3 py-2.5">
+              <dt className="text-xs font-semibold tracking-wide text-stone-500 uppercase">{s.label}</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-stone-900">{s.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
   )
 }
 

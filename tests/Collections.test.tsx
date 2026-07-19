@@ -11,9 +11,24 @@ const { getDonations } = vi.hoisted(() => ({ getDonations: vi.fn() }))
 
 vi.mock('../src/lib/db/donations', () => ({ getDonations }))
 
-const { voidRow, clearAllDonations } = vi.hoisted(() => ({ voidRow: vi.fn(), clearAllDonations: vi.fn() }))
+const { voidRow, clearAllDonations, purgeDonations } = vi.hoisted(() => ({
+  voidRow: vi.fn(),
+  clearAllDonations: vi.fn(),
+  purgeDonations: vi.fn(),
+}))
 
-vi.mock('../src/lib/db/void', () => ({ voidRow, clearAllDonations }))
+vi.mock('../src/lib/db/void', () => ({ voidRow, clearAllDonations, purgeDonations }))
+
+// collected_by → name lookup (admin-only server-side; mocked here so the
+// "collected by" line resolves in tests regardless of role).
+const { fetchMandalUserNames } = vi.hoisted(() => ({ fetchMandalUserNames: vi.fn() }))
+
+vi.mock('../src/lib/db/users', () => ({ fetchMandalUserNames }))
+
+// The offline outbox — only the purge('all') path touches it (best-effort clear).
+const { outboxClear } = vi.hoisted(() => ({ outboxClear: vi.fn() }))
+
+vi.mock('../src/lib/queue/db', () => ({ db: { outbox: { clear: outboxClear } } }))
 
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
@@ -28,10 +43,22 @@ const volunteer: Tables<'users'> = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
+const admin: Tables<'users'> = {
+  ...volunteer,
+  id: 'admin-1',
+  name: 'Anita Admin',
+  role: 'admin',
+  auth_user_id: 'auth-uid-admin',
+}
+
+// Mutable so a single module-level useAuth mock can serve both the default
+// volunteer tests and the admin-only Danger Zone purge test.
+const auth = vi.hoisted(() => ({ appUser: null as Tables<'users'> | null }))
+
 vi.mock('../src/features/auth/useAuth', () => ({
   useAuth: () => ({
-    session: { user: { id: 'auth-uid-volunteer' } },
-    appUser: volunteer,
+    session: { user: { id: auth.appUser?.auth_user_id ?? 'auth-uid-volunteer' } },
+    appUser: auth.appUser,
     loading: false,
     refreshAppUser: vi.fn(),
   }),
@@ -71,8 +98,10 @@ const voidedDonation: Tables<'donations'> = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  auth.appUser = volunteer
   getDonations.mockResolvedValue([activeDonation, voidedDonation])
   voidRow.mockResolvedValue(undefined)
+  fetchMandalUserNames.mockResolvedValue({ 'volunteer-1': 'Sita Volunteer' })
 })
 
 describe('CollectionsScreen', () => {
@@ -81,7 +110,7 @@ describe('CollectionsScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
     expect(screen.getByText('₹500.00')).toBeInTheDocument()
-    // New: a payment-mode icon tile per row (💵 cash / 📱 upi / 🏦 bank).
+    // A payment-mode icon tile per row (💵 cash / 📱 upi / 🏦 bank).
     expect(screen.getByText('💵')).toBeInTheDocument()
     // A voided donation is removed from the current ledger — hidden by default.
     expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
@@ -92,6 +121,27 @@ describe('CollectionsScreen', () => {
     expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
     expect(screen.getByText(/Entered twice/)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
+  })
+
+  it('expands a row to reveal donor contact, collector and receipt link', async () => {
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    // Tap the row header (its accessible name contains the donor name).
+    fireEvent.click(screen.getByRole('button', { name: /Ganesh Donor/ }))
+
+    // Phone: legacy 10-digit value normalized to E.164 for tel: + wa.me.
+    const call = await screen.findByRole('link', { name: /Call/ })
+    expect(call).toHaveAttribute('href', 'tel:+919000000009')
+    const whatsApp = screen.getByRole('link', { name: /WhatsApp/ })
+    expect(whatsApp.getAttribute('href')).toContain('wa.me/919000000009')
+
+    // Collected-by resolves through the id→name map.
+    expect(screen.getByText('Sita Volunteer')).toBeInTheDocument()
+
+    // Receipt open link uses the /r/<receiptNo>-<token> shape.
+    const open = screen.getByRole('link', { name: /Open receipt/ })
+    expect(open.getAttribute('href')).toContain('/r/7-tok-1')
   })
 
   it('deletes a donation through the confirm dialog, calling voidRow with the typed reason', async () => {
@@ -116,5 +166,23 @@ describe('CollectionsScreen', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
 
     expect(voidRow).not.toHaveBeenCalled()
+  })
+
+  it('permanently purges removed donations once the exact phrase is typed (admin only)', async () => {
+    auth.appUser = admin
+    purgeDonations.mockResolvedValue(1)
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Permanently delete removed' }))
+    const dialog = screen.getByRole('dialog')
+
+    // Confirm stays disabled until the exact phrase is typed.
+    const confirm = within(dialog).getByRole('button', { name: 'Delete removed forever' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'DELETE FOREVER' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete removed forever' }))
+
+    await waitFor(() => expect(purgeDonations).toHaveBeenCalledWith('removed'))
   })
 })

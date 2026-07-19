@@ -20,6 +20,7 @@ const COLLECT: NavItem = { to: '/collect', icon: '🪔', label: a.collectDonatio
 const NAV: NavItem[] = [
   { to: '/admin', icon: '📊', label: a.dashboardTitle },
   { to: '/admin/collections', icon: '🧾', label: a.collectionsLink },
+  { to: '/admin/donors', icon: '👥', label: a.donorsLink },
   { to: '/admin/expenses', icon: '💸', label: a.expensesLink },
   { to: '/admin/handovers', icon: '🤝', label: a.handoversLink },
   { to: '/admin/cash-in-hand', icon: '💰', label: a.cashInHandLink },

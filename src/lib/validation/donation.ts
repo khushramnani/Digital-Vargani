@@ -3,6 +3,7 @@
 // feedback only, the DB still enforces these regardless. Kept framework-free
 // so it's trivially unit-testable without mounting CollectionForm.
 import { strings } from '../strings'
+import { isValidPhone } from '../phone'
 
 export type DonationMode = 'cash' | 'upi' | 'bank'
 
@@ -31,11 +32,10 @@ export function validateDonationInput(
   }
 
   // Phone is optional (nullable in the schema): a donor may decline to share
-  // one and must still be loggable (audit 2026-07-18 #8). Only validate the
-  // format when something was actually entered — a light length check, not
-  // full E.164.
-  const phoneDigits = input.donorPhone.replace(/\D/g, '')
-  if (phoneDigits.length > 0 && (phoneDigits.length < 7 || phoneDigits.length > 15)) {
+  // one and must still be loggable (audit 2026-07-18 #8). The field is now an
+  // E.164 string from PhoneInput; only validate when something was entered.
+  const phone = input.donorPhone.trim()
+  if (phone && !isValidPhone(phone)) {
     errors.donorPhone = t.donorPhone
   }
 

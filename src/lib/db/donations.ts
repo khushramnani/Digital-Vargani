@@ -10,11 +10,17 @@ import type { DonationMode } from '../validation/donation'
 
 export type Donation = Tables<'donations'>
 
+// v4 (§2): where the donation came from. DB column is NOT NULL default
+// 'society' with a CHECK to these three values.
+export type DonationCategory = 'society' | 'shop' | 'other'
+
 export type CreateDonationInput = {
   donorName: string
   donorPhone: string
   amountPaise: number
   mode: DonationMode
+  // v4 (§2): donation source — the form always sends one (defaults 'society').
+  category: DonationCategory
   // Always the current session's acting user id (appUser.id from useAuth()),
   // never a value the form lets the user pick.
   collectedBy: string
@@ -36,6 +42,7 @@ export async function createDonation(input: CreateDonationInput): Promise<Donati
       donor_phone: input.donorPhone || null,
       amount_paise: input.amountPaise,
       mode: input.mode,
+      category: input.category,
       collected_by: input.collectedBy,
       client_idempotency_key: input.clientIdempotencyKey ?? null,
     })

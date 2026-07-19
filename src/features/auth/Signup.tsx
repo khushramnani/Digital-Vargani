@@ -172,6 +172,8 @@ export function Signup() {
           placeholder={t.cityPlaceholder}
           help={t.cityHelp}
           useAsTypedLabel={t.cityUseAsTyped}
+          stateLabel={t.stateLabel}
+          statePlaceholder={t.statePlaceholder}
         />
 
         <Field label={t.addressLabel} optional help={t.addressHelp}>

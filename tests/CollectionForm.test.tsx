@@ -156,9 +156,14 @@ describe('CollectionForm', () => {
     const payload = enqueueDonation.mock.calls[0][0]
     expect(payload).toEqual({
       donorName: 'Ramesh Kulkarni',
-      donorPhone: '9876543210',
+      // v4 §3: PhoneInput stores E.164 — the national digits typed into the
+      // field are combined with the visible country code (default 🇮🇳 +91),
+      // replacing the old silent "10 digits must be Indian" guess in send.ts.
+      donorPhone: '+919876543210',
       amountPaise: 50100,
       mode: 'cash',
+      // v4 §2: defaults to Society (the door-to-door case) unless re-picked.
+      category: 'society',
       collectedBy: 'volunteer-1',
     })
     expect(payload).not.toHaveProperty('receipt_no')
@@ -243,7 +248,9 @@ describe('CollectionForm', () => {
     const expectedMessage = encodeURIComponent(
       'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
-    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    // v4: the stored legacy 10-digit phone is normalized to E.164 (+91…) before
+    // the sms: link is built (send.ts / normalizeToE164).
+    expect(window.location.href).toBe(`sms:+919876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 
@@ -302,7 +309,9 @@ describe('CollectionForm', () => {
     const expectedMessage = encodeURIComponent(
       'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
-    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    // v4: the stored legacy 10-digit phone is normalized to E.164 (+91…) before
+    // the sms: link is built (send.ts / normalizeToE164).
+    expect(window.location.href).toBe(`sms:+919876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 })

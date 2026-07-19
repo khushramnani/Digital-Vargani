@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { voidRow, clearAllDonations } from '../src/lib/db/void'
+import { voidRow, clearAllDonations, purgeDonations } from '../src/lib/db/void'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 
@@ -51,5 +51,27 @@ describe('clearAllDonations', () => {
     rpc.mockResolvedValue({ data: null, error: new Error('only an admin can clear the donation history') })
 
     await expect(clearAllDonations('x')).rejects.toThrow('only an admin')
+  })
+})
+
+describe('purgeDonations', () => {
+  it.each(['removed', 'all'] as const)(
+    'calls the purge_donations rpc with the %s scope and returns how many rows were deleted',
+    async (scope) => {
+      rpc.mockResolvedValue({ data: 3, error: null })
+
+      const purged = await purgeDonations(scope)
+
+      expect(rpc).toHaveBeenCalledWith('purge_donations', { scope })
+      expect(purged).toBe(3)
+      // Purge is the definer RPC's job only — never a client-side DELETE.
+      expect(from).not.toHaveBeenCalled()
+    },
+  )
+
+  it('throws when the rpc errors (e.g. a volunteer or wrong-mandal admin)', async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error('only an admin can purge donation history') })
+
+    await expect(purgeDonations('all')).rejects.toThrow('only an admin')
   })
 })

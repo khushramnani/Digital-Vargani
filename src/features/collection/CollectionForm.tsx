@@ -1,7 +1,7 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { getDonations, type Donation } from '../../lib/db/donations'
+import { getDonations, type Donation, type DonationCategory } from '../../lib/db/donations'
 import { validateDonationInput, type DonationMode, type DonationValidationErrors } from '../../lib/validation/donation'
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
@@ -10,8 +10,10 @@ import { LanguagePicker } from './LanguagePicker'
 import { useReceiptLang } from './useReceiptLang'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 import { AppShell } from '../../components/AppShell'
+import { PhoneInput } from '../../components/PhoneInput'
+import { Sheet } from '../../components/Sheet'
 import { VolunteerTabBar } from './VolunteerTabBar'
-import { card, fieldLg, label as labelCls, btnPrimaryLg, btnGhost, errorText } from '../../components/ui'
+import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
 
 const t = strings.collection
 
@@ -20,6 +22,23 @@ const MODE_OPTIONS: { value: DonationMode; label: string; icon: string }[] = [
   { value: 'upi', label: t.modeUpi, icon: '📱' },
   { value: 'bank', label: t.modeBank, icon: '🏦' },
 ]
+
+// v4 (§2): source category. Remembered per session in localStorage — a
+// volunteer often does a whole lane of shops, so the last pick sticks.
+const CATEGORY_KEY = 'vm:lastCategory'
+const CATEGORY_OPTIONS: { value: DonationCategory; label: string; icon: string }[] = [
+  { value: 'society', label: t.categorySociety, icon: '🏠' },
+  { value: 'shop', label: t.categoryShop, icon: '🏪' },
+  { value: 'other', label: t.categoryOther, icon: '🪔' },
+]
+function readCategory(): DonationCategory {
+  try {
+    const v = localStorage.getItem(CATEGORY_KEY)
+    return v === 'shop' || v === 'other' ? v : 'society'
+  } catch {
+    return 'society'
+  }
+}
 
 // Auspicious quick-amount chips (design): tapping fills the Amount field.
 const QUICK_AMOUNTS = [101, 251, 501, 1100]
@@ -66,7 +85,11 @@ export function CollectionForm() {
   const [donorPhone, setDonorPhone] = useState('')
   const [amountRupees, setAmountRupees] = useState('')
   const [mode, setMode] = useState<DonationMode | ''>('')
+  const [category, setCategory] = useState<DonationCategory>(readCategory)
   const [errors, setErrors] = useState<DonationValidationErrors>({})
+  // Focus returns here after the send sheet dismisses, so the next entry starts
+  // immediately (§6 — the "+ New collection" loop, without scrolling).
+  const donorNameRef = useRef<HTMLInputElement>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastDonation, setLastDonation] = useState<Donation | null>(null)
@@ -121,6 +144,7 @@ export function CollectionForm() {
         donorPhone: donorPhone.trim(),
         amountPaise: toPaise(Number(amountRupees)),
         mode: mode as DonationMode,
+        category,
         collectedBy: appUser.id,
       })
       // Immediate sync attempt — online this completes in about the time the
@@ -154,7 +178,32 @@ export function CollectionForm() {
     }
   }
 
-  // F1: tapping a channel remembers it and fires that channel's send flow.
+  function selectCategory(c: DonationCategory) {
+    setCategory(c)
+    try {
+      localStorage.setItem(CATEGORY_KEY, c)
+    } catch {
+      /* private mode / storage disabled — the pick still applies this session */
+    }
+  }
+
+  // §6: a send-tap or Skip dismisses the sheet, clears the form, and drops
+  // focus back on the donor-name field for the next entry. The rAF lets the
+  // Sheet finish unmounting (its cleanup restores focus to the opener first)
+  // before we claim focus, so donor-name wins.
+  function handleDismiss() {
+    setLastDonation(null)
+    setSavedOffline(false)
+    setDonorName('')
+    setDonorPhone('')
+    setAmountRupees('')
+    setMode('')
+    setErrors({})
+    requestAnimationFrame(() => donorNameRef.current?.focus())
+  }
+
+  // F1: tapping a channel remembers it, fires that channel's send flow (which
+  // marks the donation sent — tap-only, audit v3), then dismisses the sheet.
   function sendVia(ch: SendChannel) {
     if (!lastDonation) return
     try {
@@ -165,15 +214,23 @@ export function CollectionForm() {
     setChannel(ch)
     if (ch === 'whatsapp') sendReceiptWhatsApp(lastDonation, lang)
     else sendReceiptSms(lastDonation, lang)
+    handleDismiss()
   }
 
-  // One helper, two channels: the primary (last-used) gets the big orange
-  // btnPrimaryLg so the next step is unmistakable; the other is a ghost.
-  const sendButton = (ch: SendChannel, primary: boolean) => (
-    <button type="button" onClick={() => sendVia(ch)} className={primary ? btnPrimaryLg : btnGhost}>
-      {ch === 'whatsapp' ? t.sendReceiptWhatsAppButton : t.sendReceiptSmsButton}
-    </button>
-  )
+  // One helper, two channels: the primary (last-used) is the big orange
+  // btnPrimaryLg; the other is a thumb-height ghost (green accent for
+  // WhatsApp) — both easy one-handed taps in the sheet.
+  const sendButton = (ch: SendChannel, primary: boolean) => {
+    const secondary =
+      ch === 'whatsapp'
+        ? 'rounded-xl border border-green-500 bg-white px-4 py-4 text-base font-bold text-green-700 transition-colors hover:bg-green-50'
+        : 'rounded-xl border border-stone-300 bg-white px-4 py-4 text-base font-bold text-stone-700 transition-colors hover:bg-stone-50'
+    return (
+      <button type="button" onClick={() => sendVia(ch)} className={primary ? btnPrimaryLg : secondary}>
+        {ch === 'whatsapp' ? t.sendReceiptWhatsAppButton : t.sendReceiptSmsButton}
+      </button>
+    )
+  }
 
   return (
     <AppShell
@@ -210,7 +267,13 @@ export function CollectionForm() {
           <label htmlFor="donor-name" className={labelCls}>
             {t.donorNameLabel}
           </label>
-          <input id="donor-name" value={donorName} onChange={(e) => setDonorName(e.target.value)} className={fieldLg} />
+          <input
+            id="donor-name"
+            ref={donorNameRef}
+            value={donorName}
+            onChange={(e) => setDonorName(e.target.value)}
+            className={fieldLg}
+          />
           {errors.donorName && (
             <p role="alert" className={errorText}>
               {errors.donorName}
@@ -219,16 +282,9 @@ export function CollectionForm() {
         </div>
 
         <div className="flex flex-col gap-2">
-          <label htmlFor="donor-phone" className={labelCls}>
-            {t.donorPhoneLabel}
-          </label>
-          <input
-            id="donor-phone"
-            type="tel"
-            value={donorPhone}
-            onChange={(e) => setDonorPhone(e.target.value)}
-            className={fieldLg}
-          />
+          {/* v4 §3: E.164 with a visible country code — the old bare field let
+              buildWhatsAppLink silently assume +91 for any 10-digit number. */}
+          <PhoneInput id="donor-phone" value={donorPhone} onChange={setDonorPhone} label={t.donorPhoneLabel} />
           {errors.donorPhone && (
             <p role="alert" className={errorText}>
               {errors.donorPhone}
@@ -304,6 +360,32 @@ export function CollectionForm() {
           )}
         </div>
 
+        {/* v4 §2: where the money came from. Defaults to Society (the dominant
+            door-to-door case) and remembers the last pick — a volunteer often
+            works a whole lane of shops in one go. Append-only server-side: a
+            wrong source is a void + re-enter, like every other money field. */}
+        <div className="flex flex-col gap-2">
+          <span className={labelCls}>{t.categoryLabel}</span>
+          <div role="group" aria-label={t.categoryLabel} className="grid grid-cols-3 gap-2.5">
+            {CATEGORY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={category === option.value}
+                onClick={() => selectCategory(option.value)}
+                className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  category === option.value
+                    ? 'border-orange-600 bg-orange-50 text-orange-700 shadow-sm'
+                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
+                }`}
+              >
+                <span aria-hidden="true">{option.icon}</span>
+                <span>{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <LanguagePicker lang={lang} onChange={setLang} label={t.languageLabel} />
 
         <button type="submit" disabled={submitting} className={btnPrimaryLg}>
@@ -311,28 +393,52 @@ export function CollectionForm() {
         </button>
         <p className="text-center text-[13px] text-stone-500">{t.offlineMicrocopy}</p>
 
-        {lastDonation && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-semibold text-green-800">
-              {t.successPrefix}
-              {lastDonation.receipt_no} — {t.nextDonation}
+        {error && (
+          <p role="alert" className={errorText}>
+            {error}
+          </p>
+        )}
+      </form>
+
+      {/* §6: the send step is a bottom sheet over the dimmed form, not a block
+          appended below it. On a phone the old card rendered under the fold —
+          after submit the volunteer saw nothing move — and it left the stale
+          filled form on screen inviting double-submits. Dismissing the sheet
+          (send OR skip) clears the form and refocuses donor-name, so logging
+          five in a row never needs a scroll or a manual clear. Skip leaves the
+          donation in Pending Send: sms_sent_at stays null because v3 marks sent
+          only on an explicit tap. */}
+      <Sheet open={!!lastDonation || savedOffline} onClose={handleDismiss} labelledBy="send-sheet-title">
+        {lastDonation ? (
+          <div className="flex flex-col gap-4">
+            <p id="send-sheet-title" className="flex items-center gap-2 text-base font-bold text-stone-900">
+              <span
+                aria-hidden="true"
+                className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-green-600 text-sm text-white"
+              >
+                ✓
+              </span>
+              <span>
+                {formatINR(lastDonation.amount_paise)}
+                {t.loggedPrefix} — {t.successPrefix}
+                {lastDonation.receipt_no}
+              </span>
             </p>
+
             {lastDonation.donor_phone ? (
               <>
                 <div>
                   <p className="text-sm font-bold text-stone-800">{t.sendTrayTitle}</p>
                   <p className="text-[13px] text-stone-500">{t.sendTrayBody}</p>
                 </div>
-                {/* Exact text that goes out — volunteers see precisely what the
-                    donor receives (one source of truth: send.ts). */}
-                <div className="rounded-xl bg-white/70 p-3">
+                {/* The exact text that goes out — one source of truth (send.ts). */}
+                <div className="rounded-xl bg-stone-100 p-3">
                   <p className="mb-1 text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
                     {t.smsPreviewLabel}
                   </p>
                   <p className="text-[13px] break-words text-stone-600">{buildReceiptMessage(lastDonation, lang)}</p>
                 </div>
-                {/* Both channels render every time; the last-used one is the
-                    primary. Nothing sends until one is tapped (no auto-fire). */}
+                {/* Both channels every time; the last-used one is the primary. */}
                 <div className="flex flex-col gap-2.5">
                   {channel === 'whatsapp' ? (
                     <>
@@ -346,47 +452,48 @@ export function CollectionForm() {
                     </>
                   )}
                 </div>
-                <p className="text-center text-[13px] text-stone-500">{t.offlineMicrocopy}</p>
               </>
             ) : (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">
                 {t.noPhoneHint}
               </p>
             )}
-            <div className="flex gap-2.5">
+
+            {/* Quiet row — neither action sends anything. */}
+            <div className="flex items-center justify-between gap-3 border-t border-stone-200 pt-3">
               <button
                 type="button"
                 onClick={() =>
                   window.open(receiptUrl(lastDonation.receipt_no, lastDonation.public_token, lang), '_blank', 'noopener')
                 }
-                className={`flex-1 ${btnGhost}`}
+                className="text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
               >
                 {t.previewReceiptButton}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setLastDonation(null)
-                  setSavedOffline(false)
-                }}
-                className="flex-1 rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-stone-700"
+                onClick={handleDismiss}
+                className="text-sm font-semibold text-stone-500 transition-colors hover:text-stone-800"
               >
-                {t.newCollectionButton}
+                {t.skipForNow}
               </button>
             </div>
           </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p id="send-sheet-title" className="flex items-center gap-2 text-base font-bold text-stone-900">
+              <span aria-hidden="true" className="h-2.5 w-2.5 flex-none rounded-full bg-amber-500" />
+              {t.savedOnPhone}
+            </p>
+            {/* No receipt number and no send yet — there is no public_token until
+                the row actually syncs; it waits in Pending Send. */}
+            <p className="text-[13px] text-stone-500">{t.savedOffline}</p>
+            <button type="button" onClick={handleDismiss} className={btnPrimaryLg}>
+              {t.closeSheet}
+            </button>
+          </div>
         )}
-        {savedOffline && (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800">
-            {t.savedOffline}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className={errorText}>
-            {error}
-          </p>
-        )}
-      </form>
+      </Sheet>
 
       {isVolunteer && (
         <>

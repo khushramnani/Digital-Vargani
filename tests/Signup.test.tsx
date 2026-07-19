@@ -31,8 +31,9 @@ function renderCreateForm() {
   fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
 }
 
-// F7: the state <select> is now a city typeahead — type a city and pick the
-// suggestion, which fills BOTH city and state before submit.
+// F7 (v4): city + state are now two visible fields sharing one assist layer.
+// Typing a city and picking the suggestion fills BOTH — the visible State field
+// included — before submit.
 function fillAndSubmit(mandalName: string, adminName: string, opts: { slug?: string; city?: string; state?: string } = {}) {
   const city = opts.city ?? 'Mumbai'
   const state = opts.state ?? 'Maharashtra'
@@ -85,12 +86,17 @@ describe('Signup', () => {
     )
   })
 
-  it('fills both city and state from one typeahead pick', async () => {
+  it('fills both city and the visible state field from one typeahead pick', async () => {
     createMandal.mockResolvedValue('11111111-1111-1111-1111-000000000001')
     renderCreateForm()
 
-    // Vadodara resolves to Gujarat — proving the pick sets state, not just city.
-    fillAndSubmit('Baroda Mandal', 'New Founder', { city: 'Vadodara', state: 'Gujarat' })
+    fireEvent.change(screen.getByLabelText('Mandal name'), { target: { value: 'Baroda Mandal' } })
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'New Founder' } })
+    // Vadodara resolves to Gujarat — the pick fills the visible State field too.
+    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Vadodara' } })
+    fireEvent.click(screen.getByText('Vadodara, Gujarat'))
+    expect(screen.getByLabelText('State')).toHaveValue('Gujarat')
+    fireEvent.click(screen.getByRole('button', { name: 'Create my mandal' }))
 
     await waitFor(() =>
       expect(createMandal).toHaveBeenCalledWith('Baroda Mandal', 'New Founder', {

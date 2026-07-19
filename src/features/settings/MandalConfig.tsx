@@ -10,6 +10,8 @@ import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { CityTypeahead } from '../../components/CityTypeahead'
+import { PhoneInput } from '../../components/PhoneInput'
+import { normalizeToE164 } from '../../lib/phone'
 import { field as inputCls } from '../../components/ui'
 import { ReceiptView } from '../receipt/ReceiptPage'
 import { parseInquiryContacts, type InquiryContact, type PublicReceipt } from '../../lib/db/receipt'
@@ -133,10 +135,17 @@ export function MandalConfigContent() {
       setCityVal(config.city ?? '')
       setStateVal(config.state ?? '')
       setAddress(config.address ?? '')
-      setCreatorPhone(config.creator_phone ?? '')
+      // v4 §3: phones live as E.164 now — normalize legacy 10-digit rows on
+      // read so PhoneInput seeds from a clean value and a plain re-save keeps it E.164.
+      setCreatorPhone(normalizeToE164(config.creator_phone ?? ''))
       setPresidentName(config.president_name ?? '')
       setVisibility(toVisibility(config.transparency_visibility))
-      setContacts(parseInquiryContacts(config.inquiry_contacts))
+      setContacts(
+        parseInquiryContacts(config.inquiry_contacts).map((c) => ({
+          ...c,
+          phone: normalizeToE164(c.phone),
+        })),
+      )
       setHidePresident(config.hide_president_contact)
       setReceiptPrefix(config.receipt_prefix)
       setUpiVpa(config.upi_vpa ?? '')
@@ -290,6 +299,8 @@ export function MandalConfigContent() {
               placeholder={t.cityPlaceholder}
               help={t.cityHelp}
               useAsTypedLabel={t.cityUseAsTyped}
+              stateLabel={t.stateLabel}
+              statePlaceholder={t.statePlaceholder}
             />
             <Field label={t.addressLabel} help={t.addressHelp}>
               <textarea
@@ -299,15 +310,12 @@ export function MandalConfigContent() {
                 className={`${inputCls} resize-none`}
               />
             </Field>
-            <Field label={t.creatorPhoneLabel} help={t.creatorPhoneHelp}>
-              <input
-                type="tel"
-                inputMode="tel"
-                value={creatorPhone}
-                onChange={(e) => setCreatorPhone(e.target.value)}
-                className={inputCls}
-              />
-            </Field>
+            {/* v4 §3: E.164 via PhoneInput (its own label + help below, so it's
+                not wrapped in <Field> — that would double the label). */}
+            <div className="flex flex-col gap-1.5">
+              <PhoneInput value={creatorPhone} onChange={setCreatorPhone} label={t.creatorPhoneLabel} />
+              <span className="text-xs leading-relaxed text-stone-500">{t.creatorPhoneHelp}</span>
+            </div>
           </Section>
 
           <Section title={t.sectionBranding} help={t.sectionBrandingHelp}>
@@ -415,14 +423,12 @@ export function MandalConfigContent() {
                     ×
                   </button>
                 </div>
-                <input
-                  aria-label={`${t.contactPhoneLabel} ${i + 1}`}
-                  type="tel"
-                  inputMode="tel"
+                <PhoneInput
+                  id={`contact-phone-${i}`}
+                  label={`${t.contactPhoneLabel} ${i + 1}`}
                   value={contact.phone}
-                  onChange={(e) => updateContact(i, { phone: e.target.value })}
+                  onChange={(e164) => updateContact(i, { phone: e164 })}
                   placeholder={t.contactPhonePlaceholder}
-                  className={inputCls}
                 />
               </div>
             ))}

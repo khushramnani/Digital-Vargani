@@ -16,6 +16,7 @@ import { ExpensesScreen, ExpensesContent } from '../features/expenses/ExpensesSc
 import { HandoverScreen, HandoverContent } from '../features/cashinhand/handover'
 import { CashInHandScreen, CashInHandContent } from '../features/cashinhand/CashInHand'
 import { MasterLedgerContent } from '../features/ledger/MasterLedger'
+import { DonorsContent } from '../features/donors/Donors'
 import { PublicTransparency } from '../features/transparency/PublicTransparency'
 import { AdminTransparencyContent } from '../features/transparency/AdminTransparency'
 
@@ -45,6 +46,7 @@ export function AppRoutes() {
       >
         <Route path="/admin" element={<MasterLedgerContent />} />
         <Route path="/admin/collections" element={<CollectionsContent />} />
+        <Route path="/admin/donors" element={<DonorsContent />} />
         <Route path="/admin/expenses" element={<ExpensesContent />} />
         <Route path="/admin/handovers" element={<HandoverContent />} />
         <Route path="/admin/cash-in-hand" element={<CashInHandContent />} />

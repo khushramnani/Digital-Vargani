@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
 import { card, field, label as labelCls, btnPrimary, btnGhost, errorText } from '../../components/ui'
+import { PhoneInput } from '../../components/PhoneInput'
 import type { Tables } from '../../lib/db/database.types'
 
 type Volunteer = Tables<'users'>
@@ -118,14 +119,12 @@ export function VolunteersContent() {
           onChange={(event) => setName(event.target.value)}
           className={field}
         />
-        <label htmlFor="volunteer-phone" className={labelCls}>
-          {strings.volunteers.phoneLabel}
-        </label>
-        <input
+        {/* v4 §3: E.164 phone via the country-picker input (kills the silent +91). */}
+        <PhoneInput
           id="volunteer-phone"
+          label={strings.volunteers.phoneLabel}
           value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          className={field}
+          onChange={setPhone}
         />
         <button type="submit" disabled={submitting} className={btnPrimary}>
           {submitting ? strings.volunteers.adding : strings.volunteers.addButton}

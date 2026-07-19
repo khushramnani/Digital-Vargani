@@ -6,6 +6,7 @@
 // sent"). No `status` column: presence in this table means "still pending."
 import Dexie, { type EntityTable } from 'dexie'
 import type { DonationMode } from '../validation/donation'
+import type { DonationCategory } from '../db/donations'
 
 export interface OutboxDonation {
   localId: string // crypto.randomUUID(); also doubles as client_idempotency_key on sync
@@ -14,6 +15,11 @@ export interface OutboxDonation {
   donorPhone: string
   amountPaise: number
   mode: DonationMode
+  // v4 (§2): donation source category. Like authUserId, a plain (non-indexed)
+  // property — sync reads it in JS — so no schema/version bump is needed. Rows
+  // queued before this field existed carry it as undefined; sync defaults them
+  // to 'society' (the DB column's own default) rather than stranding them.
+  category: DonationCategory
   collectedBy: string
   queuedAt: string // ISO timestamp, for display/ordering only
   // Poison-queue tracking (audit 2026-07-18 #6): count of server REJECTIONS

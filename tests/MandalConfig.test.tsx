@@ -150,9 +150,11 @@ describe('MandalConfigScreen', () => {
     render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
-    // F7: type a city and pick the suggestion — fills city + state together.
+    // F7 (v4): two visible fields. Type a city and pick the suggestion — the
+    // pick fills the (now visible, user-owned) State field too.
     fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Pune' } })
     fireEvent.click(screen.getByText('Pune, Maharashtra'))
+    expect(screen.getByLabelText('State')).toHaveValue('Maharashtra')
 
     // F3: president name under the receipt signature.
     fireEvent.change(screen.getByLabelText("President's name"), { target: { value: 'Shri Madhukar Deshmukh' } })
@@ -161,6 +163,8 @@ describe('MandalConfigScreen', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Signed-in members of this mandal' }))
 
     // F6: one extra receipt contact + hide the president's number.
+    // v4 §3: the phone is entered via the PhoneInput national field (default
+    // 🇮🇳 +91) and stored as E.164.
     fireEvent.click(screen.getByRole('button', { name: 'Add another contact' }))
     fireEvent.change(screen.getByLabelText('Name 1'), { target: { value: 'Suresh Kulkarni' } })
     fireEvent.change(screen.getByLabelText('Phone 1'), { target: { value: '9876500000' } })
@@ -176,7 +180,7 @@ describe('MandalConfigScreen', () => {
           state: 'Maharashtra',
           president_name: 'Shri Madhukar Deshmukh',
           transparency_visibility: 'members',
-          inquiry_contacts: [{ name: 'Suresh Kulkarni', phone: '9876500000' }],
+          inquiry_contacts: [{ name: 'Suresh Kulkarni', phone: '+919876500000' }],
           hide_president_contact: true,
         }),
       ),

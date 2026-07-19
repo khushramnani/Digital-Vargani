@@ -62,6 +62,7 @@ const donationInput: CreateDonationInput = {
   donorPhone: '9876543210',
   amountPaise: 50100,
   mode: 'cash',
+  category: 'society',
   collectedBy: 'volunteer-1',
 }
 
@@ -116,6 +117,9 @@ describe('enqueueDonation', () => {
       donorPhone: donationInput.donorPhone,
       amountPaise: donationInput.amountPaise,
       mode: donationInput.mode,
+      // v4 §2: the source category rides the outbox row so an offline-queued
+      // donation syncs with the category the volunteer actually picked.
+      category: donationInput.category,
       collectedBy: donationInput.collectedBy,
       queuedAt: expect.any(String),
     })
@@ -142,6 +146,7 @@ describe('syncOutboxItem', () => {
       donorPhone: donationInput.donorPhone,
       amountPaise: donationInput.amountPaise,
       mode: donationInput.mode,
+      category: donationInput.category,
       collectedBy: donationInput.collectedBy,
       clientIdempotencyKey: localId,
     })
