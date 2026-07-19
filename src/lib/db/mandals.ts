@@ -13,7 +13,7 @@ import { supabase } from './client'
 export async function createMandal(
   mandalName: string,
   adminName: string,
-  opts: { slugHint?: string; state?: string; address?: string } = {},
+  opts: { slugHint?: string; state?: string; address?: string; city?: string } = {},
 ): Promise<string> {
   const { data, error } = await supabase.rpc('create_mandal', {
     mandal_name: mandalName,
@@ -21,6 +21,7 @@ export async function createMandal(
     slug_hint: opts.slugHint,
     mandal_state: opts.state,
     mandal_address: opts.address,
+    mandal_city: opts.city,
   })
   // supabase-js returns a PostgrestError (a plain object, NOT an Error
   // instance), so throwing it raw makes every `err instanceof Error` check

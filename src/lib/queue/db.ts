@@ -29,8 +29,11 @@ export const db = new Dexie('vinayak-mandal') as Dexie & {
 
 // authUserId is a plain (non-indexed) property — sync filters it in JS — so
 // no schema/version bump is needed for it. Rows queued before this field
-// existed carry it as undefined and are treated as belonging to no current
-// session (fenced out of sync).
+// existed carry it as undefined (and a session-less enqueue stores ''); sync
+// treats an undefined/empty tag as "not bound to any specific session" and
+// pushes it under the CURRENT session rather than stranding it forever — only
+// a row tagged for a DIFFERENT session is fenced out (see syncAllPending).
+// Cross-mandal safety comes from the composite actor FKs, not from this tag.
 db.version(1).stores({
   outbox: 'localId, queuedAt',
 })

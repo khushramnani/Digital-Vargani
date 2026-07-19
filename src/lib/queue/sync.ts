@@ -54,6 +54,12 @@ export async function enqueueDonation(input: CreateDonationInput): Promise<{ loc
   const localId = crypto.randomUUID()
   await db.outbox.add({
     localId,
+    // Enqueue only ever runs from the collection form, i.e. with a signed-in
+    // volunteer, so this resolves to their real auth id. The '' fallback is the
+    // "untagged" sentinel for the (practically unreachable) session-less case —
+    // it is NOT fenced by session (see syncAllPending), so it syncs under
+    // whoever is signed in; the composite actor FK is what still stops it
+    // landing in another mandal's books.
     authUserId: (await currentAuthUserId()) ?? '',
     donorName: input.donorName,
     donorPhone: input.donorPhone,

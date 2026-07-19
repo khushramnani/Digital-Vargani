@@ -33,6 +33,11 @@ const cashReceipt: PublicReceipt = {
   logo_url: null,
   signature_url: 'https://example.com/signature.png',
   receipt_prefix: 'VM',
+  city: 'Pune',
+  president_name: 'Shri Madhukar Deshmukh',
+  creator_phone: '9000000001',
+  inquiry_contacts: [],
+  hide_president_contact: false,
 }
 
 function renderReceiptPage(token: string) {
