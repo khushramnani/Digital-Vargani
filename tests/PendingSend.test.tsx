@@ -77,6 +77,7 @@ const pendingDonation: Tables<'donations'> = {
   donor_phone: '9876543210',
   amount_paise: 50100,
   mode: 'cash',
+  category: 'society',
   collected_by: 'volunteer-1',
   created_at: '2026-01-01T00:00:00Z',
   voided: false,
@@ -150,7 +151,9 @@ describe('PendingSend', () => {
     const expectedMessage = encodeURIComponent(
       'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
-    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    // v4: the stored legacy 10-digit phone is normalized to E.164 (+91…) before
+    // the sms: link is built (send.ts / normalizeToE164).
+    expect(window.location.href).toBe(`sms:+919876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 
@@ -260,7 +263,9 @@ describe('PendingSend', () => {
     const expectedMessage = encodeURIComponent(
       'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
-    expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
+    // v4: the stored legacy 10-digit phone is normalized to E.164 (+91…) before
+    // the sms: link is built (send.ts / normalizeToE164).
+    expect(window.location.href).toBe(`sms:+919876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
   })
 })

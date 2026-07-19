@@ -42,6 +42,7 @@ export type Database = {
       donations: {
         Row: {
           amount_paise: number
+          category: string
           client_idempotency_key: string | null
           collected_by: string
           created_at: string
@@ -60,6 +61,7 @@ export type Database = {
         }
         Insert: {
           amount_paise: number
+          category?: string
           client_idempotency_key?: string | null
           collected_by: string
           created_at?: string
@@ -78,6 +80,7 @@ export type Database = {
         }
         Update: {
           amount_paise?: number
+          category?: string
           client_idempotency_key?: string | null
           collected_by?: string
           created_at?: string
@@ -398,6 +401,18 @@ export type Database = {
         }
         Returns: string
       }
+      donors_summary: {
+        Args: { p_year?: number }
+        Returns: {
+          donation_count: number
+          donor_key: string
+          donor_name: string
+          donor_phone: string
+          first_at: string
+          last_at: string
+          total_paise: number
+        }[]
+      }
       get_expense_categories: { Args: never; Returns: string[] }
       get_mandal_default_lang: { Args: never; Returns: string }
       get_public_receipt: {
@@ -446,6 +461,7 @@ export type Database = {
           name: string
         }[]
       }
+      purge_donations: { Args: { scope: string }; Returns: number }
       redeem_invite: { Args: { token: string }; Returns: undefined }
       reissue_invite: { Args: { volunteer_id: string }; Returns: string }
       slugify: { Args: { txt: string }; Returns: string }

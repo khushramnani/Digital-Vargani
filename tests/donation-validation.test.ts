@@ -3,7 +3,7 @@ import { validateDonationInput, type DonationFormInput } from '../src/lib/valida
 
 const validInput: DonationFormInput = {
   donorName: 'Ramesh Kulkarni',
-  donorPhone: '9876543210',
+  donorPhone: '+919876543210',
   amountRupees: '501',
   mode: 'cash',
 }
@@ -27,7 +27,7 @@ describe('validateDonationInput', () => {
   })
 
   it('still rejects a non-empty phone number that is too short to be plausible', () => {
-    const result = validateDonationInput({ ...validInput, donorPhone: '12345' })
+    const result = validateDonationInput({ ...validInput, donorPhone: '+9112' })
     expect(result.valid).toBe(false)
     expect(result.errors.donorPhone).toBeDefined()
   })
@@ -59,7 +59,7 @@ describe('validateDonationInput', () => {
   it('reports every field error at once when everything is invalid', () => {
     // A too-short (but non-empty) phone so it still errors; empty phone is now
     // valid and would otherwise drop out of this set.
-    const result = validateDonationInput({ donorName: '', donorPhone: '123', amountRupees: '', mode: '' })
+    const result = validateDonationInput({ donorName: '', donorPhone: '+9112', amountRupees: '', mode: '' })
     expect(result.valid).toBe(false)
     expect(Object.keys(result.errors).sort()).toEqual(['amountRupees', 'donorName', 'donorPhone', 'mode'])
   })

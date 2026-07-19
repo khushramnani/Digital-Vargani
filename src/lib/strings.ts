@@ -7,6 +7,8 @@ export const strings = {
     // Only donation collection has an offline queue; expenses/handovers write
     // straight to the server, so set that expectation up front (audit #10).
     onlineOnlyHint: 'Needs a connection — this saves online now, it does not queue offline like collecting donations.',
+    // v4: PhoneInput country picker
+    countrySearchPlaceholder: 'Search country or code…',
   },
   void: {
     button: 'Void',
@@ -95,6 +97,7 @@ export const strings = {
     collectionsLink: 'All collections',
     collectDonationLink: 'Collect donation',
     adminsLink: 'Manage admins',
+    donorsLink: 'Donors',
     // One-line description under each dashboard nav card.
     descriptions: {
       collect: 'Log a cash, UPI or bank donation',
@@ -104,6 +107,7 @@ export const strings = {
       cashInHand: 'What each volunteer is holding',
       volunteers: 'Invite and manage collectors',
       admins: 'Who can manage this mandal',
+      donors: 'Donor directory & follow-ups',
       transparency: 'Publish your public fund report',
       settings: 'Identity, branding & payments',
     },
@@ -175,6 +179,8 @@ export const strings = {
     removeContact: 'Remove contact',
     contactsMaxHint: 'Up to two extra contacts besides the president.',
     presidentContactTag: 'President · default contact',
+    // Shown in place of a president name — never the mandal name (v4 §4).
+    previewNoPresidentName: 'No president name set',
     hidePresidentLabel: "Hide the president's number on receipts",
     hidePresidentHelp: 'The president still shows when no other contact is set — donors always have someone to ask.',
   },
@@ -259,6 +265,17 @@ export const strings = {
     // new-issue #4: donor gave no phone, so there is nobody to text/message
     noPhoneHint: 'No phone number given — receipt cannot be sent.',
     backToDashboard: 'Dashboard',
+    // v4: donation source category (remembered per session)
+    categoryLabel: 'Source',
+    categorySociety: 'Society',
+    categoryShop: 'Shop',
+    categoryOther: 'Other',
+    // v4: bottom-sheet send step
+    loggedPrefix: ' logged',
+    receiptLabel: 'Receipt ',
+    savedOnPhone: 'Saved on phone — will sync when online',
+    skipForNow: 'Skip for now',
+    closeSheet: 'Close',
     errors: {
       donorName: "Enter the donor's name.",
       donorPhone: 'Enter a valid phone number.',
@@ -292,6 +309,42 @@ export const strings = {
     clearAllPhraseLabel: 'Type DELETE to confirm',
     clearAllPhrase: 'DELETE',
     cleared: 'Donation history cleared.',
+    // v4: expandable row detail
+    detailPhone: 'Phone',
+    detailCategory: 'Source',
+    detailCollectedBy: 'Collected by',
+    detailOpenReceipt: 'Open receipt',
+    detailCopyLink: 'Copy link',
+    detailCall: 'Call',
+    detailWhatsApp: 'WhatsApp',
+    detailCopied: 'Link copied',
+    unknownCollector: 'Unknown',
+    // v4: year + source filters
+    yearFilterLabel: 'Year',
+    allYears: 'All years',
+    categoryFilterAll: 'All sources',
+    noFilterResults: 'No donations match these filters.',
+    keepPastYearsHint: 'Keep past years — use the year filter above instead of clearing.',
+    // v4: permanent purge (Danger Zone), separate from the everyday soft "clear"
+    purgeRemovedButton: 'Permanently delete removed',
+    purgeRemovedHint: 'Erase only the already-removed donations from the database.',
+    purgeAllButton: 'Permanently delete ALL history',
+    purgeAllHint: 'Erase this mandal’s entire donation history — for a fresh season or test data.',
+    purgeConsequence:
+      'This cannot be undone. Donor receipt links will stop working, and totals, donor history and the transparency report will change.',
+    purgeRemovedTitle: 'Permanently delete removed donations?',
+    purgeAllTitle: 'Permanently delete ALL donation history?',
+    purgePhraseLabel: 'Type DELETE FOREVER to confirm',
+    purgePhrase: 'DELETE FOREVER',
+    // The nuclear scope gets its OWN phrase: the two purge buttons sit side by
+    // side, and an admin who has typed the removed-only phrase before would
+    // otherwise clear the entire ledger from muscle memory after a mis-tap.
+    purgeAllPhraseLabel: 'Type ERASE ALL HISTORY to confirm',
+    purgeAllPhrase: 'ERASE ALL HISTORY',
+    purgeRemovedConfirm: 'Delete removed forever',
+    purgeAllConfirm: 'Delete everything forever',
+    purgedRemovedNotice: 'Removed donations permanently deleted.',
+    purgedAllNotice: 'All donation history permanently deleted.',
   },
   pendingSend: {
     title: 'Pending Send',
@@ -374,6 +427,24 @@ export const strings = {
     collectedPrefix: 'collected ',
     handedPrefix: 'handed ',
   },
+  // v4: admin donor directory (donors_summary RPC)
+  donors: {
+    title: 'Donors',
+    subtitle: 'Who gave what — tap a donor to call or message for follow-ups.',
+    empty: 'No donations yet.',
+    searchPlaceholder: 'Search name or phone…',
+    totalGivenLabel: 'Total given',
+    donationsLabel: 'donations',
+    firstLabel: 'First',
+    lastLabel: 'Last',
+    call: 'Call',
+    whatsApp: 'WhatsApp',
+    historyTitle: 'Donation history',
+    yearFilterLabel: 'Year',
+    allYears: 'All years',
+    anonymous: 'Unnamed donor',
+    noPhone: 'No phone',
+  },
   transparency: {
     title: 'Transparency Report',
     totalCollectedLabel: 'Total collected from society',
@@ -455,6 +526,18 @@ export const strings = {
     handedPrefix: 'handed ',
     whereMoneyWentTitle: 'Where the money went',
     noExpensesYet: 'No expenses recorded yet.',
+    // v4: "where money came from" (source split) + collections insight
+    whereMoneyCameFromTitle: 'Where the money came from',
+    sourceSocietyLabel: 'Society',
+    sourceShopLabel: 'Shop',
+    sourceOtherLabel: 'Other',
+    donationsCountLabel: 'donations',
+    noDonationsYet: 'No donations recorded yet.',
+    insightTitle: 'Collections insight',
+    insightTotalDonations: 'Donations',
+    insightUniqueDonors: 'Unique donors',
+    insightAvgDonation: 'Average',
+    insightLargestDonation: 'Largest',
   },
   landing: {
     productName: 'Digital Vargani',

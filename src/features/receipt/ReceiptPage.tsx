@@ -1,10 +1,11 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { getPublicReceipt, parseInquiryContacts, type InquiryContact, type PublicReceipt } from '../../lib/db/receipt'
+import { getPublicReceipt, parseInquiryContacts, type PublicReceipt } from '../../lib/db/receipt'
 import { ReceiptStamp } from '../../components/ReceiptStamp'
 import { formatINR } from '../../lib/money'
 import { amountInWords } from '../../lib/amountWords'
 import { receiptStrings, toLang, type Lang } from '../../lib/i18n/receipt'
+import { formatForDisplay, normalizeToE164, waDigits } from '../../lib/phone'
 import { strings } from '../../lib/strings'
 
 type PageState =
@@ -74,21 +75,41 @@ function formatReceiptNumber(prefix: string, receiptNo: number, iso: string): st
   return `${prefix}/${year}/${String(receiptNo).padStart(4, '0')}`
 }
 
+// A resolved contact line. `name` is null for a phone with no PERSON attached
+// (the president's number saved with no president_name) — the view renders the
+// generic "For inquiries" label in that slot. We never substitute the mandal
+// name, which would read as a person.
+type ReceiptContact = { name: string | null; phone: string }
+
 // Builds the receipt's inquiry-contact list (F6). The president shows purely on
 // whether creator_phone came back: get_public_receipt now enforces the hide
 // rule server-side (it nulls creator_phone when the president is hidden AND
 // another contact exists, but keeps it when he's the sole contact), so the
 // client just trusts the field — no hide_president_contact/extra.length logic
 // here. Then up to two extra contacts; a contact needs a phone to appear.
-function inquiryContactsFor(receipt: PublicReceipt): InquiryContact[] {
-  const extra = parseInquiryContacts(receipt.inquiry_contacts)
+function inquiryContactsFor(receipt: PublicReceipt): ReceiptContact[] {
+  const extra: ReceiptContact[] = parseInquiryContacts(receipt.inquiry_contacts)
     .filter((c) => c.name.trim() && c.phone.trim())
     .slice(0, 2)
   const showPresident = !!receipt.creator_phone
+  // Drop the old `?? mandal_name` fallback entirely. A blank/whitespace
+  // president_name is treated as "no name" → name:null → generic label.
+  const presidentName = receipt.president_name?.trim() ? receipt.president_name : null
   return [
-    ...(showPresident ? [{ name: receipt.president_name ?? receipt.mandal_name, phone: receipt.creator_phone! }] : []),
+    ...(showPresident ? [{ name: presidentName, phone: receipt.creator_phone! }] : []),
     ...extra,
   ]
+}
+
+// Small WhatsApp glyph for the inquiry-contact rows. aria-hidden — the parent
+// <a> carries the accessible label. Inherits currentColor so it stays in the
+// parchment palette rather than shouting WhatsApp green.
+function WhatsAppGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.97L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.05-.95.24-3.2-.66-2.7-1.06-4.42-3.8-4.55-3.98-.13-.18-1.09-1.45-1.09-2.76 0-1.31.69-1.96.93-2.23a.98.98 0 0 1 .71-.33c.18 0 .36 0 .51.01.16.01.39-.06.6.46.24.58.82 2 .89 2.14.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.56.16.28.72 1.18 1.54 1.91 1.06.95 1.95 1.24 2.23 1.38.28.14.44.12.6-.07.16-.18.69-.8.87-1.08.18-.28.36-.23.6-.14.24.09 1.53.72 1.79.85.26.14.44.2.5.31.06.12.06.66-.18 1.34z" />
+    </svg>
+  )
 }
 
 // The donor-facing receipt CARD — pure and self-contained: give it a resolved
@@ -187,11 +208,11 @@ export function ReceiptView({ receipt, lang }: { receipt: PublicReceipt; lang: L
               <div className="flex w-full items-end justify-between gap-3 pt-1">
                 <div className="flex min-w-0 flex-col items-start">
                   {receipt.signature_url && !receipt.voided ? (
-                    <img src={receipt.signature_url} alt="" className="h-16 object-contain" />
+                    <img src={receipt.signature_url} alt="" className="h-24 max-w-[220px] object-contain" />
                   ) : (
-                    <div className="h-16" />
+                    <div className="h-24" />
                   )}
-                  <div className="mt-1 w-40 max-w-full border-t border-[#c9b78d] pt-1 text-left">
+                  <div className="mt-1 w-48 max-w-full border-t border-[#c9b78d] pt-1 text-left">
                     {receipt.president_name && (
                       <p className="font-mark text-[14px] leading-tight text-[#5a332b]">{receipt.president_name}</p>
                     )}
@@ -206,11 +227,27 @@ export function ReceiptView({ receipt, lang }: { receipt: PublicReceipt; lang: L
               {contacts.length > 0 && (
                 <div className="mt-6 w-full border-t border-dotted border-[#cdbb93] pt-3 text-center">
                   <p className="text-[10px] tracking-[0.18em] text-[#a38f6d] uppercase">{t.inquiryHeading}</p>
-                  {contacts.map((c, i) => (
-                    <p key={i} className="font-mark mt-1 text-[13px] text-[#6b4a3a]">
-                      {c.name} — {c.phone}
-                    </p>
-                  ))}
+                  {contacts.map((c, i) => {
+                    // Legacy rows may hold bare 10-digit numbers; normalize to
+                    // E.164 first so tel:/wa.me/display are all consistent.
+                    const e164 = normalizeToE164(c.phone)
+                    return (
+                      <div key={i} className="mt-2">
+                        <p className="font-mark text-[13px] text-[#6b4a3a]">{c.name ?? t.inquiryForLabel}</p>
+                        <p className="mt-0.5 flex items-center justify-center gap-2 text-[13px]">
+                          <a
+                            href={`tel:${e164}`}
+                            className="font-mark text-[#6b4a3a] underline decoration-dotted decoration-[#a8382a] underline-offset-4"
+                          >
+                            {formatForDisplay(e164)}
+                          </a>
+                          <a href={`https://wa.me/${waDigits(e164)}`} aria-label="WhatsApp" className="text-[#6b4a3a]">
+                            <WhatsAppGlyph className="h-4 w-4" />
+                          </a>
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

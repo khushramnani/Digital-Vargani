@@ -65,6 +65,7 @@ export async function enqueueDonation(input: CreateDonationInput): Promise<{ loc
     donorPhone: input.donorPhone,
     amountPaise: input.amountPaise,
     mode: input.mode,
+    category: input.category,
     collectedBy: input.collectedBy,
     queuedAt: new Date().toISOString(),
   })
@@ -106,6 +107,9 @@ export async function syncOutboxItem(localId: string): Promise<Donation | null> 
       donorPhone: item.donorPhone,
       amountPaise: item.amountPaise,
       mode: item.mode,
+      // Legacy outbox rows (queued before v4) carry no category — default to
+      // 'society', matching the DB column's default.
+      category: item.category ?? 'society',
       collectedBy: item.collectedBy,
       clientIdempotencyKey: item.localId,
     })

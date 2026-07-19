@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { buildSmsLink, buildWhatsAppLink, receiptUrl, buildReceiptMessage } from '../src/features/collection/send'
+import { normalizeToE164 } from '../src/lib/phone'
 import type { Donation } from '../src/lib/db/donations'
 import { LANGS } from '../src/lib/i18n/receipt'
 
@@ -67,28 +68,30 @@ describe('buildSmsLink', () => {
 })
 
 describe('buildWhatsAppLink', () => {
-  it('prepends 91 to a bare 10-digit number', () => {
-    const link = buildWhatsAppLink('9876543210', 'Hello')
-    expect(link).toBe('https://wa.me/919876543210?text=Hello')
-  })
-
-  it('strips spaces/dashes/parens before checking the digit count', () => {
-    const link = buildWhatsAppLink('(987) 654-3210', 'Hello')
-    expect(link).toBe('https://wa.me/919876543210?text=Hello')
-  })
-
-  it('leaves an already-prefixed international number unmodified (no re-prepending 91)', () => {
+  // The 10-digit heuristic is dead: the input is E.164 (from PhoneInput, or via
+  // normalizeToE164 for legacy rows). buildWhatsAppLink just strips the +.
+  it('strips the + from an E.164 number for the wa.me target', () => {
     const link = buildWhatsAppLink('+919876543210', 'Hello')
     expect(link).toBe('https://wa.me/919876543210?text=Hello')
   })
 
-  it('leaves a non-10-digit number as-is rather than guessing a prefix', () => {
-    const link = buildWhatsAppLink('12025550123', 'Hello')
-    expect(link).toBe('https://wa.me/12025550123?text=Hello')
+  it('sends a normalized legacy 10-digit number to the right +91 target', () => {
+    const link = buildWhatsAppLink(normalizeToE164('9876543210'), 'Hello')
+    expect(link).toBe('https://wa.me/919876543210?text=Hello')
+  })
+
+  it('routes an international +44 number to its own country target', () => {
+    const link = buildWhatsAppLink('+447911123456', 'Hello')
+    expect(link).toBe('https://wa.me/447911123456?text=Hello')
+  })
+
+  it('strips spaces and symbols from a display-formatted E.164 value', () => {
+    const link = buildWhatsAppLink('+91 98765 43210', 'Hello')
+    expect(link).toBe('https://wa.me/919876543210?text=Hello')
   })
 
   it('url-encodes the message the same way buildSmsLink does', () => {
-    const link = buildWhatsAppLink('9876543210', 'Thank you & regards, receipt: https://x/r/tok')
+    const link = buildWhatsAppLink('+919876543210', 'Thank you & regards, receipt: https://x/r/tok')
     expect(link).toBe(
       `https://wa.me/919876543210?text=${encodeURIComponent('Thank you & regards, receipt: https://x/r/tok')}`,
     )

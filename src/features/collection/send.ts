@@ -4,6 +4,7 @@
 import { markSmsSent, type Donation } from '../../lib/db/donations'
 import { toRupees } from '../../lib/money'
 import { receiptStrings, type Lang } from '../../lib/i18n/receipt'
+import { normalizeToE164, waDigits } from '../../lib/phone'
 
 export { markSmsSent }
 
@@ -18,15 +19,12 @@ export function buildSmsLink(phone: string, message: string): string {
 }
 
 // WhatsApp's wa.me links need a full international number, digits only (no
-// +, spaces, or symbols). Donor phone numbers are only validated as a
-// plausible 7-15 digit count (lib/validation/donation.ts), not a specific
-// format, so a bare 10-digit number is assumed to be an Indian mobile
-// missing its country code and gets 91 prepended; anything else is passed
-// through as-is on the assumption it already includes a country code.
-export function buildWhatsAppLink(phone: string, message: string): string {
-  const digits = phone.replace(/\D/g, '')
-  const withCountryCode = digits.length === 10 ? `91${digits}` : digits
-  return `https://wa.me/${withCountryCode}?text=${encodeURIComponent(message)}`
+// +, spaces, or symbols). The phone arrives as E.164 (from PhoneInput, or via
+// normalizeToE164 for legacy rows), so the country code is already present —
+// we just strip the '+'. No more 10-digit guessing (that lived here; it now
+// survives only in normalizeToE164 for old stored rows).
+export function buildWhatsAppLink(e164: string, message: string): string {
+  return `https://wa.me/${waDigits(e164)}?text=${encodeURIComponent(message)}`
 }
 
 // The donor's language rides on the receipt link as ?lang= rather than on
@@ -56,7 +54,8 @@ export function buildReceiptMessage(donation: Donation, lang: Lang): string {
 // update just leaves the row in the "Pending send" tray (PendingSend.tsx)
 // instead of surfacing an error over an otherwise-successful donation.
 export function sendReceiptSms(donation: Donation, lang: Lang): void {
-  window.location.href = buildSmsLink(donation.donor_phone ?? '', buildReceiptMessage(donation, lang))
+  const phone = normalizeToE164(donation.donor_phone ?? '')
+  window.location.href = buildSmsLink(phone, buildReceiptMessage(donation, lang))
   markSmsSent(donation.id).catch(() => {})
 }
 
@@ -67,6 +66,7 @@ export function sendReceiptSms(donation: Donation, lang: Lang): void {
 // unchanged: that column means "a receipt has been sent for this donation"
 // for the Pending Send tray's purposes, not "sent via SMS specifically".
 export function sendReceiptWhatsApp(donation: Donation, lang: Lang): void {
-  window.open(buildWhatsAppLink(donation.donor_phone ?? '', buildReceiptMessage(donation, lang)), '_blank', 'noopener')
+  const phone = normalizeToE164(donation.donor_phone ?? '')
+  window.open(buildWhatsAppLink(phone, buildReceiptMessage(donation, lang)), '_blank', 'noopener')
   markSmsSent(donation.id).catch(() => {})
 }

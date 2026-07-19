@@ -25,6 +25,7 @@ describe('receiptStrings', () => {
     expect(receiptStrings.en.notFound).toBe('Receipt not found.')
     expect(receiptStrings.en.stampCash).toBe('RECEIVED: CASH')
     expect(receiptStrings.en.signatureLabel).toBe('President')
+    expect(receiptStrings.en.inquiryForLabel).toBe('For inquiries')
     expect(receiptStrings.en.smsMessage(500, 'https://x.test/r/abc')).toBe(
       'Thank you for your ₹500 contribution. View your official receipt here: https://x.test/r/abc',
     )
@@ -48,7 +49,7 @@ describe('every language is complete', () => {
     const keys: (keyof typeof s)[] = [
       'notFound', 'donorLabel', 'amountLabel', 'receiptNoLabel', 'dateLabel',
       'stampCash', 'stampOnline', 'voidedBanner', 'voidedReasonPrefix', 'signatureLabel',
-      'inquiryHeading',
+      'inquiryHeading', 'inquiryForLabel',
     ]
     for (const key of keys) {
       expect(typeof s[key], `${lang}.${String(key)}`).toBe('string')

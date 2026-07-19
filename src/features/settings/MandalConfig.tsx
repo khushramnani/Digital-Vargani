@@ -10,6 +10,8 @@ import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { CityTypeahead } from '../../components/CityTypeahead'
+import { PhoneInput } from '../../components/PhoneInput'
+import { formatForDisplay, normalizeToE164 } from '../../lib/phone'
 import { field as inputCls } from '../../components/ui'
 import { ReceiptView } from '../receipt/ReceiptPage'
 import { parseInquiryContacts, type InquiryContact, type PublicReceipt } from '../../lib/db/receipt'
@@ -133,10 +135,17 @@ export function MandalConfigContent() {
       setCityVal(config.city ?? '')
       setStateVal(config.state ?? '')
       setAddress(config.address ?? '')
-      setCreatorPhone(config.creator_phone ?? '')
+      // v4 §3: phones live as E.164 now — normalize legacy 10-digit rows on
+      // read so PhoneInput seeds from a clean value and a plain re-save keeps it E.164.
+      setCreatorPhone(normalizeToE164(config.creator_phone ?? ''))
       setPresidentName(config.president_name ?? '')
       setVisibility(toVisibility(config.transparency_visibility))
-      setContacts(parseInquiryContacts(config.inquiry_contacts))
+      setContacts(
+        parseInquiryContacts(config.inquiry_contacts).map((c) => ({
+          ...c,
+          phone: normalizeToE164(c.phone),
+        })),
+      )
       setHidePresident(config.hide_president_contact)
       setReceiptPrefix(config.receipt_prefix)
       setUpiVpa(config.upi_vpa ?? '')
@@ -224,7 +233,13 @@ export function MandalConfigContent() {
     mandal_name: name,
     city: cityVal.trim() || null,
     president_name: presidentName.trim() || null,
-    creator_phone: creatorPhone.trim() || null,
+    // Mirror the SERVER's hide rule (20260719130000: get_public_receipt nulls
+    // creator_phone when the president is hidden AND another contact exists).
+    // The preview is sold as "the exact receipt a donor gets", so without this
+    // an admin who ticks "hide my number" still sees his own mobile printed —
+    // the one screen built to verify a privacy setting was lying about it.
+    creator_phone:
+      hidePresident && cleanContacts.length > 0 ? null : creatorPhone.trim() || null,
     logo_url: logoUrl,
     signature_url: signatureUrl,
     inquiry_contacts: cleanContacts,
@@ -290,6 +305,8 @@ export function MandalConfigContent() {
               placeholder={t.cityPlaceholder}
               help={t.cityHelp}
               useAsTypedLabel={t.cityUseAsTyped}
+              stateLabel={t.stateLabel}
+              statePlaceholder={t.statePlaceholder}
             />
             <Field label={t.addressLabel} help={t.addressHelp}>
               <textarea
@@ -299,15 +316,12 @@ export function MandalConfigContent() {
                 className={`${inputCls} resize-none`}
               />
             </Field>
-            <Field label={t.creatorPhoneLabel} help={t.creatorPhoneHelp}>
-              <input
-                type="tel"
-                inputMode="tel"
-                value={creatorPhone}
-                onChange={(e) => setCreatorPhone(e.target.value)}
-                className={inputCls}
-              />
-            </Field>
+            {/* v4 §3: E.164 via PhoneInput (its own label + help below, so it's
+                not wrapped in <Field> — that would double the label). */}
+            <div className="flex flex-col gap-1.5">
+              <PhoneInput value={creatorPhone} onChange={setCreatorPhone} label={t.creatorPhoneLabel} />
+              <span className="text-xs leading-relaxed text-stone-500">{t.creatorPhoneHelp}</span>
+            </div>
           </Section>
 
           <Section title={t.sectionBranding} help={t.sectionBrandingHelp}>
@@ -390,9 +404,13 @@ export function MandalConfigContent() {
           <Section title={t.sectionContacts} help={t.sectionContactsHelp}>
             <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
               <p className="text-[11px] font-semibold tracking-wide text-stone-500 uppercase">{t.presidentContactTag}</p>
+              {/* No mandal-name fallback: v4 §4 removed exactly that from the
+                  receipt (a mandal is not a person), so showing it here would
+                  tell the admin his mandal's name appears as the contact when
+                  the real receipt renders the generic "For inquiries" label. */}
               <p className="mt-1 text-sm text-stone-800">
-                {presidentName.trim() || name || '—'}
-                {creatorPhone.trim() ? ` · ${creatorPhone.trim()}` : ''}
+                {presidentName.trim() || t.previewNoPresidentName}
+                {creatorPhone.trim() ? ` · ${formatForDisplay(normalizeToE164(creatorPhone))}` : ''}
               </p>
             </div>
 
@@ -415,14 +433,12 @@ export function MandalConfigContent() {
                     ×
                   </button>
                 </div>
-                <input
-                  aria-label={`${t.contactPhoneLabel} ${i + 1}`}
-                  type="tel"
-                  inputMode="tel"
+                <PhoneInput
+                  id={`contact-phone-${i}`}
+                  label={`${t.contactPhoneLabel} ${i + 1}`}
                   value={contact.phone}
-                  onChange={(e) => updateContact(i, { phone: e.target.value })}
+                  onChange={(e164) => updateContact(i, { phone: e164 })}
                   placeholder={t.contactPhonePlaceholder}
-                  className={inputCls}
                 />
               </div>
             ))}

@@ -21,6 +21,10 @@ export type ReceiptStrings = {
   receivedFrom: string
   contributionLabel: string
   inquiryHeading: string
+  // Generic per-contact label used when a contact has a phone but no person
+  // name (e.g. president phone saved with no president_name). We NEVER fall
+  // back to the mandal name here — that would read as a person's name.
+  inquiryForLabel: string
   footerNote: string
   // Kept short (SMS length matters). {amountRupees} is a plain number
   // (no thousands separator, no repeated ₹) so the message stays short.
@@ -49,6 +53,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     receivedFrom: 'Received with gratitude from',
     contributionLabel: 'Contribution amount',
     inquiryHeading: 'For any questions',
+    inquiryForLabel: 'For inquiries',
     footerNote:
       'This digital receipt is issued in the spirit of the traditional bill-book. A copy has been sent to your phone. May Bappa bless you. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
@@ -71,6 +76,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     receivedFrom: 'कृतज्ञतापूर्वक स्वीकारले',
     contributionLabel: 'वर्गणी रक्कम',
     inquiryHeading: 'काही प्रश्नांसाठी संपर्क',
+    inquiryForLabel: 'चौकशीसाठी',
     footerNote:
       'ही डिजिटल पावती पारंपरिक पावती पुस्तकाच्या भावनेने दिली आहे. एक प्रत तुमच्या फोनवर पाठवली आहे. गणपती बाप्पा मोरया. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
@@ -93,6 +99,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     receivedFrom: 'सादर आभार सहित प्राप्त',
     contributionLabel: 'योगदान राशि',
     inquiryHeading: 'किसी भी प्रश्न के लिए',
+    inquiryForLabel: 'पूछताछ के लिए',
     footerNote:
       'यह डिजिटल रसीद पारंपरिक रसीद बही की भावना से जारी की गई है. एक प्रति आपके फ़ोन पर भेजी गई है. गणपति बाप्पा मोरया. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
@@ -115,6 +122,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     receivedFrom: 'સાભાર સ્વીકૃત',
     contributionLabel: 'ફાળાની રકમ',
     inquiryHeading: 'કોઈપણ પ્રશ્ન માટે',
+    inquiryForLabel: 'પૂછપરછ માટે',
     footerNote:
       'આ ડિજિટલ રસીદ પરંપરાગત રસીદ ચોપડાની ભાવનાથી આપવામાં આવી છે. એક નકલ તમારા ફોન પર મોકલી છે. ગણપતિ બાપ્પા મોર્યા. 🙏',
     smsMessage: (amountRupees, receiptLink) =>

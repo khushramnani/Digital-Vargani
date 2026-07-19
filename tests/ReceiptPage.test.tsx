@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import type { PublicReceipt } from '../src/lib/db/receipt'
 import { ReceiptPage } from '../src/features/receipt/ReceiptPage'
@@ -184,7 +184,14 @@ describe('ReceiptPage', () => {
     renderReceiptPage('tok-abc')
 
     await waitFor(() => expect(screen.getByText('For any questions')).toBeInTheDocument())
-    expect(screen.getByText('Shri Madhukar Deshmukh — 9000000001')).toBeInTheDocument()
+    // Legacy 10-digit number → normalized to E.164 for the tel: link, formatted
+    // '+91 90000 00001' for display, and digits-only for the WhatsApp link.
+    const tel = screen.getByRole('link', { name: '+91 90000 00001' })
+    expect(tel).toHaveAttribute('href', 'tel:+919000000001')
+    const wa = screen.getByRole('link', { name: 'WhatsApp' })
+    expect(wa).toHaveAttribute('href', 'https://wa.me/919000000001')
+    // The president name is the contact person (also shown under the signature).
+    expect(screen.getAllByText('Shri Madhukar Deshmukh').length).toBeGreaterThan(0)
   })
 
   it('hides the president contact when hidden and other contacts exist, but still lists the extras (F6)', async () => {
@@ -199,16 +206,45 @@ describe('ReceiptPage', () => {
     })
     renderReceiptPage('tok-abc')
 
-    await waitFor(() => expect(screen.getByText('Suresh Patil — 9000000002')).toBeInTheDocument())
-    // The president's phone line is suppressed (their name still appears under the signature).
-    expect(screen.queryByText('Shri Madhukar Deshmukh — 9000000001')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Suresh Patil')).toBeInTheDocument())
+    const tel = screen.getByRole('link', { name: '+91 90000 00002' })
+    expect(tel).toHaveAttribute('href', 'tel:+919000000002')
+    // The president's phone line is suppressed (their name still appears under
+    // the signature) — no tel: link for the president's number.
+    expect(screen.queryByRole('link', { name: '+91 90000 00001' })).not.toBeInTheDocument()
   })
 
   it('shows the president contact even when hidden if there is no one else to ask (F6 rule)', async () => {
     getPublicReceipt.mockResolvedValue({ ...cashReceipt, hide_president_contact: true, inquiry_contacts: [] })
     renderReceiptPage('tok-abc')
 
-    await waitFor(() => expect(screen.getByText('Shri Madhukar Deshmukh — 9000000001')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('link', { name: '+91 90000 00001' })).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: '+91 90000 00001' })).toHaveAttribute('href', 'tel:+919000000001')
+  })
+
+  it('drops the mandal-name fallback: president_name null shows the generic "For inquiries" label, never the mandal name as a person (v4 §4)', async () => {
+    getPublicReceipt.mockResolvedValue({ ...cashReceipt, president_name: null })
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('For inquiries')).toBeInTheDocument())
+    // The number still dials — the president is present purely via creator_phone.
+    expect(screen.getByRole('link', { name: '+91 90000 00001' })).toHaveAttribute('href', 'tel:+919000000001')
+
+    // CRUCIAL: the mandal name must never appear as a contact person. It shows
+    // as the page heading, but NOT inside the inquiry-contacts block.
+    const block = screen.getByText('For any questions').parentElement as HTMLElement
+    expect(within(block).getByText('For inquiries')).toBeInTheDocument()
+    expect(within(block).queryByText('Vinayak Mitra Mandal')).not.toBeInTheDocument()
+  })
+
+  it('renders the signature image at the larger h-24 / max-w-[220px] size (v4 §5)', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+    const sig = document.querySelector('img[src="https://example.com/signature.png"]')
+    expect(sig).not.toBeNull()
+    expect(sig).toHaveClass('h-24', 'max-w-[220px]', 'object-contain')
   })
 
   it('strips the cosmetic receiptNo prefix from a human-friendly URL and looks up the bare token (F4)', async () => {

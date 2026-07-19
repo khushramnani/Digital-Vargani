@@ -11,14 +11,16 @@ import { MasterLedgerContent } from '../src/features/ledger/MasterLedger'
 // lib/reconcile.ts functions (exhaustively unit-tested in reconcile.test.ts) —
 // only the fetches are mocked. The console frame + its nav now live in
 // AdminLayout (tests/AdminLayout.test.tsx); this file asserts the body only.
-const { fetchFullLedger, fetchActiveVolunteers, getExpenses } = vi.hoisted(() => ({
+const { fetchFullLedger, fetchActiveVolunteers, getExpenses, getDonations } = vi.hoisted(() => ({
   fetchFullLedger: vi.fn(),
   fetchActiveVolunteers: vi.fn(),
   getExpenses: vi.fn(),
+  getDonations: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/ledger', () => ({ fetchFullLedger, fetchActiveVolunteers }))
 vi.mock('../src/lib/db/expenses', () => ({ getExpenses }))
+vi.mock('../src/lib/db/donations', () => ({ getDonations }))
 
 const t = strings.ledger
 
@@ -43,11 +45,21 @@ const unbalancedLedger: Ledger = {
   bankOpeningPaise: 0,
 }
 
+// v4 §2: getDonations feeds the "where money came from" + "collections insight"
+// cards. Three non-voided donations across all three categories; Asha's two rows
+// (same phone) are one unique donor, Ravi (no phone) is a second.
+const dashboardDonations = [
+  { id: 'd1', amount_paise: 50000, category: 'society', donor_name: 'Asha', donor_phone: '+919876500001', voided: false, created_at: '2026-01-10T10:00:00Z', mode: 'cash', collected_by: 'v-1', receipt_no: 1 },
+  { id: 'd2', amount_paise: 150000, category: 'shop', donor_name: 'Ravi Shop', donor_phone: null, voided: false, created_at: '2026-02-10T10:00:00Z', mode: 'upi', collected_by: 'v-1', receipt_no: 2 },
+  { id: 'd3', amount_paise: 20000, category: 'other', donor_name: 'Asha', donor_phone: '+919876500001', voided: false, created_at: '2026-03-10T10:00:00Z', mode: 'cash', collected_by: 'v-1', receipt_no: 3 },
+]
+
 beforeEach(() => {
   vi.clearAllMocks()
   // Sensible defaults; individual tests override the ledger.
   fetchActiveVolunteers.mockResolvedValue([])
   getExpenses.mockResolvedValue([])
+  getDonations.mockResolvedValue([])
 })
 
 function renderScreen() {
@@ -93,5 +105,34 @@ describe('MasterLedgerScreen', () => {
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(t.booksImbalanceTitle))
     expect(screen.getByRole('status')).toHaveTextContent(`${t.discrepancyPrefix}₹1,000.00`)
+  })
+
+  it('renders the v4 source split and collections-insight cards from the donation rows', async () => {
+    fetchFullLedger.mockResolvedValue(balancedLedger)
+    getDonations.mockResolvedValue(dashboardDonations)
+    renderScreen()
+
+    // "Where the money came from": per-category label + amount (Society ₹500,
+    // Shop ₹1,500, Other ₹200).
+    await waitFor(() => expect(screen.getByText(t.whereMoneyCameFromTitle)).toBeInTheDocument())
+    expect(screen.getByText(t.sourceSocietyLabel)).toBeInTheDocument()
+    expect(screen.getByText(t.sourceShopLabel)).toBeInTheDocument()
+    expect(screen.getByText(t.sourceOtherLabel)).toBeInTheDocument()
+    expect(screen.getByText('₹500.00')).toBeInTheDocument()
+    expect(screen.getByText('₹200.00')).toBeInTheDocument()
+
+    // "Collections insight": total 3, unique donors 2, average ₹733.33.
+    expect(screen.getByText(t.insightTitle)).toBeInTheDocument()
+    expect(screen.getByText(t.insightUniqueDonors)).toBeInTheDocument()
+    expect(screen.getByText('₹733.33')).toBeInTheDocument()
+  })
+
+  it('shows the empty-donations copy on both v4 cards when there are no donations', async () => {
+    fetchFullLedger.mockResolvedValue(balancedLedger)
+    getDonations.mockResolvedValue([])
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByText(t.whereMoneyCameFromTitle)).toBeInTheDocument())
+    expect(screen.getAllByText(t.noDonationsYet)).toHaveLength(2)
   })
 })

@@ -28,3 +28,16 @@ export async function clearAllDonations(reason: string): Promise<number> {
   if (error) throw error
   return data ?? 0
 }
+
+// The permanent, true DELETE companion to the soft void above (v4 §8) — the
+// mandal's "empty the removed history" / "wipe the season" nuclear option.
+// Goes through the purge_donations RPC (SECURITY DEFINER, is_admin() +
+// mandal-scoped, search_path pinned) because RLS deliberately has NO DELETE
+// policy: the definer function is the only path that can hard-delete a
+// financial row, so a raw client still can't. 'removed' erases already-voided
+// rows only; 'all' erases the entire history. Returns how many rows were deleted.
+export async function purgeDonations(scope: 'removed' | 'all'): Promise<number> {
+  const { data, error } = await supabase.rpc('purge_donations', { scope })
+  if (error) throw error
+  return data ?? 0
+}
