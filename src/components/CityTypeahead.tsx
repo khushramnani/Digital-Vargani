@@ -53,8 +53,10 @@ export function CityTypeahead({
       const c = matches[i]
       onChange({ city: c.city, state: c.state })
     } else {
-      // "Use as typed": keep the typed city, leave state as-is/empty.
-      onChange({ city: city.trim(), state })
+      // "Use as typed": a free-text city has no known state, so clear it —
+      // otherwise a state left over from a previously-picked suggestion
+      // (e.g. Vadodara→Gujarat, then retype "Xyz") would linger, wrongly.
+      onChange({ city: city.trim(), state: '' })
     }
     setOpen(false)
   }

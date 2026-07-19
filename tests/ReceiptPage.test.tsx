@@ -188,9 +188,13 @@ describe('ReceiptPage', () => {
   })
 
   it('hides the president contact when hidden and other contacts exist, but still lists the extras (F6)', async () => {
+    // The hide rule is now enforced server-side: get_public_receipt nulls
+    // creator_phone when the president is hidden AND another contact exists.
+    // The client just trusts the field, so the mock returns creator_phone: null.
     getPublicReceipt.mockResolvedValue({
       ...cashReceipt,
       hide_president_contact: true,
+      creator_phone: null,
       inquiry_contacts: [{ name: 'Suresh Patil', phone: '9000000002' }],
     })
     renderReceiptPage('tok-abc')

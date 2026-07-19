@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
-import { AppShell } from '../../components/AppShell'
 import { card, field, label as labelCls, btnPrimary, errorText } from '../../components/ui'
 import type { Tables } from '../../lib/db/database.types'
 
@@ -24,12 +23,13 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
-// Admin-only screen (routed behind RequireRole role="admin"). Deliberately
-// simpler than volunteers.tsx: an admin's "invite" is just requesting a
-// magic link at /login with the email added here (link_admin_account, see
-// 20260714121305_add_users_email.sql, links it on first login) — no
-// invite_token/copy-link UI needed, unlike a volunteer's token-based invite.
-export function AdminsScreen() {
+// Admin-only content body (rendered inside AdminLayout's console frame at
+// /admin/admins). Deliberately simpler than volunteers.tsx: an admin's "invite"
+// is just requesting a magic link at /login with the email added here
+// (link_admin_account, see 20260714121305_add_users_email.sql, links it on
+// first login) — no invite_token/copy-link UI needed, unlike a volunteer's
+// token-based invite.
+export function AdminsContent() {
   const [admins, setAdmins] = useState<Admin[]>([])
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
@@ -81,7 +81,7 @@ export function AdminsScreen() {
   }
 
   return (
-    <AppShell title={strings.admins.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+    <>
       <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${card} p-5`}>
         <label htmlFor="admin-name" className={labelCls}>
           {strings.admins.nameLabel}
@@ -137,7 +137,7 @@ export function AdminsScreen() {
           ))}
         </ul>
       )}
-    </AppShell>
+    </>
   )
 }
 

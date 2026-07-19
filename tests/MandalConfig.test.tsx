@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
-import { MandalConfigScreen } from '../src/features/settings/MandalConfig'
+import { MandalConfigContent } from '../src/features/settings/MandalConfig'
 
 // Per the brief's testing section: mock src/lib/db/config.ts directly
 // (not the raw Supabase client) — this is a component test of the form
@@ -66,7 +66,7 @@ beforeEach(() => {
 
 describe('MandalConfigScreen', () => {
   it('renders existing values, converting bank_opening_paise back to rupees', async () => {
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
     expect(screen.getByLabelText('UPI VPA')).toHaveValue('mandal@upi')
@@ -79,7 +79,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('submits with bank_opening_paise converted from the rupees input via toPaise (5000 -> 500000)', async () => {
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -101,7 +101,7 @@ describe('MandalConfigScreen', () => {
 
   it('uploads a selected logo file and includes the returned URL on save', async () => {
     uploadMandalAsset.mockResolvedValue('https://example.com/mandal-assets/logo-1.png')
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -126,7 +126,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('adds and removes expense category tags', async () => {
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
@@ -147,7 +147,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('saves city+state (typeahead), president name, visibility, contacts and hide flag', async () => {
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
     // F7: type a city and pick the suggestion — fills city + state together.
@@ -184,7 +184,7 @@ describe('MandalConfigScreen', () => {
   })
 
   it('opens and closes the donor receipt preview with the current branding', async () => {
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview donor receipt' }))
@@ -199,7 +199,7 @@ describe('MandalConfigScreen', () => {
 
   it('shows an error instead of a saved confirmation when updateMandal rejects', async () => {
     updateMandal.mockRejectedValue(new Error('permission denied'))
-    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))

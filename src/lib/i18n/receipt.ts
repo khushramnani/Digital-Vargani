@@ -25,6 +25,11 @@ export type ReceiptStrings = {
   // Kept short (SMS length matters). {amountRupees} is a plain number
   // (no thousands separator, no repeated ₹) so the message stays short.
   smsMessage: (amountRupees: number, receiptLink: string) => string
+  // The tamper-evident "amount in words" line. Only the WRAPPER phrase is
+  // localized here; `words` (the digits-to-words conversion in amountWords.ts)
+  // stays English on every receipt — full number-word localization is out of
+  // scope for now.
+  amountInWordsLine: (words: string) => string
 }
 
 export const receiptStrings: Record<Lang, ReceiptStrings> = {
@@ -48,6 +53,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
       'This digital receipt is issued in the spirit of the traditional bill-book. A copy has been sent to your phone. May Bappa bless you. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
       `Thank you for your ₹${amountRupees} contribution. View your official receipt here: ${receiptLink}`,
+    amountInWordsLine: (words) => `Rupees ${words} only`,
   },
   mr: {
     notFound: 'पावती सापडली नाही.',
@@ -69,6 +75,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
       'ही डिजिटल पावती पारंपरिक पावती पुस्तकाच्या भावनेने दिली आहे. एक प्रत तुमच्या फोनवर पाठवली आहे. गणपती बाप्पा मोरया. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
       `तुमच्या ₹${amountRupees} वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: ${receiptLink}`,
+    amountInWordsLine: (words) => `रुपये ${words} फक्त`,
   },
   hi: {
     notFound: 'रसीद नहीं मिली.',
@@ -90,6 +97,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
       'यह डिजिटल रसीद पारंपरिक रसीद बही की भावना से जारी की गई है. एक प्रति आपके फ़ोन पर भेजी गई है. गणपति बाप्पा मोरया. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
       `आपके ₹${amountRupees} के योगदान के लिए धन्यवाद. अपनी आधिकारिक रसीद यहाँ देखें: ${receiptLink}`,
+    amountInWordsLine: (words) => `रुपये ${words} मात्र`,
   },
   gu: {
     notFound: 'રસીદ મળી નથી.',
@@ -111,6 +119,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
       'આ ડિજિટલ રસીદ પરંપરાગત રસીદ ચોપડાની ભાવનાથી આપવામાં આવી છે. એક નકલ તમારા ફોન પર મોકલી છે. ગણપતિ બાપ્પા મોર્યા. 🙏',
     smsMessage: (amountRupees, receiptLink) =>
       `તમારા ₹${amountRupees} ના યોગદાન બદલ આભાર. તમારી અધિકૃત રસીદ અહીં જુઓ: ${receiptLink}`,
+    amountInWordsLine: (words) => `રૂપિયા ${words} પૂરા`,
   },
 }
 

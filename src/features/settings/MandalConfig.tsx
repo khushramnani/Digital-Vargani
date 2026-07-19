@@ -9,7 +9,6 @@ import {
 import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
-import { AppShell } from '../../components/AppShell'
 import { CityTypeahead } from '../../components/CityTypeahead'
 import { field as inputCls } from '../../components/ui'
 import { ReceiptView } from '../receipt/ReceiptPage'
@@ -88,11 +87,11 @@ function ImageField({
   )
 }
 
-// Admin-only screen (routed behind RequireRole role="admin"). Single form
-// over the admin's own mandals row + its Storage-backed assets — RLS scopes
-// the row, so there's no tenant filter here. No volunteer management on this
-// screen, that's settings/volunteers.tsx.
-export function MandalConfigScreen() {
+// Admin-only content body (rendered inside AdminLayout's console frame at
+// /admin/settings). Single form over the admin's own mandals row + its
+// Storage-backed assets — RLS scopes the row, so there's no tenant filter here.
+// No volunteer management on this screen, that's settings/volunteers.tsx.
+export function MandalConfigContent() {
   const [loading, setLoading] = useState(true)
   // Held in state because updateMandal and uploadMandalAsset both need it.
   const [mandalId, setMandalId] = useState<string | null>(null)
@@ -269,15 +268,12 @@ export function MandalConfigScreen() {
   }
 
   if (loading) {
-    return (
-      <AppShell title={t.title} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
-        <p className="text-stone-400">{strings.auth.loading}</p>
-      </AppShell>
-    )
+    return <p className="text-stone-400">{strings.auth.loading}</p>
   }
 
   return (
-    <AppShell title={t.title} subtitle={t.subtitle} back={{ to: '/admin', label: strings.admin.dashboardTitle }}>
+    <>
+      <p className="text-[15px] text-stone-500">{t.subtitle}</p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <Section title={t.sectionIdentity} help={t.sectionIdentityHelp}>
             <Field label={t.nameLabel}>
@@ -562,7 +558,7 @@ export function MandalConfigScreen() {
               <ReceiptView receipt={sampleReceipt} lang={defaultLang} />
             </div>
           )}
-        </form>
-    </AppShell>
+      </form>
+    </>
   )
 }

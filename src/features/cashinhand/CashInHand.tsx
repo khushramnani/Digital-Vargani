@@ -25,14 +25,15 @@ function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-// Routed at /volunteer/cash-in-hand (role=volunteer) and /admin/cash-in-hand
-// (role=admin). The two roles see genuinely different shapes — a volunteer
-// sees their own "you owe the treasurer" hero + breakdown, an admin sees the
-// per-volunteer list — so this branches on appUser.role. fetchLedgerRows() is
-// RLS-scoped (a volunteer's select only returns their own rows), so
-// volunteerCashInHand is correct even without a real users/bankOpeningPaise —
-// it never reads those fields (see lib/reconcile.ts).
-export function CashInHandScreen() {
+// Content-only body, reused behind /admin/cash-in-hand (inside AdminLayout's
+// console frame) and /volunteer/cash-in-hand (inside the AppShell wrapper
+// below). The two roles see genuinely different shapes — a volunteer sees their
+// own "you owe the treasurer" hero + breakdown, an admin sees the per-volunteer
+// list — so the body branches on appUser.role. fetchLedgerRows() is RLS-scoped
+// (a volunteer's select only returns their own rows), so volunteerCashInHand is
+// correct even without a real users/bankOpeningPaise — it never reads those
+// fields (see lib/reconcile.ts).
+export function CashInHandContent() {
   const { appUser } = useAuth()
   const [rows, setRows] = useState<Row[]>([])
   const [vol, setVol] = useState<VolunteerView | null>(null)
@@ -78,11 +79,7 @@ export function CashInHandScreen() {
     }
   }, [appUser])
 
-  const isAdmin = appUser?.role === 'admin'
   const isVolunteer = appUser?.role === 'volunteer'
-  const home = isAdmin
-    ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/collect', label: strings.collection.title }
 
   // Only surface the breakdown stats that carry information — a fresh
   // volunteer who's only collected sees just the hero (collected == owed, so a
@@ -93,7 +90,7 @@ export function CashInHandScreen() {
   if (vol && vol.handed > 0) statCards.push({ label: t.handedOverLabel, paise: vol.handed })
 
   return (
-    <AppShell title={t.title} back={home}>
+    <>
       {error && (
         <p role="alert" className={errorText}>
           {error}
@@ -163,6 +160,23 @@ export function CashInHandScreen() {
         </ul>
       )}
 
+    </>
+  )
+}
+
+// Volunteer wrapper (/volunteer/cash-in-hand) — AppShell + bottom tab bar. The
+// admin route renders CashInHandContent bare inside AdminLayout instead.
+export function CashInHandScreen() {
+  const { appUser } = useAuth()
+  const isAdmin = appUser?.role === 'admin'
+  const isVolunteer = appUser?.role === 'volunteer'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/collect', label: strings.collection.title }
+
+  return (
+    <AppShell title={t.title} back={home}>
+      <CashInHandContent />
       {isVolunteer && (
         <>
           <div aria-hidden="true" className="h-16" />

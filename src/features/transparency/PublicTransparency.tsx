@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   getTransparencyReport,
   getTransparencyCategories,
@@ -47,6 +47,15 @@ export function PublicTransparency() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 bg-stone-50 px-4 py-8 sm:py-12">
+      {/* F8/v3: this public page has no in-app way back — a subtle fixed link
+          home, shown on every state (report, not-available, loading). */}
+      <Link
+        to="/"
+        className="fixed left-3 top-3 z-10 rounded-full bg-[#f7f0e1]/85 px-3 py-1.5 text-sm text-amber-800 shadow-sm ring-1 ring-amber-200/70 backdrop-blur transition-colors hover:text-amber-950"
+      >
+        ← {t.homeLink}
+      </Link>
+
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}

@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import { fetchFullLedger, fetchActiveVolunteers, type VolunteerSummary } from '../../lib/db/ledger'
 import { getExpenses, type Expense } from '../../lib/db/expenses'
 import {
@@ -15,32 +14,10 @@ import {
 } from '../../lib/reconcile'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
-import { supabase } from '../../lib/db/client'
 import { card } from '../../components/ui'
 import { FundDonut, type DonutSegment } from '../../components/FundDonut'
 
 const t = strings.ledger
-const a = strings.admin
-
-// Emoji live here (route + icon are structure, not copy); labels/descriptions
-// come from strings.admin so the operator UI stays translatable in one place.
-type NavItem = { to: string; icon: string; label: string; desc: string }
-
-const NAV: NavItem[] = [
-  { to: '/admin', icon: '📊', label: a.dashboardTitle, desc: a.dashboardSubtitle },
-  { to: '/collect', icon: '🪔', label: a.collectDonationLink, desc: a.descriptions.collect },
-  { to: '/admin/collections', icon: '🧾', label: a.collectionsLink, desc: a.descriptions.collections },
-  { to: '/admin/expenses', icon: '💸', label: a.expensesLink, desc: a.descriptions.expenses },
-  { to: '/admin/handovers', icon: '🤝', label: a.handoversLink, desc: a.descriptions.handovers },
-  { to: '/admin/cash-in-hand', icon: '💰', label: a.cashInHandLink, desc: a.descriptions.cashInHand },
-  { to: '/admin/volunteers', icon: '🧑‍🤝‍🧑', label: a.volunteersLink, desc: a.descriptions.volunteers },
-  { to: '/admin/admins', icon: '🛡️', label: a.adminsLink, desc: a.descriptions.admins },
-  { to: '/admin/transparency', icon: '🪷', label: a.transparencyLink, desc: a.descriptions.transparency },
-]
-// Settings pins to the bottom of the console rail, apart from the main list.
-const SETTINGS: NavItem = { to: '/admin/settings', icon: '⚙️', label: a.settingsLink, desc: a.descriptions.settings }
-// "Collect donation" stays the one prominent action in the rail (design F9).
-const PROMINENT = '/collect'
 
 // Same warm festival palette as the transparency donut so the two pies read as
 // one system. Slots assigned by rank (largest first), a 9th+ category folds
@@ -71,10 +48,11 @@ function toExpenseSegments(expenses: Expense[]): DonutSegment[] {
   return segments
 }
 
-// Task 15: the real content for the admin dashboard — routed at "/admin".
+// The admin dashboard body — routed at "/admin" inside AdminLayout's <Outlet/>,
+// which supplies the console frame (dark rail / mobile pill header + title).
 // fetchFullLedger()/fetchActiveVolunteers()/getExpenses() are all admin-only at
 // the RLS level and mandal-scoped, so this only ever sums this mandal's books.
-export function MasterLedgerScreen() {
+export function MasterLedgerContent() {
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [volunteers, setVolunteers] = useState<VolunteerSummary[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -102,50 +80,15 @@ export function MasterLedgerScreen() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-stone-50 font-body text-stone-900 lg:flex">
-      <Sidebar />
+    <>
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
-      <div className="min-w-0 flex-1">
-        <MobileTopBar />
-
-        <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-8 lg:px-8">
-          <div>
-            <h1 className="font-display text-2xl font-extrabold tracking-tight text-stone-900">{t.masterLedgerTitle}</h1>
-            <p className="text-[15px] text-stone-500">{t.liveSubtitle}</p>
-          </div>
-
-          {error && (
-            <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-
-          {loading ? <DashboardSkeleton /> : ledger && <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} />}
-
-          {/* Phone nav: the light card grid collapses in below the ledger; the
-              dark rail is desktop-only. All destinations stay reachable on both. */}
-          <nav className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
-            {[...NAV, SETTINGS].map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`group flex items-center gap-3.5 ${card} p-4 transition-all hover:border-orange-300 hover:shadow-md ${
-                  item.to === PROMINENT ? 'border-orange-300 bg-orange-50' : ''
-                }`}
-              >
-                <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-amber-50 text-xl transition-colors group-hover:bg-amber-100">
-                  {item.icon}
-                </span>
-                <span className="min-w-0">
-                  <span className="block font-semibold text-stone-900">{item.label}</span>
-                  <span className="block truncate text-[13px] text-stone-500">{item.desc}</span>
-                </span>
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </div>
-    </div>
+      {loading ? <DashboardSkeleton /> : ledger && <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} />}
+    </>
   )
 }
 
@@ -171,7 +114,9 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
         bank={bank}
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Mobile: 2×2 grid whose 4th tile is "Cash w/ volunteers" (design v3).
+          Desktop: the trio in a row (the 4th tile is hidden). */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard
           label={t.fundPoolLabel}
           value={formatINR(totalCollected(ledger))}
@@ -185,6 +130,12 @@ function Dashboard({ ledger, volunteers, expenses }: { ledger: Ledger; volunteer
           sub={`${paymentCount}${t.paymentsCountSuffix}`}
         />
         <StatCard label={t.netBalanceLabel} value={formatINR(netBalance(ledger))} sub={t.netBalanceSubtitle} dark />
+        <StatCard
+          label={t.cashWithVolunteersLabel}
+          value={formatINR(volunteersTotal)}
+          valueClass="text-[#7a2e2a]"
+          className="lg:hidden"
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -293,18 +244,22 @@ function StatCard({
   sub,
   valueClass = 'text-stone-900',
   dark = false,
+  className = '',
 }: {
   label: string
   value: string
-  sub: string
+  sub?: string
   valueClass?: string
   dark?: boolean
+  className?: string
 }) {
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm ${dark ? 'border-stone-900 bg-stone-900' : 'border-stone-200 bg-white'}`}>
+    <div
+      className={`rounded-2xl border p-4 shadow-sm ${dark ? 'border-stone-900 bg-stone-900' : 'border-stone-200 bg-white'} ${className}`}
+    >
       <p className={`text-xs font-semibold tracking-wide uppercase ${dark ? 'text-stone-400' : 'text-stone-500'}`}>{label}</p>
       <p className={`mt-1 text-2xl font-bold tabular-nums ${dark ? 'text-white' : valueClass}`}>{value}</p>
-      <p className={`mt-0.5 text-xs ${dark ? 'text-stone-400' : 'text-stone-500'}`}>{sub}</p>
+      {sub && <p className={`mt-0.5 text-xs ${dark ? 'text-stone-400' : 'text-stone-500'}`}>{sub}</p>}
     </div>
   )
 }
@@ -389,82 +344,6 @@ function CashTracker({
         </ul>
       )}
     </div>
-  )
-}
-
-// Dark treasurer-console rail — desktop only; the phone gets the card grid.
-function Sidebar() {
-  return (
-    <aside className="sticky top-0 hidden h-screen w-64 flex-none flex-col gap-6 bg-stone-900 px-4 py-6 text-stone-200 lg:flex">
-      <div className="flex items-center gap-2.5 px-1">
-        <div className="font-mark flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-lg font-extrabold text-stone-900 shadow-md shadow-orange-600/30">
-          ॥
-        </div>
-        <div className="leading-tight">
-          <div className="font-display text-[15px] font-extrabold tracking-tight text-white">{strings.landing.productName}</div>
-          <div className="text-[9px] font-semibold tracking-widest text-stone-500 uppercase">{t.consoleTitle}</div>
-        </div>
-      </div>
-
-      <nav className="flex flex-col gap-1">
-        {NAV.map((item) => (
-          <SideLink key={item.to} item={item} />
-        ))}
-      </nav>
-
-      <div className="mt-auto flex flex-col gap-1 border-t border-stone-800 pt-3">
-        <SideLink item={SETTINGS} />
-        <button
-          type="button"
-          onClick={() => void supabase.auth.signOut()}
-          className="rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-stone-400 transition-colors hover:bg-stone-800 hover:text-white"
-        >
-          {strings.app.signOut}
-        </button>
-      </div>
-    </aside>
-  )
-}
-
-function SideLink({ item }: { item: NavItem }) {
-  const prominent = item.to === PROMINENT
-  return (
-    <Link
-      to={item.to}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
-        prominent ? 'bg-orange-600 text-white hover:bg-orange-500' : 'text-stone-300 hover:bg-stone-800 hover:text-white'
-      }`}
-    >
-      <span className="flex-none text-lg">{item.icon}</span>
-      <span className="truncate">{item.label}</span>
-    </Link>
-  )
-}
-
-// The phone frame's top bar (brand + sign-out) — the desktop rail carries both,
-// so this is hidden on lg+.
-function MobileTopBar() {
-  return (
-    <header className="sticky top-0 z-20 border-b border-stone-200 bg-stone-50/85 backdrop-blur lg:hidden">
-      <div className="flex items-center justify-between px-4 py-3">
-        <Link to="/admin" className="inline-flex items-center gap-2.5">
-          <div className="font-mark flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-lg font-extrabold text-stone-900 shadow-md shadow-orange-600/30">
-            ॥
-          </div>
-          <div className="leading-tight">
-            <div className="font-display text-[15px] font-extrabold tracking-tight">{strings.landing.productName}</div>
-            <div className="text-[9px] font-semibold tracking-widest text-stone-400 uppercase">{t.consoleTitle}</div>
-          </div>
-        </Link>
-        <button
-          type="button"
-          onClick={() => void supabase.auth.signOut()}
-          className="rounded-lg px-3 py-1.5 text-sm font-semibold text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-800"
-        >
-          {strings.app.signOut}
-        </button>
-      </div>
-    </header>
   )
 }
 

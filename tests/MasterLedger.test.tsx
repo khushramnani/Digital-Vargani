@@ -3,14 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Ledger } from '../src/lib/reconcile'
 import { strings } from '../src/lib/strings'
-import { MasterLedgerScreen } from '../src/features/ledger/MasterLedger'
+import { MasterLedgerContent } from '../src/features/ledger/MasterLedger'
 
-// Component test of the screen's rendering (same pattern as
-// ExpensesScreen.test.tsx): mock the db modules, not the raw Supabase client.
+// Component test of the dashboard BODY (same pattern as ExpensesScreen.test.tsx):
+// mock the db modules, not the raw Supabase client.
 // booksBalanceCheck/totalCollected/volunteerCashInHand/etc. are the real
 // lib/reconcile.ts functions (exhaustively unit-tested in reconcile.test.ts) —
-// only the fetches are mocked. The treasurer console renders its own frame
-// (dark rail + sign-out), so no AppShell/useAuth mock is needed anymore.
+// only the fetches are mocked. The console frame + its nav now live in
+// AdminLayout (tests/AdminLayout.test.tsx); this file asserts the body only.
 const { fetchFullLedger, fetchActiveVolunteers, getExpenses } = vi.hoisted(() => ({
   fetchFullLedger: vi.fn(),
   fetchActiveVolunteers: vi.fn(),
@@ -53,7 +53,7 @@ beforeEach(() => {
 function renderScreen() {
   return render(
     <MemoryRouter>
-      <MasterLedgerScreen />
+      <MasterLedgerContent />
     </MemoryRouter>,
   )
 }
@@ -80,6 +80,11 @@ describe('MasterLedgerScreen', () => {
     // Cash-in-hand tracker row for the active volunteer.
     expect(screen.getByText('Volunteer One')).toBeInTheDocument()
     expect(screen.getByText(/collected ₹1,000.00 · handed ₹1,000.00/)).toBeInTheDocument()
+
+    // v3: the mobile 2×2 grid's 4th "Cash w/ volunteers" tile (present in the
+    // DOM; hidden with lg:hidden on desktop). Here all cash sits with the
+    // treasurer post-handover, so it reads ₹0.00.
+    expect(screen.getByText(t.cashWithVolunteersLabel)).toBeInTheDocument()
   })
 
   it('shows a red equation banner with the discrepancy amount when the identity does not hold', async () => {
@@ -88,27 +93,5 @@ describe('MasterLedgerScreen', () => {
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(t.booksImbalanceTitle))
     expect(screen.getByRole('status')).toHaveTextContent(`${t.discrepancyPrefix}₹1,000.00`)
-  })
-
-  it('links to the volunteer collection form so an admin can log a donation as themselves', async () => {
-    fetchFullLedger.mockResolvedValue(balancedLedger)
-    renderScreen()
-
-    // The nav renders twice — dark rail (desktop) + card grid (phone) — so
-    // match all copies; every one must point at /collect.
-    await waitFor(() => expect(screen.getAllByRole('link', { name: /Collect donation/ }).length).toBeGreaterThan(0))
-    for (const link of screen.getAllByRole('link', { name: /Collect donation/ })) {
-      expect(link).toHaveAttribute('href', '/collect')
-    }
-  })
-
-  it('links to the admin management screen', async () => {
-    fetchFullLedger.mockResolvedValue(balancedLedger)
-    renderScreen()
-
-    await waitFor(() => expect(screen.getAllByRole('link', { name: /Manage admins/ }).length).toBeGreaterThan(0))
-    for (const link of screen.getAllByRole('link', { name: /Manage admins/ })) {
-      expect(link).toHaveAttribute('href', '/admin/admins')
-    }
   })
 })

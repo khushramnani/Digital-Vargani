@@ -8,6 +8,7 @@ import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
 import { AppShell } from '../../components/AppShell'
+import { VolunteerTabBar } from '../collection/VolunteerTabBar'
 import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
 
 const t = strings.expenses
@@ -17,14 +18,14 @@ const PAID_FROM_OPTIONS: { value: PaidFrom; label: string }[] = [
   { value: 'bank', label: t.paidFromBank },
 ]
 
-// One screen, reused behind both /volunteer/expenses (RequireRole
-// role="volunteer") and /admin/expenses (RequireRole role="admin") — RLS on
-// `expenses` already scopes createExpense/getExpenses per-role server-side
-// (see src/lib/db/expenses.ts), so this component never branches on role.
-// Categories come from getExpenseCategories() (the get_expense_categories
+// Content-only body, reused behind /admin/expenses (inside AdminLayout's
+// console frame) and /volunteer/expenses (inside the AppShell wrapper below) —
+// RLS on `expenses` already scopes createExpense/getExpenses per-role
+// server-side (see src/lib/db/expenses.ts), so this body never branches on
+// role. Categories come from getExpenseCategories() (the get_expense_categories
 // RPC), not getMandal() directly — mandals' RLS is admin-only, which would
 // otherwise 0-row a volunteer session here.
-export function ExpensesScreen() {
+export function ExpensesContent() {
   const { appUser } = useAuth()
   const [categories, setCategories] = useState<string[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -98,13 +99,8 @@ export function ExpensesScreen() {
     }
   }
 
-  const isAdmin = appUser?.role === 'admin'
-  const home = isAdmin
-    ? { to: '/admin', label: strings.admin.dashboardTitle }
-    : { to: '/collect', label: strings.collection.title }
-
   return (
-    <AppShell title={t.title} back={home}>
+    <>
       <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
         <div className="flex flex-col gap-2">
           <label htmlFor="expense-category" className={labelCls}>
@@ -238,6 +234,32 @@ export function ExpensesScreen() {
             </li>
           ))}
         </ul>
+      )}
+    </>
+  )
+}
+
+// Volunteer wrapper (/volunteer/expenses) — AppShell + bottom tab bar. Step-4
+// fix: this screen previously mounted no tab bar, so a volunteer who opened
+// "More" was stranded with no way back; the spacer + VolunteerTabBar restore it
+// (matching Collections/CashInHand). The admin route renders ExpensesContent
+// bare inside AdminLayout instead.
+export function ExpensesScreen() {
+  const { appUser } = useAuth()
+  const isAdmin = appUser?.role === 'admin'
+  const isVolunteer = appUser?.role === 'volunteer'
+  const home = isAdmin
+    ? { to: '/admin', label: strings.admin.dashboardTitle }
+    : { to: '/collect', label: strings.collection.title }
+
+  return (
+    <AppShell title={t.title} back={home}>
+      <ExpensesContent />
+      {isVolunteer && (
+        <>
+          <div aria-hidden="true" className="h-16" />
+          <VolunteerTabBar />
+        </>
       )}
     </AppShell>
   )

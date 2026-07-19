@@ -2,24 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
-import { AdminTransparency } from '../src/features/transparency/AdminTransparency'
+import { AdminTransparencyContent } from '../src/features/transparency/AdminTransparency'
 
-// The screen now renders inside AppShell (persistent header + sign-out),
-// which pulls the session role from useAuth. Mock it so the test needs no
-// real AuthProvider.
-vi.mock('../src/features/auth/useAuth', () => ({
-  useAuth: () => ({
-    session: { user: { id: 'auth-uid-admin' } },
-    appUser: { role: 'admin' },
-    loading: false,
-    refreshAppUser: vi.fn(),
-  }),
-}))
+// The publish toggle now heads the content body (AdminLayout owns the console
+// frame), so the body renders bare here. No useAuth needed — the content
+// component reads no session.
 
 function renderScreen() {
   return render(
     <MemoryRouter>
-      <AdminTransparency />
+      <AdminTransparencyContent />
     </MemoryRouter>,
   )
 }

@@ -74,15 +74,17 @@ function formatReceiptNumber(prefix: string, receiptNo: number, iso: string): st
   return `${prefix}/${year}/${String(receiptNo).padStart(4, '0')}`
 }
 
-// Builds the receipt's inquiry-contact list (F6). The president (name +
-// creator_phone) is the default first contact unless hidden — but a hidden
-// president still shows when there is no one else to ask. Then up to two extra
-// contacts from the mandal profile. A contact needs a phone to appear at all.
+// Builds the receipt's inquiry-contact list (F6). The president shows purely on
+// whether creator_phone came back: get_public_receipt now enforces the hide
+// rule server-side (it nulls creator_phone when the president is hidden AND
+// another contact exists, but keeps it when he's the sole contact), so the
+// client just trusts the field — no hide_president_contact/extra.length logic
+// here. Then up to two extra contacts; a contact needs a phone to appear.
 function inquiryContactsFor(receipt: PublicReceipt): InquiryContact[] {
   const extra = parseInquiryContacts(receipt.inquiry_contacts)
     .filter((c) => c.name.trim() && c.phone.trim())
     .slice(0, 2)
-  const showPresident = !!receipt.creator_phone && (!receipt.hide_president_contact || extra.length === 0)
+  const showPresident = !!receipt.creator_phone
   return [
     ...(showPresident ? [{ name: receipt.president_name ?? receipt.mandal_name, phone: receipt.creator_phone! }] : []),
     ...extra,
@@ -177,7 +179,7 @@ export function ReceiptView({ receipt, lang }: { receipt: PublicReceipt; lang: L
               <p className={`font-mark mt-1 text-[52px] leading-none ${receipt.voided ? 'text-[#a38f6d] line-through' : 'text-[#a8382a]'}`}>
                 {formatReceiptAmount(receipt.amount_paise)}
               </p>
-              <p className="font-serif mt-2 text-[13px] text-[#8f7358] italic">Rupees {amountInWords(receipt.amount_paise)} only</p>
+              <p className="font-serif mt-2 text-[13px] text-[#8f7358] italic">{t.amountInWordsLine(amountInWords(receipt.amount_paise))}</p>
 
               <Divider />
 
@@ -250,7 +252,19 @@ export function ReceiptPage() {
       try {
         const receipt = await getPublicReceipt(token)
         if (!active) return
-        setState(receipt ? { status: 'found', receipt } : { status: 'not-found' })
+        if (!receipt) {
+          setState({ status: 'not-found' })
+          return
+        }
+        setState({ status: 'found', receipt })
+        // v3: canonicalize the cosmetic "<receiptNo>-" prefix in place. A wrong
+        // number, or a bare token missing it, is rewritten to
+        // /r/<receipt_no>-<token> — purely cosmetic (replaceState keeps the
+        // ?lang= query and does NOT re-run the router/this fetch).
+        const canonicalPath = `/r/${receipt.receipt_no}-${token}`
+        if (window.location.pathname !== canonicalPath) {
+          window.history.replaceState(null, '', canonicalPath + window.location.search)
+        }
       } catch {
         if (active) setState({ status: 'not-found' })
       }
