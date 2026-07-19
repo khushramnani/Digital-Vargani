@@ -80,6 +80,7 @@ const createdDonation: Tables<'donations'> = {
   donor_phone: '9876543210',
   amount_paise: 50100,
   mode: 'cash',
+  category: 'society',
   collected_by: 'volunteer-1',
   created_at: '2026-01-01T00:00:00Z',
   voided: false,

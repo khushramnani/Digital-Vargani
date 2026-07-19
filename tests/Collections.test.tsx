@@ -46,6 +46,7 @@ const activeDonation: Tables<'donations'> = {
   donor_phone: '9000000009',
   amount_paise: 50000,
   mode: 'cash',
+  category: 'society',
   collected_by: 'volunteer-1',
   created_at: '2026-01-02T00:00:00Z',
   voided: false,

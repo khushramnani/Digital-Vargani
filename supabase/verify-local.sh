@@ -1793,4 +1793,167 @@ END $$;
 reset role;
 SQL
 
+echo "== assertion: v4 donations.category is stored on insert but append-only after =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE did uuid;
+BEGIN
+  insert into donations (donor_name, amount_paise, mode, category, collected_by)
+    values ('Category Guard Donor', 500, 'cash', 'shop', '00000000-0000-0000-0000-000000000001')
+    returning id into did;
+  ASSERT (select category from donations where id = did) = 'shop', 'FAIL: category not stored on insert';
+
+  BEGIN
+    update donations set category = 'other' where id = did;
+    RAISE EXCEPTION 'FAIL: donations.category was editable after insert';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%append-only%' THEN
+      RAISE NOTICE 'PASS: donations.category is append-only (void + re-enter to change)';
+    ELSE RAISE; END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: v4 donors_summary aggregates for the admin only, mandal-scoped =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE tot bigint; cnt bigint; n int;
+BEGIN
+  insert into donations (donor_name, donor_phone, amount_paise, mode, collected_by) values
+    ('Repeat Donor', '9111111111', 1000, 'cash', '00000000-0000-0000-0000-000000000001'),
+    ('Repeat Donor', '9111111111', 2000, 'upi',  '00000000-0000-0000-0000-000000000001');
+
+  SELECT total_paise, donation_count INTO tot, cnt FROM donors_summary() WHERE donor_phone = '9111111111';
+  ASSERT tot = 3000, format('FAIL: donor total should be 3000, saw %s', tot);
+  ASSERT cnt = 2, format('FAIL: donor donation_count should be 2, saw %s', cnt);
+
+  SELECT count(*) INTO n FROM donors_summary(1999); -- no donations in 1999
+  ASSERT n = 0, format('FAIL: year filter should exclude other years, saw %s rows for 1999', n);
+  RAISE NOTICE 'PASS: donors_summary aggregates by donor and honours the year filter';
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM donors_summary();
+  ASSERT n = 0, format('FAIL: a volunteer must see no donor directory, saw %s', n);
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM donors_summary() WHERE donor_phone = '9111111111';
+  ASSERT n = 0, format('FAIL: another mandal admin must not see mandal-one donors, saw %s', n);
+  RAISE NOTICE 'PASS: donors_summary is admin-only and mandal-scoped';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: v4 donors_summary is not exposed to anon =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM * FROM donors_summary();
+    RAISE EXCEPTION 'SECURITY HOLE: anon called donors_summary()';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: anon is rejected from donors_summary()';
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: v4 purge_donations — role, scope, and tenant isolation =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- A volunteer cannot purge.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+BEGIN
+  BEGIN
+    PERFORM purge_donations('removed');
+    RAISE EXCEPTION 'FAIL: a volunteer purged donations';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only an admin%' THEN RAISE NOTICE 'PASS: a volunteer cannot purge';
+    ELSE RAISE; END IF;
+  END;
+END $$;
+reset role;
+
+-- 'removed' scope erases only voided rows; invalid scope rejected.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+insert into donations (donor_name, amount_paise, mode, collected_by)
+  values ('Purge Voided Donor', 700, 'cash', '00000000-0000-0000-0000-000000000001');
+DO $$
+DECLARE vid uuid; active_before int; voided_before int; removed_purged int;
+BEGIN
+  SELECT id INTO vid FROM donations
+    WHERE donor_name = 'Purge Voided Donor' AND mandal_id = app_mandal_id() LIMIT 1;
+  PERFORM void_row('donations', vid, 'to be purged');
+
+  SELECT count(*) FILTER (WHERE not voided), count(*) FILTER (WHERE voided)
+    INTO active_before, voided_before FROM donations WHERE mandal_id = app_mandal_id();
+  ASSERT voided_before >= 1, 'FAIL: expected a voided row to purge';
+
+  BEGIN
+    PERFORM purge_donations('bogus');
+    RAISE EXCEPTION 'FAIL: invalid purge scope accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid purge scope%' THEN RAISE NOTICE 'PASS: invalid scope rejected';
+    ELSE RAISE; END IF;
+  END;
+
+  removed_purged := purge_donations('removed');
+  ASSERT removed_purged = voided_before,
+    format('FAIL: removed purge should delete %s voided rows, deleted %s', voided_before, removed_purged);
+  ASSERT (SELECT count(*) FROM donations WHERE mandal_id = app_mandal_id() AND voided) = 0,
+    'FAIL: voided rows survived the removed purge';
+  ASSERT (SELECT count(*) FROM donations WHERE mandal_id = app_mandal_id() AND NOT voided) = active_before,
+    'FAIL: removed purge deleted active rows';
+  RAISE NOTICE 'PASS: purge_donations(removed) erases only voided rows';
+END $$;
+reset role;
+
+-- Tenant isolation: mandal two's admin purging 'all' must not touch mandal one.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+select purge_donations('all');
+reset role;
+DO $$
+DECLARE n int;
+BEGIN
+  -- superuser (RLS bypassed): mandal one still holds its active donations
+  SELECT count(*) INTO n FROM donations WHERE mandal_id = '11111111-1111-1111-1111-000000000001' AND NOT voided;
+  ASSERT n >= 1, format('FAIL: mandal-two admin purge erased mandal-one donations (mandal one now has %s)', n);
+  RAISE NOTICE 'PASS: purge_donations is mandal-scoped (other tenant untouched)';
+END $$;
+
+-- 'all' scope wipes the mandal's own history (last — leaves mandal one empty).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE purged int; remaining int;
+BEGIN
+  purged := purge_donations('all');
+  ASSERT purged >= 1, 'FAIL: all purge deleted nothing';
+  SELECT count(*) INTO remaining FROM donations WHERE mandal_id = app_mandal_id();
+  ASSERT remaining = 0, format('FAIL: all purge left %s donations', remaining);
+  RAISE NOTICE 'PASS: purge_donations(all) erases the entire mandal donation history';
+END $$;
+reset role;
+SQL
+
 echo "== all assertions passed =="
