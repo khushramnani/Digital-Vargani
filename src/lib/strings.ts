@@ -179,6 +179,8 @@ export const strings = {
     removeContact: 'Remove contact',
     contactsMaxHint: 'Up to two extra contacts besides the president.',
     presidentContactTag: 'President · default contact',
+    // Shown in place of a president name — never the mandal name (v4 §4).
+    previewNoPresidentName: 'No president name set',
     hidePresidentLabel: "Hide the president's number on receipts",
     hidePresidentHelp: 'The president still shows when no other contact is set — donors always have someone to ask.',
   },
@@ -321,6 +323,7 @@ export const strings = {
     yearFilterLabel: 'Year',
     allYears: 'All years',
     categoryFilterAll: 'All sources',
+    noFilterResults: 'No donations match these filters.',
     keepPastYearsHint: 'Keep past years — use the year filter above instead of clearing.',
     // v4: permanent purge (Danger Zone), separate from the everyday soft "clear"
     purgeRemovedButton: 'Permanently delete removed',
@@ -333,6 +336,11 @@ export const strings = {
     purgeAllTitle: 'Permanently delete ALL donation history?',
     purgePhraseLabel: 'Type DELETE FOREVER to confirm',
     purgePhrase: 'DELETE FOREVER',
+    // The nuclear scope gets its OWN phrase: the two purge buttons sit side by
+    // side, and an admin who has typed the removed-only phrase before would
+    // otherwise clear the entire ledger from muscle memory after a mis-tap.
+    purgeAllPhraseLabel: 'Type ERASE ALL HISTORY to confirm',
+    purgeAllPhrase: 'ERASE ALL HISTORY',
     purgeRemovedConfirm: 'Delete removed forever',
     purgeAllConfirm: 'Delete everything forever',
     purgedRemovedNotice: 'Removed donations permanently deleted.',

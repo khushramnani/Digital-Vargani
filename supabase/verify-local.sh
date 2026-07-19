@@ -1828,7 +1828,9 @@ BEGIN
     ('Repeat Donor', '9111111111', 1000, 'cash', '00000000-0000-0000-0000-000000000001'),
     ('Repeat Donor', '9111111111', 2000, 'upi',  '00000000-0000-0000-0000-000000000001');
 
-  SELECT total_paise, donation_count INTO tot, cnt FROM donors_summary() WHERE donor_phone = '9111111111';
+  -- donors_summary returns the NORMALIZED phone (20260719150000), so a bare
+  -- 10-digit stored value comes back as +91…
+  SELECT total_paise, donation_count INTO tot, cnt FROM donors_summary() WHERE donor_phone = '+919111111111';
   ASSERT tot = 3000, format('FAIL: donor total should be 3000, saw %s', tot);
   ASSERT cnt = 2, format('FAIL: donor donation_count should be 2, saw %s', cnt);
 
@@ -1853,9 +1855,45 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal tw
 DO $$
 DECLARE n int;
 BEGIN
-  SELECT count(*) INTO n FROM donors_summary() WHERE donor_phone = '9111111111';
+  SELECT count(*) INTO n FROM donors_summary() WHERE donor_phone = '+919111111111';
   ASSERT n = 0, format('FAIL: another mandal admin must not see mandal-one donors, saw %s', n);
   RAISE NOTICE 'PASS: donors_summary is admin-only and mandal-scoped';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: v4 donors_summary merges a legacy 10-digit donor with their E.164 twin =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE n int; tot bigint; cnt bigint; ph text;
+BEGIN
+  -- The same human: one row stored pre-v4 (bare 10-digit) and one stored after
+  -- the E.164 switch. They MUST aggregate as a single donor, or the directory
+  -- contradicts the dashboard's unique-donor count at the migration boundary.
+  insert into donations (donor_name, donor_phone, amount_paise, mode, collected_by) values
+    ('Twin Donor', '9000000077',    1000, 'cash', '00000000-0000-0000-0000-000000000001'),
+    ('Twin Donor', '+919000000077', 2500, 'upi',  '00000000-0000-0000-0000-000000000001');
+
+  SELECT count(*) INTO n FROM donors_summary() WHERE donor_name = 'Twin Donor';
+  ASSERT n = 1, format('FAIL: legacy + E.164 rows should be ONE donor, saw %s rows', n);
+
+  SELECT donor_phone, total_paise, donation_count INTO ph, tot, cnt
+    FROM donors_summary() WHERE donor_name = 'Twin Donor';
+  ASSERT ph = '+919000000077', format('FAIL: merged donor phone should be normalized E.164, saw %s', ph);
+  ASSERT tot = 3500, format('FAIL: merged donor total should be 3500, saw %s', tot);
+  ASSERT cnt = 2, format('FAIL: merged donor count should be 2, saw %s', cnt);
+
+  -- The normalizer itself, on the shapes real rows actually carry.
+  ASSERT normalize_phone_e164('9876543210')     = '+919876543210', 'FAIL: bare 10-digit should become +91';
+  ASSERT normalize_phone_e164('09876543210')    = '+919876543210', 'FAIL: trunk 0 should be stripped';
+  ASSERT normalize_phone_e164('00919876543210') = '+919876543210', 'FAIL: 00 IDD prefix should be stripped';
+  ASSERT normalize_phone_e164('+44 7911 123456') = '+447911123456', 'FAIL: E.164 should keep its own country code';
+  ASSERT normalize_phone_e164('')  IS NULL, 'FAIL: blank should normalize to null';
+  ASSERT normalize_phone_e164(null) IS NULL, 'FAIL: null should normalize to null';
+
+  RAISE NOTICE 'PASS: donors_summary merges legacy/E.164 twins and normalize_phone_e164 handles trunk/IDD prefixes';
 END $$;
 reset role;
 SQL

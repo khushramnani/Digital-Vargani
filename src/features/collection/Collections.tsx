@@ -4,7 +4,6 @@ import { getDonations, type Donation } from '../../lib/db/donations'
 import { voidRow, clearAllDonations, purgeDonations } from '../../lib/db/void'
 import { fetchMandalUserNames } from '../../lib/db/users'
 import { formatForDisplay, normalizeToE164, waDigits } from '../../lib/phone'
-import { db } from '../../lib/queue/db'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
@@ -120,23 +119,27 @@ export function CollectionsContent() {
     }
   }
 
-  // The first true hard-delete path (v4 §8). After the RPC erases rows we
-  // refetch and best-effort clear the local outbox so a queued-but-synced item
-  // can't resurrect a purged donation. 'removed' rows are always already synced
-  // (you can't void an unsynced row), so only 'all' needs the outbox wipe.
+  // The first true hard-delete path (v4 §8). It erases SERVER history only —
+  // the local Dexie outbox is deliberately left alone.
+  //
+  // An earlier revision cleared the outbox here "so a synced item can't
+  // resurrect a purged donation". That was unsafe: the outbox holds ONLY
+  // donations that have not reached the server yet (queue/db.ts), it is
+  // device-global (not mandal-scoped), and sync deliberately keeps rows it
+  // cannot push — ones tagged for a different volunteer's session on a shared
+  // phone (sync.ts's authUserId fence) and poison rows awaiting triage. Wiping
+  // it destroyed collected money whose only copy was that row, for a volunteer
+  // whose queue the purging admin could never even see (PendingSend filters the
+  // tray by collectedBy). Unrecoverable, and reachable while fully online.
+  // The "resurrection" it guarded against is the rare crash-between-insert-and-
+  // local-delete case — and for a genuinely unsynced row, syncing it after a
+  // purge is the CORRECT outcome, not a bug. No-data-loss wins.
   async function handlePurge(scope: 'removed' | 'all') {
     setPurging(true)
     setError(null)
     setNotice(null)
     try {
       await purgeDonations(scope)
-      if (scope === 'all') {
-        try {
-          await db.outbox.clear()
-        } catch {
-          /* best-effort — a stray local row is harmless once the server is empty */
-        }
-      }
       setDonations(await getDonations())
       setNotice(scope === 'all' ? t.purgedAllNotice : t.purgedRemovedNotice)
     } catch (err) {
@@ -224,7 +227,10 @@ export function CollectionsContent() {
       ) : donations.length === 0 ? (
         <EmptyState message={t.empty} />
       ) : visible.length === 0 ? (
-        <EmptyState message={t.empty} />
+        /* Filtered to nothing — NOT the same as "no donations yet". Showing the
+           empty-ledger copy here reads as data loss, which is alarming sitting
+           directly above a Danger Zone that can permanently erase history. */
+        <EmptyState message={t.noFilterResults} />
       ) : (
         <ul className="flex flex-col gap-2.5">
           {visible.map((donation) => {
@@ -434,7 +440,10 @@ export function CollectionsContent() {
         body={t.purgeConsequence}
         confirmLabel={t.purgeAllConfirm}
         cancelLabel={strings.void.cancel}
-        requirePhrase={{ label: t.purgePhraseLabel, phrase: t.purgePhrase }}
+        // A DIFFERENT phrase from the removed-only dialog on purpose: the two
+        // buttons are adjacent, and a memorised phrase must not let a mis-tap
+        // erase the whole ledger.
+        requirePhrase={{ label: t.purgeAllPhraseLabel, phrase: t.purgeAllPhrase }}
         onConfirm={() => handlePurge('all')}
         onCancel={() => setPurgeAllOpen(false)}
         busy={purging}

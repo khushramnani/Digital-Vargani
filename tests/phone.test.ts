@@ -89,4 +89,39 @@ describe('isValidPhone', () => {
   it('rejects an Indian number of the wrong national length', () => {
     expect(isValidPhone('+9198765')).toBe(false)
   })
+
+  // Regression (adversarial review): isValidPhone resolved a shared dial code
+  // by taking the FIRST country listed with that code, while parseE164 picked
+  // the one whose length fits. For '44' that first entry is Guernsey (no known
+  // nationalLength), which shadowed GB's 10 — so an 11-digit UK number
+  // validated clean, saved, and its receipt opened wa.me/4407911123456, a
+  // number that does not exist. Same shape for '7' (Kazakhstan shadowing RU).
+  it('enforces length on shared dial codes instead of silently skipping it', () => {
+    expect(isValidPhone('+4407911123456')).toBe(false) // 11-digit UK national
+    expect(isValidPhone('+447911123456')).toBe(true) // the correct 10-digit one
+    expect(isValidPhone('+7916123456712')).toBe(false) // 12-digit RU national
+  })
+})
+
+// Regression (adversarial review): a trunk '0' is how UK/IT/RU — and a large
+// share of Indians — quote a number out loud. Concatenating it after the dial
+// code produced an un-dialable number and a silently misrouted receipt.
+describe('trunk and IDD prefixes', () => {
+  it('toE164 drops a national trunk 0', () => {
+    expect(toE164('44', '07911123456')).toBe('+447911123456')
+    expect(toE164('91', '09876543210')).toBe('+919876543210')
+  })
+
+  it('normalizeToE164 handles legacy trunk-0 and 00-IDD values', () => {
+    expect(normalizeToE164('09876543210')).toBe('+919876543210')
+    expect(normalizeToE164('00919876543210')).toBe('+919876543210')
+    // Previously these became '+09876543210' / '+00919876543210' — displayed as
+    // "+91 09876543210" beside a tel: link that dialled nowhere.
+    expect(normalizeToE164('09876543210')).not.toContain('+0')
+  })
+
+  it('resolves a shared dial code to the country users mean', () => {
+    expect(parseE164('+15551234567').iso).toBe('US') // not alphabetical-first American Samoa
+    expect(parseE164('+447911123456').iso).toBe('GB')
+  })
 })

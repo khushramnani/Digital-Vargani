@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getDonorsSummary, type DonorSummary } from '../../lib/db/donors'
 import { getDonations, type Donation } from '../../lib/db/donations'
 import { fetchMandalUserNames } from '../../lib/db/users'
@@ -27,6 +27,7 @@ export function DonorsContent() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [yearOptions, setYearOptions] = useState<number[]>([])
 
   // Full donation list + volunteer names: fetched once. Used for the year-picker
   // options and the history expansion (below); independent of the year filter.
@@ -52,7 +53,22 @@ export function DonorsContent() {
     setLoading(true)
     getDonorsSummary(year ?? undefined)
       .then((rows) => {
-        if (active) setDonors(rows)
+        if (!active) return
+        setDonors(rows)
+        // Year options come from the summary's own first/last dates, captured
+        // from the UNFILTERED load only. The RPC aggregates every donation,
+        // whereas getDonations() is capped at 1000 rows — deriving the picker
+        // from that array made a large mandal's older seasons disappear from
+        // the list entirely. Capturing only when year == null keeps the options
+        // stable; recomputing while filtered would collapse them to one year.
+        if (year == null) {
+          const ys = rows.flatMap((r) => [new Date(r.firstAt).getFullYear(), new Date(r.lastAt).getFullYear()])
+          if (ys.length > 0) {
+            const max = Math.max(...ys)
+            const min = Math.min(...ys)
+            setYearOptions(Array.from({ length: max - min + 1 }, (_, i) => max - i))
+          }
+        }
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : String(err))
@@ -65,12 +81,8 @@ export function DonorsContent() {
     }
   }, [year])
 
-  // Years present in the ledger, newest first — the picker only offers years
-  // that actually have donations.
-  const years = useMemo(
-    () => [...new Set(donations.map((d) => new Date(d.created_at).getFullYear()))].sort((a, b) => b - a),
-    [donations],
-  )
+  // Newest first; populated from the unfiltered donor summary above.
+  const years = yearOptions
 
   const q = search.trim().toLowerCase()
   const visible = q
@@ -136,12 +148,20 @@ export function DonorsContent() {
   )
 }
 
-// A donation belongs to this donor when its phone matches (donors with a phone),
-// else its lower-trimmed name equals the donor's key (the RPC keys phone-less
-// donors on normalized name).
+// Mirrors the RPC's grouping key exactly:
+//   coalesce(nullif(btrim(donor_phone),''), lower(btrim(donor_name)))
+// so the expanded history can never disagree with the row's own totals. The
+// name branch MUST also require the donation to be phone-less — otherwise a
+// phone-less "Ramesh Patel" would absorb a *different*, phone-keyed Ramesh
+// Patel's donations, showing one person's giving under another's name (and a
+// history that contradicts the header count).
 function belongsTo(dn: Donation, donor: DonorSummary): boolean {
-  if (donor.donorPhone) return (dn.donor_phone ?? '') === donor.donorPhone
-  return (dn.donor_name ?? '').trim().toLowerCase() === donor.donorKey
+  // normalizeToE164 mirrors the RPC's normalize_phone_e164, so a legacy
+  // '9876543210' row and its post-v4 '+919876543210' twin land on the same
+  // donor here exactly as they do in the aggregate.
+  const phone = normalizeToE164(dn.donor_phone ?? '')
+  if (donor.donorPhone) return phone === donor.donorPhone
+  return phone === '' && (dn.donor_name ?? '').trim().toLowerCase() === donor.donorKey
 }
 
 function fmtDate(iso: string): string {
