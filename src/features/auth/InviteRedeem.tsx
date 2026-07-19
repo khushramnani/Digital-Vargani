@@ -22,7 +22,13 @@ export function InviteRedeem() {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
   const { refreshAppUser } = useAuth()
-  const [status, setStatus] = useState<'checking' | 'confirm' | 'redeeming' | 'error'>('checking')
+  // 'error' = the LINK is bad (unknown//already-redeemed token).
+  // 'session-error' = the link is fine but we could not create the anonymous
+  // session redeem_invite requires. Collapsing the two sent an admin hunting a
+  // token bug when the real cause was the anonymous provider being disabled.
+  const [status, setStatus] = useState<'checking' | 'confirm' | 'redeeming' | 'error' | 'session-error'>('checking')
+  // Who invited them, resolved from the token BEFORE any session exists.
+  const [invite, setInvite] = useState<{ mandalName: string; volunteerName: string } | null>(null)
 
   // startedRef ensures the one-time pre-check fires only once per component
   // instance, even under StrictMode's dev-only mount -> cleanup -> mount
@@ -46,7 +52,10 @@ export function InviteRedeem() {
 
     const { error: signInError } = await supabase.auth.signInAnonymously()
     if (signInError) {
-      if (activeRef.current) setStatus('error')
+      // NOT a bad link: the volunteer flow needs an anonymous session and the
+      // project's anonymous provider is off (or auth is unreachable). Reporting
+      // this as "invalid invite" is what made it look like a token problem.
+      if (activeRef.current) setStatus('session-error')
       return
     }
 
@@ -68,6 +77,18 @@ export function InviteRedeem() {
         if (activeRef.current) setStatus('error')
         return
       }
+
+      // Resolve the invite from the token FIRST — it needs no session (public
+      // definer RPC), so it both names the mandal for the welcome copy and
+      // tells a genuinely dead token apart from a later session failure.
+      const { data: preview } = await supabase.rpc('invite_preview', { token })
+      const row = preview?.[0]
+      if (!row) {
+        if (activeRef.current) setStatus('error') // unknown or already-redeemed
+        return
+      }
+      if (activeRef.current) setInvite({ mandalName: row.mandal_name, volunteerName: row.volunteer_name })
+
       const { data: existing } = await supabase.auth.getSession()
       // A non-anonymous session is a logged-in admin/user — confirm before
       // signing them out. Anonymous (a volunteer re-opening their link) or no
@@ -100,9 +121,23 @@ export function InviteRedeem() {
     )
   }
 
+  // The link is valid — the problem is on the mandal's side. Say so, so nobody
+  // goes looking for a broken token.
+  if (status === 'session-error') {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-2 px-4 text-center">
+        <p role="alert" className="font-semibold text-stone-900">
+          {strings.auth.inviteSessionFailed}
+        </p>
+        <p className="text-sm leading-relaxed text-stone-500">{strings.auth.inviteSessionFailedHelp}</p>
+      </main>
+    )
+  }
+
   if (status === 'confirm') {
     return (
       <AuthShell title={strings.auth.inviteSwitchTitle} subtitle={strings.auth.inviteSwitchBody}>
+        {invite && <InviteWelcome mandalName={invite.mandalName} volunteerName={invite.volunteerName} />}
         <div className="flex flex-col gap-3">
           <button type="button" onClick={() => redeem()} className={btnPrimary}>
             {strings.auth.inviteSwitchContinue}
@@ -115,9 +150,34 @@ export function InviteRedeem() {
     )
   }
 
+  // Once the token is confirmed live, name the mandal while the session is
+  // being set up — the volunteer sees who invited them instead of a bare
+  // "Loading…" on a link that arrived out of context on WhatsApp.
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-2 px-4 text-center">
-      <p className="text-stone-400">{strings.auth.loading}</p>
+      {invite ? (
+        <>
+          <InviteWelcome mandalName={invite.mandalName} volunteerName={invite.volunteerName} />
+          <p className="text-sm text-stone-400">{strings.auth.inviteSettingUp}</p>
+        </>
+      ) : (
+        <p className="text-stone-400">{strings.auth.loading}</p>
+      )}
     </main>
+  )
+}
+
+function InviteWelcome({ mandalName, volunteerName }: { mandalName: string; volunteerName: string }) {
+  return (
+    <div className="mb-4 flex flex-col items-center gap-1 text-center">
+      {volunteerName.trim() && (
+        <p className="text-[15px] text-stone-500">
+          {strings.collection.greetingPrefix}
+          {volunteerName}
+        </p>
+      )}
+      <p className="text-sm text-stone-500">{strings.auth.inviteInvitedAs}</p>
+      <p className="font-display text-xl font-extrabold tracking-tight text-stone-900">{mandalName}</p>
+    </div>
   )
 }

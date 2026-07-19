@@ -452,6 +452,13 @@ export type Database = {
           total_expenses_paise: number
         }[]
       }
+      invite_preview: {
+        Args: { token: string }
+        Returns: {
+          mandal_name: string
+          volunteer_name: string
+        }[]
+      }
       is_admin: { Args: never; Returns: boolean }
       link_admin_account: { Args: never; Returns: undefined }
       list_admins: {
@@ -461,6 +468,7 @@ export type Database = {
           name: string
         }[]
       }
+      normalize_phone_e164: { Args: { raw: string }; Returns: string }
       purge_donations: { Args: { scope: string }; Returns: number }
       redeem_invite: { Args: { token: string }; Returns: undefined }
       reissue_invite: { Args: { volunteer_id: string }; Returns: string }
