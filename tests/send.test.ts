@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { buildSmsLink, buildWhatsAppLink, receiptUrl } from '../src/features/collection/send'
+import { buildSmsLink, buildWhatsAppLink, receiptUrl, buildReceiptMessage } from '../src/features/collection/send'
+import type { Donation } from '../src/lib/db/donations'
 import { LANGS } from '../src/lib/i18n/receipt'
 
 function stubUserAgent(userAgent: string) {
@@ -11,10 +12,21 @@ afterEach(() => {
 })
 
 describe('receiptUrl', () => {
-  // lang is a required parameter — a default is how a caller silently sends
-  // English forever.
-  it.each(LANGS)('carries lang=%s on the link', (lang) => {
-    expect(receiptUrl('tok123', lang)).toBe(`${window.location.origin}/r/tok123?lang=${lang}`)
+  // F4: the receipt number rides in front of the token as a human-friendly
+  // prefix; the full token still follows and is the access gate. lang is a
+  // required parameter — a default is how a caller silently sends English
+  // forever.
+  it.each(LANGS)('carries the receipt-number prefix and lang=%s on the link', (lang) => {
+    expect(receiptUrl(123, 'tok123', lang)).toBe(`${window.location.origin}/r/123-tok123?lang=${lang}`)
+  })
+})
+
+describe('buildReceiptMessage', () => {
+  it('embeds the pretty /r/<receiptNo>-<token> link and the rupee amount in the donor message', () => {
+    const donation = { amount_paise: 50100, receipt_no: 42, public_token: 'tok-abc' } as unknown as Donation
+    const message = buildReceiptMessage(donation, 'en')
+    expect(message).toContain(`${window.location.origin}/r/42-tok-abc?lang=en`)
+    expect(message).toContain('₹501')
   })
 })
 

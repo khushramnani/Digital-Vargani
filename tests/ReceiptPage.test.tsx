@@ -15,7 +15,10 @@ const { getPublicReceipt } = vi.hoisted(() => ({
   getPublicReceipt: vi.fn(),
 }))
 
-vi.mock('../src/lib/db/receipt', () => ({
+// Mock only the network call; keep the real parseInquiryContacts (pure) so the
+// footer renders exactly as it would in production.
+vi.mock('../src/lib/db/receipt', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/db/receipt')>()),
   getPublicReceipt,
 }))
 
@@ -76,7 +79,7 @@ describe('ReceiptPage', () => {
 
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
     expect(screen.getByText('₹501')).toBeInTheDocument()
-    expect(screen.getByText('VM-000042')).toBeInTheDocument()
+    expect(screen.getByText('VM/2026/0042')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'RECEIVED: CASH' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'RECEIVED: ONLINE' })).not.toBeInTheDocument()
   })
@@ -96,7 +99,7 @@ describe('ReceiptPage', () => {
     // The name appears both as the header and on the stamp, so target the
     // heading specifically.
     expect(await screen.findByRole('heading', { name: 'Ganesh Seva Mandal' })).toBeInTheDocument()
-    expect(await screen.findByText('GS-000007')).toBeInTheDocument()
+    expect(await screen.findByText('GS/2026/0007')).toBeInTheDocument()
     // One fetch, not two — the branding cannot come from another mandal.
     expect(getPublicReceipt).toHaveBeenCalledTimes(1)
   })
@@ -134,7 +137,8 @@ describe('ReceiptPage', () => {
         </Routes>
       </MemoryRouter>,
     )
-    expect(await screen.findByText('सार्वजनिक गणेशोत्सव')).toBeInTheDocument()
+    // The festival subline now carries the mandal city appended after a dot.
+    expect(await screen.findByText('सार्वजनिक गणेशोत्सव · Pune')).toBeInTheDocument()
   })
 
   it('falls back to English for an unknown ?lang=', async () => {
@@ -162,6 +166,61 @@ describe('ReceiptPage', () => {
     // as "this is my mandal's receipt", so it carries the mandal's name.
     const mark = await screen.findByAltText(cashReceipt.mandal_name)
     expect(mark).toHaveAttribute('src', 'https://x.test/logo.png')
+  })
+
+  it('shows the president name under the signature and the city in the festival subline (F3, design polish)', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('Sarvajanik Ganeshotsav · Pune')).toBeInTheDocument())
+    // President name renders (in the signature block; and again in the footer) —
+    // there is at least the signature-block occurrence.
+    expect(screen.getAllByText('Shri Madhukar Deshmukh').length).toBeGreaterThan(0)
+    expect(screen.getByText('President')).toBeInTheDocument()
+  })
+
+  it('renders the inquiry-contacts footer with the president as the default first contact (F6)', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('For any questions')).toBeInTheDocument())
+    expect(screen.getByText('Shri Madhukar Deshmukh — 9000000001')).toBeInTheDocument()
+  })
+
+  it('hides the president contact when hidden and other contacts exist, but still lists the extras (F6)', async () => {
+    getPublicReceipt.mockResolvedValue({
+      ...cashReceipt,
+      hide_president_contact: true,
+      inquiry_contacts: [{ name: 'Suresh Patil', phone: '9000000002' }],
+    })
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('Suresh Patil — 9000000002')).toBeInTheDocument())
+    // The president's phone line is suppressed (their name still appears under the signature).
+    expect(screen.queryByText('Shri Madhukar Deshmukh — 9000000001')).not.toBeInTheDocument()
+  })
+
+  it('shows the president contact even when hidden if there is no one else to ask (F6 rule)', async () => {
+    getPublicReceipt.mockResolvedValue({ ...cashReceipt, hide_president_contact: true, inquiry_contacts: [] })
+    renderReceiptPage('tok-abc')
+
+    await waitFor(() => expect(screen.getByText('Shri Madhukar Deshmukh — 9000000001')).toBeInTheDocument())
+  })
+
+  it('strips the cosmetic receiptNo prefix from a human-friendly URL and looks up the bare token (F4)', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    renderReceiptPage('42-x7k9q2mfp3ab')
+
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+    expect(getPublicReceipt).toHaveBeenCalledWith('x7k9q2mfp3ab')
+  })
+
+  it('still resolves an old bare-token URL unchanged (F4 back-compat)', async () => {
+    getPublicReceipt.mockResolvedValue(cashReceipt)
+    renderReceiptPage('x7k9q2mfp3ab')
+
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+    expect(getPublicReceipt).toHaveBeenCalledWith('x7k9q2mfp3ab')
   })
 
   it('never requests or renders donor_phone in any form', async () => {

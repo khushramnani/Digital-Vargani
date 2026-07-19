@@ -38,6 +38,7 @@ describe('every language is complete', () => {
     const keys: (keyof typeof s)[] = [
       'notFound', 'donorLabel', 'amountLabel', 'receiptNoLabel', 'dateLabel',
       'stampCash', 'stampOnline', 'voidedBanner', 'voidedReasonPrefix', 'signatureLabel',
+      'inquiryHeading',
     ]
     for (const key of keys) {
       expect(typeof s[key], `${lang}.${String(key)}`).toBe('string')

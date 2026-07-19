@@ -14,12 +14,16 @@ import { CollectionForm } from '../src/features/collection/CollectionForm'
 // through the offline queue (enqueueDonation/syncOutboxItem from
 // src/lib/queue/sync), which is mocked here instead so this test doesn't
 // need real IndexedDB (jsdom doesn't implement it).
-const { markSmsSent } = vi.hoisted(() => ({
+const { markSmsSent, getDonations } = vi.hoisted(() => ({
   markSmsSent: vi.fn(),
+  // CollectionForm now reads the volunteer's own donations to compute the
+  // "₹X today · N donors" greeting chip. Default to an empty ledger.
+  getDonations: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/donations', () => ({
   markSmsSent,
+  getDonations,
 }))
 
 const { enqueueDonation, syncOutboxItem } = vi.hoisted(() => ({
@@ -109,9 +113,13 @@ const realLocation = window.location
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Reset the remembered send channel so each test starts on the SMS default
+  // (a WhatsApp tap in a prior test must not carry over and change auto-send).
+  localStorage.clear()
   enqueueDonation.mockResolvedValue({ localId: 'local-id-1' })
   syncOutboxItem.mockResolvedValue(createdDonation)
   markSmsSent.mockResolvedValue(undefined)
+  getDonations.mockResolvedValue([])
   getMandalDefaultLang.mockResolvedValue('en')
   Object.defineProperty(window, 'location', {
     configurable: true,
@@ -213,7 +221,7 @@ describe('CollectionForm', () => {
     // jsdom's default UA isn't an iOS one, so this exercises the Android/
     // default `?body=` branch of buildSmsLink.
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -235,7 +243,7 @@ describe('CollectionForm', () => {
     fireEvent.click(sendButton)
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -252,7 +260,7 @@ describe('CollectionForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send via WhatsApp' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
     expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank', 'noopener')
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -262,6 +270,22 @@ describe('CollectionForm', () => {
   it('links to the Pending Send tray', () => {
     renderForm()
     expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/collect/pending')
+  })
+
+  it('hides both send buttons and shows the no-phone hint when the donation has no donor phone', async () => {
+    syncOutboxItem.mockResolvedValue({ ...createdDonation, donor_phone: null })
+    renderForm()
+    fireEvent.change(screen.getByLabelText('Donor Name'), { target: { value: 'No Phone Donor' } })
+    fireEvent.change(screen.getByLabelText('Amount (₹)'), { target: { value: '501' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+
+    await waitFor(() => expect(screen.getByText(/Receipt #42/)).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Send via SMS' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send via WhatsApp' })).not.toBeInTheDocument()
+    expect(screen.getByText('No phone number given — receipt cannot be sent.')).toBeInTheDocument()
+    // No phone means no auto-send fired either.
+    expect(markSmsSent).not.toHaveBeenCalled()
   })
 
   it('presets the language picker from the mandal default and sends the receipt in it', async () => {
@@ -276,7 +300,7 @@ describe('CollectionForm', () => {
     // The Marathi copy, and the link carries ?lang=mr so the receipt page
     // reads the same language straight back out.
     const expectedMessage = encodeURIComponent(
-      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/tok-abc?lang=mr',
+      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
     await waitFor(() => expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`))
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')

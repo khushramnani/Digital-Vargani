@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getPublicReceipt } from '../src/lib/db/receipt'
+import { getPublicReceipt, parseInquiryContacts } from '../src/lib/db/receipt'
 
 // No live Supabase project exists (same constraint as every prior task's
 // tests) — mock the client's `rpc` call directly to prove receipt.ts builds
@@ -89,5 +89,27 @@ describe('getPublicReceipt', () => {
     rpc.mockResolvedValue({ data: null, error: new Error('boom') })
 
     await expect(getPublicReceipt('tok-abc')).rejects.toThrow('boom')
+  })
+})
+
+describe('parseInquiryContacts', () => {
+  it('keeps well-formed {name, phone} entries', () => {
+    expect(
+      parseInquiryContacts([
+        { name: 'Suresh Patil', phone: '9000000002' },
+        { name: 'Anita Joshi', phone: '9000000003' },
+      ]),
+    ).toEqual([
+      { name: 'Suresh Patil', phone: '9000000002' },
+      { name: 'Anita Joshi', phone: '9000000003' },
+    ])
+  })
+
+  it('drops malformed entries and non-array input rather than throwing', () => {
+    expect(parseInquiryContacts(null)).toEqual([])
+    expect(parseInquiryContacts('nope')).toEqual([])
+    expect(
+      parseInquiryContacts([{ name: 'No Phone' }, { phone: '999' }, 'x', null, { name: 'Ok', phone: '123' }]),
+    ).toEqual([{ name: 'Ok', phone: '123' }])
   })
 })
