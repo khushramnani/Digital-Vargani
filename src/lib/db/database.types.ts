@@ -260,57 +260,72 @@ export type Database = {
         Row: {
           address: string | null
           bank_opening_paise: number
+          city: string | null
           created_at: string
           creator_phone: string | null
           default_lang: string
           expense_categories: string[]
+          hide_president_contact: boolean
           id: string
+          inquiry_contacts: Json
           logo_url: string | null
           name: string
           next_receipt_no: number
+          president_name: string | null
           receipt_prefix: string
           signature_url: string | null
           slug: string
           state: string | null
           transparency_published: boolean
+          transparency_visibility: string
           upi_qr_url: string | null
           upi_vpa: string | null
         }
         Insert: {
           address?: string | null
           bank_opening_paise?: number
+          city?: string | null
           created_at?: string
           creator_phone?: string | null
           default_lang?: string
           expense_categories?: string[]
+          hide_president_contact?: boolean
           id?: string
+          inquiry_contacts?: Json
           logo_url?: string | null
           name: string
           next_receipt_no?: number
+          president_name?: string | null
           receipt_prefix?: string
           signature_url?: string | null
           slug: string
           state?: string | null
           transparency_published?: boolean
+          transparency_visibility?: string
           upi_qr_url?: string | null
           upi_vpa?: string | null
         }
         Update: {
           address?: string | null
           bank_opening_paise?: number
+          city?: string | null
           created_at?: string
           creator_phone?: string | null
           default_lang?: string
           expense_categories?: string[]
+          hide_president_contact?: boolean
           id?: string
+          inquiry_contacts?: Json
           logo_url?: string | null
           name?: string
           next_receipt_no?: number
+          president_name?: string | null
           receipt_prefix?: string
           signature_url?: string | null
           slug?: string
           state?: string | null
           transparency_published?: boolean
+          transparency_visibility?: string
           upi_qr_url?: string | null
           upi_vpa?: string | null
         }
@@ -376,6 +391,7 @@ export type Database = {
         Args: {
           admin_name: string
           mandal_address?: string
+          mandal_city?: string
           mandal_name: string
           mandal_state?: string
           slug_hint?: string
@@ -388,11 +404,16 @@ export type Database = {
         Args: { token: string }
         Returns: {
           amount_paise: number
+          city: string
           created_at: string
+          creator_phone: string
           donor_name: string
+          hide_president_contact: boolean
+          inquiry_contacts: Json
           logo_url: string
           mandal_name: string
           mode: string
+          president_name: string
           receipt_no: number
           receipt_prefix: string
           signature_url: string
@@ -410,6 +431,7 @@ export type Database = {
       get_transparency_report: {
         Args: { mandal_slug: string }
         Returns: {
+          donor_count: number
           mandal_name: string
           total_collected_paise: number
           total_expenses_paise: number

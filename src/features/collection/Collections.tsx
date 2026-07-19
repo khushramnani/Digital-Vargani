@@ -7,8 +7,20 @@ import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { AppShell } from '../../components/AppShell'
+import { VolunteerTabBar } from './VolunteerTabBar'
 
 const t = strings.collections
+
+const MODE_ICON: Record<string, string> = { cash: '💵', upi: '📱', bank: '🏦' }
+
+// Short, human timestamp for a row subline — "Today, 4:20 PM" for today,
+// otherwise "2 Jan, 4:20 PM". Display-only; never feeds a total.
+function shortTime(iso: string): string {
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+  if (d.toDateString() === new Date().toDateString()) return `Today, ${time}`
+  return `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${time}`
+}
 
 // SPEC.md's "my collections" (volunteer) / "all collections" (admin) screen.
 // One screen, reused behind both /volunteer/collections and
@@ -75,6 +87,7 @@ export function CollectionsScreen() {
   const active = donations.filter((d) => !d.voided)
   const removed = donations.filter((d) => d.voided)
   const isAdmin = appUser?.role === 'admin'
+  const isVolunteer = appUser?.role === 'volunteer'
   const visible = showRemoved ? donations : active
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }
@@ -123,21 +136,27 @@ export function CollectionsScreen() {
               }`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p
-                    className={`truncate font-semibold ${donation.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl border text-xl ${
+                      donation.voided ? 'border-stone-200 bg-stone-100 opacity-60' : 'border-stone-200 bg-stone-50'
+                    }`}
                   >
-                    {donation.donor_name}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-stone-500">
-                    <span>
+                    {MODE_ICON[donation.mode] ?? '💰'}
+                  </span>
+                  <div className="min-w-0">
+                    <p
+                      className={`truncate font-semibold ${donation.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}
+                    >
+                      {donation.donor_name}
+                    </p>
+                    <p className="mt-0.5 text-[13px] text-stone-500">
                       {t.receiptPrefix}
-                      {donation.receipt_no}
-                    </span>
-                    <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
-                      {donation.mode}
-                    </span>
-                  </p>
+                      {donation.receipt_no} · <span className="capitalize">{donation.mode}</span> ·{' '}
+                      {shortTime(donation.created_at)}
+                    </p>
+                  </div>
                 </div>
                 <span
                   className={`flex-none text-lg font-bold tabular-nums ${donation.voided ? 'text-stone-400 line-through' : 'text-stone-900'}`}
@@ -194,6 +213,13 @@ export function CollectionsScreen() {
         onCancel={() => setClearOpen(false)}
         busy={clearing}
       />
+
+      {isVolunteer && (
+        <>
+          <div aria-hidden="true" className="h-16" />
+          <VolunteerTabBar />
+        </>
+      )}
     </AppShell>
   )
 }

@@ -48,6 +48,10 @@ export function TransparencyReport({
 }) {
   const segments = toSegments(categories)
   const inHandPaise = totals.totalCollectedPaise - totals.totalExpensesPaise
+  const familyLine =
+    totals.donorCount === 1
+      ? `${t.familyPrefix}${totals.donorCount}${t.familySuffix}`
+      : `${t.acrossFamiliesPrefix}${totals.donorCount}${t.acrossFamiliesSuffix}`
 
   return (
     <div className="overflow-hidden rounded-3xl border border-amber-200/70 bg-[#f7f0e1] shadow-xl shadow-amber-900/5">
@@ -73,6 +77,7 @@ export function TransparencyReport({
           <p className="font-serif mt-2 text-5xl font-semibold text-emerald-700 sm:text-6xl">
             {formatINR(totals.totalCollectedPaise)}
           </p>
+          <p className="mt-3 text-sm text-stone-500 italic">{familyLine}</p>
         </div>
 
         {/* How the funds were used */}
@@ -100,6 +105,11 @@ export function TransparencyReport({
             </>
           )}
         </section>
+
+        {/* Privacy note — verbatim, in a dashed-border box (design reference). */}
+        <div className="rounded-2xl border border-dashed border-amber-300/80 bg-[#fbf6ea]/60 px-5 py-4">
+          <p className="text-center text-xs leading-relaxed text-stone-500">{t.privacyNote}</p>
+        </div>
 
         <p className="text-center text-xs text-stone-400">{t.footerNote}</p>
       </div>

@@ -106,6 +106,21 @@ export function AdminTransparency() {
           <p className="text-sm font-medium text-stone-600">{published ? t.publishedStatus : t.unpublishedStatus}</p>
         </div>
         {mandal && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+              {t.visibilityBadgePrefix}
+              {
+                strings.transparencyVisibility[
+                  mandal.transparency_visibility as 'public' | 'members' | 'admins' | 'disabled'
+                ]
+              }
+            </span>
+            {/* ponytail: no string key for this hint — one literal beats a
+                forbidden edit to the read-only strings.ts. */}
+            <span className="text-xs text-stone-400">Change in Mandal Settings</span>
+          </div>
+        )}
+        {mandal && (
           <div className="flex items-center gap-2 border-t border-stone-100 pt-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold tracking-wide text-stone-400 uppercase">{t.publicLinkLabel}</p>

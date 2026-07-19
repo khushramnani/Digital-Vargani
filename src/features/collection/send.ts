@@ -31,9 +31,23 @@ export function buildWhatsAppLink(phone: string, message: string): string {
 
 // The donor's language rides on the receipt link as ?lang= rather than on
 // the donation row: no column, no migration, and the receipt page reads it
-// straight back out. `/r/:public_token` is the public receipt page.
-export function receiptUrl(publicToken: string, lang: Lang): string {
-  return `${window.location.origin}/r/${publicToken}?lang=${lang}`
+// straight back out. F4: the receipt number rides in front of the token as a
+// human-friendly prefix (`/r/<receiptNo>-<token>`), so the link reads like a
+// bill number — the FULL public_token still follows and is the only thing
+// gating access (no entropy lost). The receipt page strips the numeric prefix
+// and looks the row up by token, so old `/r/<token>` links keep working.
+export function receiptUrl(receiptNo: number, publicToken: string, lang: Lang): string {
+  return `${window.location.origin}/r/${receiptNo}-${publicToken}?lang=${lang}`
+}
+
+// The exact SMS/WhatsApp text that goes out for a donation. Exported so the
+// post-log send tray (CollectionForm) can PREVIEW the message without
+// duplicating the copy — one source of truth for what the donor receives.
+export function buildReceiptMessage(donation: Donation, lang: Lang): string {
+  return receiptStrings[lang].smsMessage(
+    toRupees(donation.amount_paise),
+    receiptUrl(donation.receipt_no, donation.public_token, lang),
+  )
 }
 
 // The one send flow: build the link, attempt to open the native SMS
@@ -42,8 +56,7 @@ export function receiptUrl(publicToken: string, lang: Lang): string {
 // update just leaves the row in the "Pending send" tray (PendingSend.tsx)
 // instead of surfacing an error over an otherwise-successful donation.
 export function sendReceiptSms(donation: Donation, lang: Lang): void {
-  const message = receiptStrings[lang].smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token, lang))
-  window.location.href = buildSmsLink(donation.donor_phone ?? '', message)
+  window.location.href = buildSmsLink(donation.donor_phone ?? '', buildReceiptMessage(donation, lang))
   markSmsSent(donation.id).catch(() => {})
 }
 
@@ -54,7 +67,6 @@ export function sendReceiptSms(donation: Donation, lang: Lang): void {
 // unchanged: that column means "a receipt has been sent for this donation"
 // for the Pending Send tray's purposes, not "sent via SMS specifically".
 export function sendReceiptWhatsApp(donation: Donation, lang: Lang): void {
-  const message = receiptStrings[lang].smsMessage(toRupees(donation.amount_paise), receiptUrl(donation.public_token, lang))
-  window.open(buildWhatsAppLink(donation.donor_phone ?? '', message), '_blank', 'noopener')
+  window.open(buildWhatsAppLink(donation.donor_phone ?? '', buildReceiptMessage(donation, lang)), '_blank', 'noopener')
   markSmsSent(donation.id).catch(() => {})
 }

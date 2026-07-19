@@ -1,10 +1,10 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { getPublicReceipt, type PublicReceipt } from '../../lib/db/receipt'
+import { getPublicReceipt, parseInquiryContacts, type InquiryContact, type PublicReceipt } from '../../lib/db/receipt'
 import { ReceiptStamp } from '../../components/ReceiptStamp'
 import { formatINR } from '../../lib/money'
 import { amountInWords } from '../../lib/amountWords'
-import { receiptStrings, toLang } from '../../lib/i18n/receipt'
+import { receiptStrings, toLang, type Lang } from '../../lib/i18n/receipt'
 import { strings } from '../../lib/strings'
 
 type PageState =
@@ -65,58 +65,40 @@ function Divider() {
   return <div className="my-5 border-t border-dotted border-[#cdbb93]" />
 }
 
-// Public, unauthenticated route (/r/:public_token) — no RequireRole guard, no
-// AuthProvider dependency. This is the donor-facing devotional world, styled
-// like a stamped paper vargani receipt, deliberately warmer and more
-// traditional than the utilitarian volunteer/admin screens.
-export function ReceiptPage() {
-  const { public_token } = useParams<{ public_token: string }>()
-  const [searchParams] = useSearchParams()
-  const lang = toLang(searchParams.get('lang'))
+// Traditional bill-book receipt numbering: PREFIX/YEAR/NNNN (e.g. VM/2026/0012).
+// Year is taken in UTC so the string is stable regardless of the viewer's clock
+// (Ganeshotsav is nowhere near a year boundary, so UTC vs IST never diverges in
+// practice); the sequence is zero-padded to at least 4 digits.
+function formatReceiptNumber(prefix: string, receiptNo: number, iso: string): string {
+  const year = new Date(iso).getUTCFullYear()
+  return `${prefix}/${year}/${String(receiptNo).padStart(4, '0')}`
+}
+
+// Builds the receipt's inquiry-contact list (F6). The president (name +
+// creator_phone) is the default first contact unless hidden — but a hidden
+// president still shows when there is no one else to ask. Then up to two extra
+// contacts from the mandal profile. A contact needs a phone to appear at all.
+function inquiryContactsFor(receipt: PublicReceipt): InquiryContact[] {
+  const extra = parseInquiryContacts(receipt.inquiry_contacts)
+    .filter((c) => c.name.trim() && c.phone.trim())
+    .slice(0, 2)
+  const showPresident = !!receipt.creator_phone && (!receipt.hide_president_contact || extra.length === 0)
+  return [
+    ...(showPresident ? [{ name: receipt.president_name ?? receipt.mandal_name, phone: receipt.creator_phone! }] : []),
+    ...extra,
+  ]
+}
+
+// The donor-facing receipt CARD — pure and self-contained: give it a resolved
+// receipt + language and it renders the devotional bill-book, no fetching and
+// no router hooks. Settings' "Preview donor receipt" renders this directly with
+// a sample donation + the mandal's current branding.
+export function ReceiptView({ receipt, lang }: { receipt: PublicReceipt; lang: Lang }) {
   const t = receiptStrings[lang]
-  const [state, setState] = useState<PageState>({ status: 'loading' })
-
-  useEffect(() => {
-    let active = true
-    async function load() {
-      if (!public_token) {
-        if (active) setState({ status: 'not-found' })
-        return
-      }
-      try {
-        const receipt = await getPublicReceipt(public_token)
-        if (!active) return
-        setState(receipt ? { status: 'found', receipt } : { status: 'not-found' })
-      } catch {
-        if (active) setState({ status: 'not-found' })
-      }
-    }
-    load()
-    return () => {
-      active = false
-    }
-  }, [public_token])
-
-  if (state.status === 'loading') {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#e7ddc7] px-4">
-        <p className="font-serif text-[#8f7358]">{strings.auth.loading}</p>
-      </main>
-    )
-  }
-
-  if (state.status === 'not-found') {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#e7ddc7] px-4 text-center">
-        <p className="font-serif text-[#5a332b]">{t.notFound}</p>
-      </main>
-    )
-  }
-
-  const { receipt } = state
   const mandalName = receipt.mandal_name
-  const receiptNumber = `${receipt.receipt_prefix}-${String(receipt.receipt_no).padStart(6, '0')}`
+  const receiptNumber = formatReceiptNumber(receipt.receipt_prefix, receipt.receipt_no, receipt.created_at)
   const stampLabel = receipt.mode === 'cash' ? t.stampCash : t.stampOnline
+  const contacts = inquiryContactsFor(receipt)
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#e7ddc7] px-4 py-8 font-body">
@@ -148,11 +130,14 @@ export function ReceiptPage() {
                 <img
                   src={receipt.logo_url}
                   alt={mandalName}
-                  className="mt-4 h-14 w-14 rounded-full border border-[#d6c39a] bg-white/50 object-contain p-1"
+                  className="mt-4 h-20 w-20 rounded-full border border-[#d6c39a] bg-white/50 object-contain p-1"
                 />
               )}
               <h1 className="font-mark mt-3 text-[28px] leading-tight text-[#5a332b]">{mandalName}</h1>
-              <p className="font-serif mt-1 text-[13px] text-[#8f7358] italic">{t.festivalSubtitle}</p>
+              <p className="font-serif mt-1 text-[13px] text-[#8f7358] italic">
+                {t.festivalSubtitle}
+                {receipt.city ? ` · ${receipt.city}` : ''}
+              </p>
 
               <p className="font-serif mt-4 rounded-md border border-[#c9b78d] px-4 py-1.5 text-[11px] tracking-[0.28em] text-[#7a6a3d] uppercase">
                 {t.officialReceipt}
@@ -200,17 +185,32 @@ export function ReceiptPage() {
               <div className="flex w-full items-end justify-between gap-3 pt-1">
                 <div className="flex min-w-0 flex-col items-start">
                   {receipt.signature_url && !receipt.voided ? (
-                    <img src={receipt.signature_url} alt="" className="h-11 object-contain" />
+                    <img src={receipt.signature_url} alt="" className="h-16 object-contain" />
                   ) : (
-                    <div className="h-11" />
+                    <div className="h-16" />
                   )}
-                  <div className="mt-1 w-40 max-w-full border-t border-[#c9b78d] pt-1">
+                  <div className="mt-1 w-40 max-w-full border-t border-[#c9b78d] pt-1 text-left">
+                    {receipt.president_name && (
+                      <p className="font-mark text-[14px] leading-tight text-[#5a332b]">{receipt.president_name}</p>
+                    )}
                     <p className="font-serif text-[12px] text-[#8f7358] italic">{t.signatureLabel}</p>
                   </div>
                 </div>
 
                 {!receipt.voided && <ReceiptStamp label={stampLabel} mode={receipt.mode === 'cash' ? 'cash' : 'online'} mandalName={mandalName} />}
               </div>
+
+              {/* Inquiry contacts (F6) */}
+              {contacts.length > 0 && (
+                <div className="mt-6 w-full border-t border-dotted border-[#cdbb93] pt-3 text-center">
+                  <p className="text-[10px] tracking-[0.18em] text-[#a38f6d] uppercase">{t.inquiryHeading}</p>
+                  {contacts.map((c, i) => (
+                    <p key={i} className="font-mark mt-1 text-[13px] text-[#6b4a3a]">
+                      {c.name} — {c.phone}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -222,4 +222,60 @@ export function ReceiptPage() {
       </div>
     </main>
   )
+}
+
+// Public, unauthenticated route (/r/:public_token) — no RequireRole guard, no
+// AuthProvider dependency. This is the donor-facing devotional world, styled
+// like a stamped paper vargani receipt, deliberately warmer and more
+// traditional than the utilitarian volunteer/admin screens. Owns the URL param,
+// fetch and loading/not-found states; the card itself is <ReceiptView />.
+export function ReceiptPage() {
+  const { public_token } = useParams<{ public_token: string }>()
+  const [searchParams] = useSearchParams()
+  const lang = toLang(searchParams.get('lang'))
+  const t = receiptStrings[lang]
+  const [state, setState] = useState<PageState>({ status: 'loading' })
+
+  useEffect(() => {
+    let active = true
+    async function load() {
+      // F4: human-friendly URLs are `<receiptNo>-<token>` — strip the cosmetic
+      // numeric prefix and look up by the bare token. Old bare-token links have
+      // no such prefix and pass through unchanged.
+      const token = public_token?.replace(/^\d+-/, '')
+      if (!token) {
+        if (active) setState({ status: 'not-found' })
+        return
+      }
+      try {
+        const receipt = await getPublicReceipt(token)
+        if (!active) return
+        setState(receipt ? { status: 'found', receipt } : { status: 'not-found' })
+      } catch {
+        if (active) setState({ status: 'not-found' })
+      }
+    }
+    load()
+    return () => {
+      active = false
+    }
+  }, [public_token])
+
+  if (state.status === 'loading') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#e7ddc7] px-4">
+        <p className="font-serif text-[#8f7358]">{strings.auth.loading}</p>
+      </main>
+    )
+  }
+
+  if (state.status === 'not-found') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#e7ddc7] px-4 text-center">
+        <p className="font-serif text-[#5a332b]">{t.notFound}</p>
+      </main>
+    )
+  }
+
+  return <ReceiptView receipt={state.receipt} lang={lang} />
 }

@@ -131,6 +131,16 @@ describe('PendingSend', () => {
     await waitFor(() => expect(screen.getByText('No pending receipts to send.')).toBeInTheDocument())
   })
 
+  it('hides the send buttons and shows the no-phone hint for a phoneless pending donation', async () => {
+    getPendingSendDonations.mockResolvedValue([{ ...pendingDonation, donor_phone: null }])
+    renderPendingSend()
+    await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
+
+    expect(screen.queryByRole('button', { name: 'SMS' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'WhatsApp' })).not.toBeInTheDocument()
+    expect(screen.getByText('No phone number given — receipt cannot be sent.')).toBeInTheDocument()
+  })
+
   it('tapping SMS fires the same SMS link flow and marks the donation sent', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
@@ -138,7 +148,7 @@ describe('PendingSend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SMS' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -152,7 +162,7 @@ describe('PendingSend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
 
     const expectedMessage = encodeURIComponent(
-      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/tok-abc?lang=en',
+      'Thank you for your ₹501 contribution. View your official receipt here: https://vinayak-mandal.example/r/42-tok-abc?lang=en',
     )
     expect(openSpy).toHaveBeenCalledWith(`https://wa.me/919876543210?text=${expectedMessage}`, '_blank', 'noopener')
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
@@ -248,7 +258,7 @@ describe('PendingSend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SMS' }))
 
     const expectedMessage = encodeURIComponent(
-      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/tok-abc?lang=mr',
+      'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
     expect(window.location.href).toBe(`sms:9876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')

@@ -76,6 +76,12 @@ export const strings = {
     slugPreviewPrefix: '/transparency/',
     submit: 'Create my mandal',
     submitting: 'Creating…',
+    // F7: city typeahead replaces the bare state dropdown (fills both)
+    cityLabel: 'City',
+    cityPlaceholder: 'Start typing your city…',
+    cityHelp: 'Pick your city — we fill in the state.',
+    cityNotListed: "Can't find it? Type your city and choose “Use as typed”.",
+    cityUseAsTyped: 'Use as typed',
   },
   admin: {
     dashboardTitle: 'Admin Dashboard',
@@ -138,6 +144,39 @@ export const strings = {
     saving: 'Saving…',
     saved: 'Settings saved.',
     backLink: '← Dashboard',
+    // F7: city typeahead (fills city + state together)
+    cityLabel: 'City',
+    cityPlaceholder: 'Start typing your city…',
+    cityHelp: 'Pick your city and we fill in the state.',
+    cityNotListed: "Can't find your city? Type it and choose “Use as typed”.",
+    cityUseAsTyped: 'Use as typed',
+    // F3: president name under the receipt signature
+    presidentNameLabel: "President's name",
+    presidentNamePlaceholder: 'e.g. Shri Madhukar Deshmukh',
+    presidentNameHelp: 'Shown under the signature on every receipt.',
+    // F3: live receipt preview
+    previewReceiptButton: 'Preview donor receipt',
+    previewReceiptHint: 'See exactly what a donor receives with your current branding.',
+    closePreview: 'Close',
+    previewSampleDonor: 'Ramesh Patil',
+    // F5: transparency visibility
+    sectionTransparency: 'Public report',
+    sectionTransparencyHelp: 'Choose who can open your transparency report. Publishing stays separate — set on the report screen.',
+    visibilityLabel: 'Who can see the report',
+    // F6: receipt inquiry contacts
+    sectionContacts: 'Receipt contacts',
+    sectionContactsHelp:
+      'Shown on every receipt so donors know who to ask. These numbers become public to anyone with a receipt link.',
+    contactNameLabel: 'Name',
+    contactPhoneLabel: 'Phone',
+    contactNamePlaceholder: 'Contact name',
+    contactPhonePlaceholder: 'Phone number',
+    addContactButton: 'Add another contact',
+    removeContact: 'Remove contact',
+    contactsMaxHint: 'Up to two extra contacts besides the president.',
+    presidentContactTag: 'President · default contact',
+    hidePresidentLabel: "Hide the president's number on receipts",
+    hidePresidentHelp: 'The president still shows when no other contact is set — donors always have someone to ask.',
   },
   // Top-level, not inside mandalConfig: every language picker (mandal
   // settings, the collection form, pending send) names the languages, and
@@ -202,6 +241,24 @@ export const strings = {
     cashInHandLink: 'Cash in hand',
     collectionsLink: 'My collections',
     savedOffline: "Saved — will send once you're back online.",
+    // design: greeting + personal daily total chip on the collect form
+    greetingPrefix: 'Namaste, ',
+    greetingFallback: 'Namaste',
+    todayLabel: 'today',
+    donorsSuffix: ' donors',
+    // design: auspicious quick-amount chips + offline trust microcopy under CTA
+    quickAmountsLabel: 'Quick amounts',
+    offlineMicrocopy: 'Saved locally first · sends when you press Send',
+    // F1 + design: the post-log send tray shown after a donation is recorded
+    sendTrayTitle: 'Send from your SMS',
+    sendTrayBody: '₹0 cost, and it arrives from you — a trusted neighbour.',
+    smsPreviewLabel: 'Message preview',
+    openSmsAndSend: 'Open SMS & Send',
+    previewReceiptButton: 'Preview donor receipt',
+    newCollectionButton: '+ New collection',
+    // new-issue #4: donor gave no phone, so there is nobody to text/message
+    noPhoneHint: 'No phone number given — receipt cannot be sent.',
+    backToDashboard: 'Dashboard',
     errors: {
       donorName: "Enter the donor's name.",
       donorPhone: 'Enter a valid phone number.',
@@ -250,6 +307,10 @@ export const strings = {
     voidButton: 'Delete',
     voidPrompt: 'Reason (optional)',
     voidedPrefix: 'Removed — ',
+    // design: "PENDING SEND — N waiting" section header + counter
+    sectionTitle: 'Pending send',
+    waitingCountSuffix: ' waiting',
+    smsPreviewLabel: 'Message preview',
   },
   expenses: {
     title: 'Expenses',
@@ -297,6 +358,21 @@ export const strings = {
   cashInHand: {
     title: 'Cash in Hand',
     empty: 'No active volunteers yet.',
+    // design: the maroon "you owe the treasurer" hero (volunteer view)
+    youOweLabel: 'You owe the treasurer',
+    youOweSubtitle: 'Cash collected, not yet handed over',
+    allSettled: "You're all settled up — nothing to hand over right now.",
+    // design: three mini stat cards under the hero
+    cashCollectedLabel: 'Cash collected',
+    spentOnMandalLabel: 'Spent on mandal',
+    handedOverLabel: 'Handed over',
+    handToTreasurerCta: 'Hand cash to treasurer →',
+    myHandoversTitle: 'My handovers',
+    // admin view: per-volunteer tracker rows
+    withVolunteersSuffix: ' with volunteers',
+    stillOwesLabel: 'still owes',
+    collectedPrefix: 'collected ',
+    handedPrefix: 'handed ',
   },
   transparency: {
     title: 'Transparency Report',
@@ -316,6 +392,32 @@ export const strings = {
     publicLinkLabel: 'Public link',
     copyLink: 'Copy link',
     copied: 'Copied',
+    // design: donor-count line + verbatim privacy note on the public report
+    acrossFamiliesPrefix: 'across ',
+    acrossFamiliesSuffix: ' families — with heartfelt thanks',
+    familyPrefix: 'across ',
+    familySuffix: ' family — with heartfelt thanks',
+    privacyNote:
+      'Individual donor names and amounts are kept private. This report shows only the mandal’s totals — complete transparency, in one glance. 🙏',
+    // F5: shown when visibility is 'disabled' (or a members/admins report the
+    // viewer isn't allowed to see) instead of the "not published" copy.
+    reportNotAvailable: 'This report is not available.',
+    // F5 admin badge
+    visibilityBadgePrefix: 'Visibility · ',
+    visibilityLabel: 'Who can see it',
+  },
+  // Top-level (shared by Mandal Settings' radio picker and the admin
+  // transparency badge), same rationale as `languages` above — one place for
+  // the four visibility labels so the two screens can't drift.
+  transparencyVisibility: {
+    public: 'Anyone with the link',
+    members: 'Signed-in members of this mandal',
+    admins: 'Admins of this mandal only',
+    disabled: 'Nobody — report turned off',
+    publicHelp: 'Today’s behaviour — anyone you share the link with can open it.',
+    membersHelp: 'Only your volunteers and admins, after they sign in.',
+    adminsHelp: 'Only this mandal’s admins.',
+    disabledHelp: 'The link shows a friendly “not available” message to everyone.',
   },
   ledger: {
     totalCollectedLabel: 'Total Collected',
@@ -323,6 +425,32 @@ export const strings = {
     netBalanceLabel: 'Net Balance',
     balanced: 'Books balanced',
     discrepancyPrefix: 'Discrepancy: ',
+    // F9 admin dashboard redesign (treasurer console)
+    consoleTitle: 'Treasurer console',
+    masterLedgerTitle: 'Master Ledger',
+    liveSubtitle: 'Live view · updated just now',
+    // books-balance equation banner, real numbers
+    booksBalanceTitle: 'Books balance — everything reconciles',
+    booksImbalanceTitle: 'Books don’t balance yet',
+    equationNetLabel: 'Net Balance',
+    equationOpeningLabel: 'Opening balance',
+    equationVolunteers: 'Volunteers',
+    equationTreasurer: 'Treasurer cash',
+    equationBank: 'Bank',
+    inactiveVolunteersLabel: 'Inactive volunteers',
+    // stat trio
+    fundPoolLabel: 'Total fund pool',
+    donationsCountSuffix: ' donations collected',
+    paymentsCountSuffix: ' payments made',
+    netBalanceSubtitle: 'Collections − Expenses',
+    // two-column body
+    cashTrackerTitle: 'Cash in hand',
+    withVolunteersSuffix: ' with volunteers',
+    stillOwesLabel: 'still owes',
+    collectedPrefix: 'collected ',
+    handedPrefix: 'handed ',
+    whereMoneyWentTitle: 'Where the money went',
+    noExpensesYet: 'No expenses recorded yet.',
   },
   landing: {
     productName: 'Digital Vargani',

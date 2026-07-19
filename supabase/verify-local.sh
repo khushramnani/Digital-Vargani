@@ -32,9 +32,10 @@ PGUSER="postgres"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vm-verify-pg.XXXXXX")"
 LOG_FILE="$DATA_DIR/postgres.log"
 
-# Fall back to the known scoop install location if the pg binaries aren't
-# already on PATH.
-PG_BIN_FALLBACK="/c/Users/khush/scoop/apps/postgresql/current/bin"
+# Fall back to a scoop install under the current user's home if the pg
+# binaries aren't already on PATH (derived from $HOME, not a hardcoded
+# username, so this works for any developer with the same scoop layout).
+PG_BIN_FALLBACK="${HOME:-/c/Users/$USER}/scoop/apps/postgresql/current/bin"
 if ! command -v pg_ctl >/dev/null 2>&1 && [ -d "$PG_BIN_FALLBACK" ]; then
   export PATH="$PG_BIN_FALLBACK:$PATH"
 fi
@@ -914,6 +915,177 @@ BEGIN
   RAISE NOTICE 'PASS: after publishing, anon sees the aggregate report and excludes the voided expense from the category sum';
 END $$;
 reset role;
+SQL
+
+echo "== assertion: F5 transparency_visibility gates the PUBLISHED report by audience =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- mandal-one is published (previous assertion set transparency_published=true).
+-- Exercise each visibility value through the admin RLS update policy, then read
+-- the report as anon / a member volunteer / this mandal's admin / another
+-- mandal's admin. Publish stays a separate toggle — visibility narrows WHO of
+-- the public may see an already-published report.
+
+-- members: any signed-in member of THIS mandal (admin or volunteer); anon and
+-- other mandals excluded.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+update mandals set transparency_visibility = 'members' where id = app_mandal_id();
+reset role;
+
+-- Clear the claim before dropping to anon (a lingering admin claim would hand
+-- anon the is_admin() preview bypass — see the publish block above).
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 0, format('FAIL: members-only report must be hidden from anon, saw %s', n);
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One (member of mandal one)
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 1, format('FAIL: members-only report must be visible to a member volunteer, saw %s', n);
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal TWO admin (not a member of mandal one)
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 0, format('FAIL: members-only report must be hidden from another mandal''s admin, saw %s', n);
+END $$;
+reset role;
+
+-- admins: only THIS mandal's admins; a member volunteer no longer qualifies.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+update mandals set transparency_visibility = 'admins' where id = app_mandal_id();
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 0, format('FAIL: admins-only report must be hidden from a member volunteer, saw %s', n);
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 1, format('FAIL: admins-only report must be visible to this mandal''s admin, saw %s', n);
+END $$;
+
+-- disabled: nobody via the public path; the own-admin preview still renders so
+-- the admin transparency screen keeps working.
+update mandals set transparency_visibility = 'disabled' where id = app_mandal_id();
+reset role;
+
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 0, format('FAIL: disabled report must be hidden from anon, saw %s', n);
+  SELECT count(*) INTO n FROM get_transparency_categories('mandal-one');
+  ASSERT n = 0, format('FAIL: disabled categories must be hidden from anon, saw %s', n);
+END $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM get_transparency_report('mandal-one');
+  ASSERT n = 1, format('FAIL: disabled report must still preview to this mandal''s admin, saw %s', n);
+END $$;
+
+-- Restore 'public' so downstream assertions see the same published+public
+-- state the earlier publish assertion left.
+update mandals set transparency_visibility = 'public' where id = app_mandal_id();
+reset role;
+SQL
+
+echo "== assertion: new-issue #3 deactivated users are fully locked out (app_user_id/role/mandal_id) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Throwaway admin + volunteer in mandal one, each with a real auth identity, so
+-- we can prove an ACTIVE user resolves and a DEACTIVATED one loses EVERYTHING —
+-- not just visibility in lists. This is the assertion that fails if only
+-- app_user_id() is gated and is_admin()/app_mandal_id() are left ungated.
+insert into auth.users (id, email) values
+  ('aaaaaaaa-0000-0000-0000-0000000000f1', 'active-gate-admin@example.com'),
+  ('aaaaaaaa-0000-0000-0000-0000000000f2', null);
+insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
+  ('00000000-0000-0000-0000-0000000000f1', '11111111-1111-1111-1111-000000000001',
+   'Active Gate Admin', 'admin', 'active-gate-admin@example.com', 'aaaaaaaa-0000-0000-0000-0000000000f1', true);
+insert into users (id, mandal_id, name, role, invite_token, auth_user_id, active) values
+  ('00000000-0000-0000-0000-0000000000f2', '11111111-1111-1111-1111-000000000001',
+   'Active Gate Volunteer', 'volunteer', 'active-gate-vol-token', 'aaaaaaaa-0000-0000-0000-0000000000f2', true);
+
+-- While ACTIVE: the admin's helpers all resolve.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000f1';
+DO $$
+BEGIN
+  ASSERT app_user_id() = '00000000-0000-0000-0000-0000000000f1', 'FAIL: active admin app_user_id() unresolved';
+  ASSERT is_admin(), 'FAIL: active admin is_admin() should be true';
+  ASSERT app_mandal_id() = '11111111-1111-1111-1111-000000000001', 'FAIL: active admin app_mandal_id() unresolved';
+END $$;
+reset role;
+
+-- Deactivate both (superuser update, modelling an admin flipping users.active).
+update users set active = false where id in
+  ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000f2');
+
+-- While INACTIVE: the deactivated admin is no longer an admin, has no user id,
+-- and no mandal scope, so mandals RLS (is_admin() AND id = app_mandal_id())
+-- shows nothing.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000f1';
+DO $$
+DECLARE n int;
+BEGIN
+  ASSERT app_user_id() IS NULL, 'FAIL: deactivated admin still resolves app_user_id()';
+  ASSERT app_user_role() IS NULL, 'FAIL: deactivated admin still resolves app_user_role()';
+  ASSERT NOT is_admin(), 'FAIL: deactivated admin still passes is_admin() — not locked out';
+  ASSERT app_mandal_id() IS NULL, 'FAIL: deactivated admin still resolves app_mandal_id()';
+  SELECT count(*) INTO n FROM mandals;
+  ASSERT n = 0, format('FAIL: deactivated admin can still read mandals (%s rows)', n);
+END $$;
+reset role;
+
+-- The deactivated volunteer loses collect access: their own donations
+-- (collected_by = app_user_id()) become unreadable.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000f2';
+DO $$
+DECLARE n int;
+BEGIN
+  ASSERT app_user_id() IS NULL, 'FAIL: deactivated volunteer still resolves app_user_id()';
+  SELECT count(*) INTO n FROM donations;
+  ASSERT n = 0, format('FAIL: deactivated volunteer can still read donations (%s rows)', n);
+  RAISE NOTICE 'PASS: deactivated users lose app_user_id/role/mandal_id and all row access';
+END $$;
+reset role;
+
+-- Remove the throwaway users so later count-based assertions are unaffected.
+delete from users where id in
+  ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000f2');
 SQL
 
 echo "== assertion: a volunteer can read expense_categories via RPC even though mandals itself is admin-only =="

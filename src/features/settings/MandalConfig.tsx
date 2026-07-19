@@ -6,12 +6,20 @@ import {
   type MandalAssetKind,
   type Mandal,
 } from '../../lib/db/config'
-import { INDIAN_STATES } from '../../lib/states'
 import { LANGS, toLang, type Lang } from '../../lib/i18n/receipt'
 import { toPaise, toRupees, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { AppShell } from '../../components/AppShell'
+import { CityTypeahead } from '../../components/CityTypeahead'
 import { field as inputCls } from '../../components/ui'
+import { ReceiptView } from '../receipt/ReceiptPage'
+import { parseInquiryContacts, type InquiryContact, type PublicReceipt } from '../../lib/db/receipt'
+
+// F5: the four transparency-report audiences, shared with strings.transparencyVisibility.
+const VISIBILITIES = ['public', 'members', 'admins', 'disabled'] as const
+type Visibility = (typeof VISIBILITIES)[number]
+const toVisibility = (v: string): Visibility =>
+  (VISIBILITIES as readonly string[]).includes(v) ? (v as Visibility) : 'public'
 
 const t = strings.mandalConfig
 
@@ -89,9 +97,17 @@ export function MandalConfigScreen() {
   // Held in state because updateMandal and uploadMandalAsset both need it.
   const [mandalId, setMandalId] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const [cityVal, setCityVal] = useState('')
   const [stateVal, setStateVal] = useState('')
   const [address, setAddress] = useState('')
   const [creatorPhone, setCreatorPhone] = useState('')
+  const [presidentName, setPresidentName] = useState('')
+  const [visibility, setVisibility] = useState<Visibility>('public')
+  const [contacts, setContacts] = useState<InquiryContact[]>([])
+  const [hidePresident, setHidePresident] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  // Not editable here, but the receipt preview + numbering need it.
+  const [receiptPrefix, setReceiptPrefix] = useState('VM')
   const [upiVpa, setUpiVpa] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null)
@@ -115,9 +131,15 @@ export function MandalConfigScreen() {
     function applyConfig(config: Mandal) {
       setMandalId(config.id)
       setName(config.name)
+      setCityVal(config.city ?? '')
       setStateVal(config.state ?? '')
       setAddress(config.address ?? '')
       setCreatorPhone(config.creator_phone ?? '')
+      setPresidentName(config.president_name ?? '')
+      setVisibility(toVisibility(config.transparency_visibility))
+      setContacts(parseInquiryContacts(config.inquiry_contacts))
+      setHidePresident(config.hide_president_contact)
+      setReceiptPrefix(config.receipt_prefix)
       setUpiVpa(config.upi_vpa ?? '')
       setLogoUrl(config.logo_url)
       setSignatureUrl(config.signature_url)
@@ -174,6 +196,44 @@ export function MandalConfigScreen() {
     setCategories((current) => current.filter((c) => c !== category))
   }
 
+  // F6: up to two extra receipt contacts besides the president.
+  function addContact() {
+    setContacts((current) => (current.length >= 2 ? current : [...current, { name: '', phone: '' }]))
+  }
+
+  function updateContact(index: number, patch: Partial<InquiryContact>) {
+    setContacts((current) => current.map((c, i) => (i === index ? { ...c, ...patch } : c)))
+  }
+
+  function removeContact(index: number) {
+    setContacts((current) => current.filter((_, i) => i !== index))
+  }
+
+  // A receipt contact renders as "<name> — <phone>", so both parts are
+  // required: drop any row missing either, so a nameless "— 99999" line or a
+  // silently-discarded phoneless contact can never reach a donor's receipt.
+  const cleanContacts = contacts.filter((c) => c.name.trim() && c.phone.trim())
+
+  // F3: the exact receipt a donor gets, from the CURRENT (unsaved) form values.
+  const sampleReceipt: PublicReceipt = {
+    amount_paise: 50100,
+    mode: 'cash',
+    receipt_no: 12,
+    receipt_prefix: receiptPrefix,
+    created_at: '2026-09-06T12:42:00.000Z',
+    donor_name: t.previewSampleDonor,
+    mandal_name: name,
+    city: cityVal.trim() || null,
+    president_name: presidentName.trim() || null,
+    creator_phone: creatorPhone.trim() || null,
+    logo_url: logoUrl,
+    signature_url: signatureUrl,
+    inquiry_contacts: cleanContacts,
+    hide_president_contact: hidePresident,
+    voided: false,
+    void_reason: null,
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!mandalId) return
@@ -184,9 +244,14 @@ export function MandalConfigScreen() {
     try {
       await updateMandal(mandalId, {
         name,
+        city: cityVal.trim() || null,
         state: stateVal || null,
         address: address.trim() || null,
         creator_phone: creatorPhone.trim() || null,
+        president_name: presidentName.trim() || null,
+        transparency_visibility: visibility,
+        inquiry_contacts: cleanContacts,
+        hide_president_contact: hidePresident,
         upi_vpa: upiVpa || null,
         logo_url: logoUrl,
         signature_url: signatureUrl,
@@ -218,20 +283,18 @@ export function MandalConfigScreen() {
             <Field label={t.nameLabel}>
               <input required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
             </Field>
-            <Field label={t.stateLabel}>
-              <select
-                value={stateVal}
-                onChange={(e) => setStateVal(e.target.value)}
-                className={`${inputCls} ${stateVal ? '' : 'text-stone-400'}`}
-              >
-                <option value="">{t.statePlaceholder}</option>
-                {INDIAN_STATES.map((s) => (
-                  <option key={s} value={s} className="text-stone-900">
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <CityTypeahead
+              city={cityVal}
+              state={stateVal}
+              onChange={({ city, state }) => {
+                setCityVal(city)
+                setStateVal(state)
+              }}
+              label={t.cityLabel}
+              placeholder={t.cityPlaceholder}
+              help={t.cityHelp}
+              useAsTypedLabel={t.cityUseAsTyped}
+            />
             <Field label={t.addressLabel} help={t.addressHelp}>
               <textarea
                 rows={2}
@@ -266,6 +329,24 @@ export function MandalConfigScreen() {
               isUploading={uploading === 'signature'}
               onSelect={(e) => handleFileChange('signature', e)}
             />
+            <Field label={t.presidentNameLabel} help={t.presidentNameHelp}>
+              <input
+                value={presidentName}
+                onChange={(e) => setPresidentName(e.target.value)}
+                placeholder={t.presidentNamePlaceholder}
+                className={inputCls}
+              />
+            </Field>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="w-fit rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-stone-700 hover:bg-stone-50"
+              >
+                {t.previewReceiptButton}
+              </button>
+              <span className="text-xs leading-relaxed text-stone-500">{t.previewReceiptHint}</span>
+            </div>
           </Section>
 
           <Section title={t.sectionPayments} help={t.sectionPaymentsHelp}>
@@ -284,6 +365,95 @@ export function MandalConfigScreen() {
               isUploading={uploading === 'upi_qr'}
               onSelect={(e) => handleFileChange('upi_qr', e)}
             />
+          </Section>
+
+          <Section title={t.sectionTransparency} help={t.sectionTransparencyHelp}>
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-1 text-sm font-semibold text-stone-700">{t.visibilityLabel}</legend>
+              {VISIBILITIES.map((v) => (
+                <div key={v} className="flex flex-col">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="transparency_visibility"
+                      value={v}
+                      checked={visibility === v}
+                      onChange={() => setVisibility(v)}
+                      className="accent-orange-600"
+                    />
+                    <span className="text-sm font-semibold text-stone-800">{strings.transparencyVisibility[v]}</span>
+                  </label>
+                  <span className="ml-6 text-xs leading-relaxed text-stone-500">
+                    {strings.transparencyVisibility[`${v}Help`]}
+                  </span>
+                </div>
+              ))}
+            </fieldset>
+          </Section>
+
+          <Section title={t.sectionContacts} help={t.sectionContactsHelp}>
+            <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <p className="text-[11px] font-semibold tracking-wide text-stone-500 uppercase">{t.presidentContactTag}</p>
+              <p className="mt-1 text-sm text-stone-800">
+                {presidentName.trim() || name || '—'}
+                {creatorPhone.trim() ? ` · ${creatorPhone.trim()}` : ''}
+              </p>
+            </div>
+
+            {contacts.map((contact, i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-xl border border-stone-200 p-3">
+                <div className="flex gap-2">
+                  <input
+                    aria-label={`${t.contactNameLabel} ${i + 1}`}
+                    value={contact.name}
+                    onChange={(e) => updateContact(i, { name: e.target.value })}
+                    placeholder={t.contactNamePlaceholder}
+                    className={`${inputCls} flex-1`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeContact(i)}
+                    aria-label={`${t.removeContact} ${i + 1}`}
+                    className="flex-none rounded-lg border border-stone-300 bg-white px-3 text-sm font-semibold text-stone-500 hover:bg-stone-50 hover:text-stone-700"
+                  >
+                    ×
+                  </button>
+                </div>
+                <input
+                  aria-label={`${t.contactPhoneLabel} ${i + 1}`}
+                  type="tel"
+                  inputMode="tel"
+                  value={contact.phone}
+                  onChange={(e) => updateContact(i, { phone: e.target.value })}
+                  placeholder={t.contactPhonePlaceholder}
+                  className={inputCls}
+                />
+              </div>
+            ))}
+
+            {contacts.length < 2 && (
+              <button
+                type="button"
+                onClick={addContact}
+                className="w-fit rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-stone-700 hover:bg-stone-50"
+              >
+                {t.addContactButton}
+              </button>
+            )}
+            <p className="text-xs leading-relaxed text-stone-500">{t.contactsMaxHint}</p>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={hidePresident}
+                  onChange={(e) => setHidePresident(e.target.checked)}
+                  className="mt-0.5 accent-orange-600"
+                />
+                <span className="text-sm font-semibold text-stone-700">{t.hidePresidentLabel}</span>
+              </label>
+              <span className="ml-6 text-xs leading-relaxed text-stone-500">{t.hidePresidentHelp}</span>
+            </div>
           </Section>
 
           <Section title={t.sectionBooks}>
@@ -372,6 +542,26 @@ export function MandalConfigScreen() {
               </span>
             )}
           </div>
+
+          {previewOpen && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={t.previewReceiptButton}
+              className="fixed inset-0 z-50 overflow-auto bg-black/50"
+            >
+              <div className="sticky top-0 z-10 flex justify-end p-3">
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="rounded-lg bg-white/95 px-4 py-2 text-sm font-bold text-stone-800 shadow-lg hover:bg-white"
+                >
+                  {t.closePreview}
+                </button>
+              </div>
+              <ReceiptView receipt={sampleReceipt} lang={defaultLang} />
+            </div>
+          )}
         </form>
     </AppShell>
   )

@@ -25,6 +25,19 @@ describe('createMandal', () => {
     expect(id).toBe('11111111-1111-1111-1111-000000000001')
   })
 
+  // F7: the city typeahead fills city + state together; the wrapper forwards
+  // the city as mandal_city so the server can store it.
+  it('forwards the city as mandal_city', async () => {
+    rpc.mockResolvedValue({ data: '11111111-1111-1111-1111-000000000001', error: null })
+
+    await createMandal('Shivaji Nagar Mandal', 'New Founder', { city: 'Pune', state: 'Maharashtra' })
+
+    expect(rpc).toHaveBeenCalledWith(
+      'create_mandal',
+      expect.objectContaining({ mandal_city: 'Pune', mandal_state: 'Maharashtra' }),
+    )
+  })
+
   // '' would be slugified to '' server-side and then fall through the same
   // coalesce as null — but only undefined lets the RPC's `default null`
   // apply, so the wrapper must not turn a blank field into an empty string.

@@ -48,6 +48,11 @@ const existingConfig: Tables<'mandals'> = {
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 500000, // ₹5000
   transparency_published: false,
+  transparency_visibility: 'public',
+  city: null,
+  president_name: null,
+  inquiry_contacts: [],
+  hide_president_contact: false,
   default_lang: 'en',
   next_receipt_no: 1,
   created_at: '2026-07-17T00:00:00.000Z',
@@ -139,6 +144,57 @@ describe('MandalConfigScreen', () => {
         expect.objectContaining({ expense_categories: ['Prasad', 'Sound'] }),
       ),
     )
+  })
+
+  it('saves city+state (typeahead), president name, visibility, contacts and hide flag', async () => {
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
+
+    // F7: type a city and pick the suggestion — fills city + state together.
+    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Pune' } })
+    fireEvent.click(screen.getByText('Pune, Maharashtra'))
+
+    // F3: president name under the receipt signature.
+    fireEvent.change(screen.getByLabelText("President's name"), { target: { value: 'Shri Madhukar Deshmukh' } })
+
+    // F5: transparency audience radio.
+    fireEvent.click(screen.getByRole('radio', { name: 'Signed-in members of this mandal' }))
+
+    // F6: one extra receipt contact + hide the president's number.
+    fireEvent.click(screen.getByRole('button', { name: 'Add another contact' }))
+    fireEvent.change(screen.getByLabelText('Name 1'), { target: { value: 'Suresh Kulkarni' } })
+    fireEvent.change(screen.getByLabelText('Phone 1'), { target: { value: '9876500000' } })
+    fireEvent.click(screen.getByLabelText("Hide the president's number on receipts"))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    await waitFor(() =>
+      expect(updateMandal).toHaveBeenCalledWith(
+        MANDAL_ID,
+        expect.objectContaining({
+          city: 'Pune',
+          state: 'Maharashtra',
+          president_name: 'Shri Madhukar Deshmukh',
+          transparency_visibility: 'members',
+          inquiry_contacts: [{ name: 'Suresh Kulkarni', phone: '9876500000' }],
+          hide_president_contact: true,
+        }),
+      ),
+    )
+  })
+
+  it('opens and closes the donor receipt preview with the current branding', async () => {
+    render(<MemoryRouter><MandalConfigScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview donor receipt' }))
+    // The sample donor + the live mandal name prove the preview renders the
+    // real receipt from current form values.
+    expect(screen.getByText('Ramesh Patil')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Vinayak Mitra Mandal' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByText('Ramesh Patil')).not.toBeInTheDocument()
   })
 
   it('shows an error instead of a saved confirmation when updateMandal rejects', async () => {

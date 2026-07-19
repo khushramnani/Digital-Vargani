@@ -31,15 +31,15 @@ function renderCreateForm() {
   fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
 }
 
-// State is a required field now, so every submit selects one (otherwise the
-// browser's constraint validation blocks the submit and createMandal never
-// runs).
-function fillAndSubmit(mandalName: string, adminName: string, opts: { slug?: string; state?: string } = {}) {
+// F7: the state <select> is now a city typeahead — type a city and pick the
+// suggestion, which fills BOTH city and state before submit.
+function fillAndSubmit(mandalName: string, adminName: string, opts: { slug?: string; city?: string; state?: string } = {}) {
+  const city = opts.city ?? 'Mumbai'
+  const state = opts.state ?? 'Maharashtra'
   fireEvent.change(screen.getByLabelText('Mandal name'), { target: { value: mandalName } })
   fireEvent.change(screen.getByLabelText('Your name'), { target: { value: adminName } })
-  // The only <select> on the form; querying by role dodges option-text
-  // pollution of the wrapping label.
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: opts.state ?? 'Maharashtra' } })
+  fireEvent.change(screen.getByLabelText('City'), { target: { value: city } })
+  fireEvent.click(screen.getByText(`${city}, ${state}`))
   if (opts.slug !== undefined) {
     fireEvent.change(screen.getByLabelText(/Public link/), { target: { value: opts.slug } })
   }
@@ -51,13 +51,14 @@ describe('Signup', () => {
     createMandal.mockResolvedValue('11111111-1111-1111-1111-000000000001')
     renderCreateForm()
 
-    fillAndSubmit('Shivaji Nagar Mandal', 'New Founder', { slug: 'shivaji-nagar', state: 'Maharashtra' })
+    fillAndSubmit('Shivaji Nagar Mandal', 'New Founder', { slug: 'shivaji-nagar' })
 
     await waitFor(() =>
       expect(createMandal).toHaveBeenCalledWith('Shivaji Nagar Mandal', 'New Founder', {
         slugHint: 'shivaji-nagar',
         state: 'Maharashtra',
         address: undefined,
+        city: 'Mumbai',
       }),
     )
     // refreshAppUser must run before navigating: RequireRole reads appUser,
@@ -79,6 +80,24 @@ describe('Signup', () => {
         slugHint: undefined,
         state: 'Maharashtra',
         address: undefined,
+        city: 'Mumbai',
+      }),
+    )
+  })
+
+  it('fills both city and state from one typeahead pick', async () => {
+    createMandal.mockResolvedValue('11111111-1111-1111-1111-000000000001')
+    renderCreateForm()
+
+    // Vadodara resolves to Gujarat — proving the pick sets state, not just city.
+    fillAndSubmit('Baroda Mandal', 'New Founder', { city: 'Vadodara', state: 'Gujarat' })
+
+    await waitFor(() =>
+      expect(createMandal).toHaveBeenCalledWith('Baroda Mandal', 'New Founder', {
+        slugHint: undefined,
+        state: 'Gujarat',
+        address: undefined,
+        city: 'Vadodara',
       }),
     )
   })

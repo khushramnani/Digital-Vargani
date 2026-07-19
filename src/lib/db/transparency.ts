@@ -14,6 +14,8 @@ export type TransparencyTotals = {
   mandalName: string
   totalCollectedPaise: number
   totalExpensesPaise: number
+  // Aggregate count of distinct donors — "across N families". Never a donor list.
+  donorCount: number
 }
 export type CategoryBreakdown = { category: string; amountPaise: number }
 
@@ -26,6 +28,7 @@ export async function getTransparencyReport(mandalSlug: string): Promise<Transpa
     mandalName: row.mandal_name,
     totalCollectedPaise: row.total_collected_paise,
     totalExpensesPaise: row.total_expenses_paise,
+    donorCount: row.donor_count,
   }
 }
 

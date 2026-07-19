@@ -80,6 +80,8 @@ describe('CollectionsScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
     expect(screen.getByText('₹500.00')).toBeInTheDocument()
+    // New: a payment-mode icon tile per row (💵 cash / 📱 upi / 🏦 bank).
+    expect(screen.getByText('💵')).toBeInTheDocument()
     // A voided donation is removed from the current ledger — hidden by default.
     expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)

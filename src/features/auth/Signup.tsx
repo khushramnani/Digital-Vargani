@@ -1,10 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { createMandal } from '../../lib/db/mandals'
-import { INDIAN_STATES } from '../../lib/states'
 import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
+import { CityTypeahead } from '../../components/CityTypeahead'
 
 const t = strings.signup
 
@@ -50,6 +50,7 @@ export function Signup() {
   const [mode, setMode] = useState<'choose' | 'create' | 'invited'>('choose')
   const [mandalName, setMandalName] = useState('')
   const [adminName, setAdminName] = useState('')
+  const [cityVal, setCityVal] = useState('')
   const [stateVal, setStateVal] = useState('')
   const [address, setAddress] = useState('')
   const [slugHint, setSlugHint] = useState('')
@@ -74,6 +75,7 @@ export function Signup() {
         slugHint: slugHint.trim() || undefined,
         state: stateVal || undefined,
         address: address.trim() || undefined,
+        city: cityVal.trim() || undefined,
       })
       // The users row exists now but this session's appUser is still null —
       // the auth state never changed, so no listener re-resolves it.
@@ -159,23 +161,18 @@ export function Signup() {
           />
         </Field>
 
-        <Field label={t.stateLabel}>
-          <select
-            required
-            value={stateVal}
-            onChange={(e) => setStateVal(e.target.value)}
-            className={`${inputCls} ${stateVal ? '' : 'text-stone-400'}`}
-          >
-            <option value="" disabled>
-              {t.statePlaceholder}
-            </option>
-            {INDIAN_STATES.map((s) => (
-              <option key={s} value={s} className="text-stone-900">
-                {s}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <CityTypeahead
+          city={cityVal}
+          state={stateVal}
+          onChange={({ city, state }) => {
+            setCityVal(city)
+            setStateVal(state)
+          }}
+          label={t.cityLabel}
+          placeholder={t.cityPlaceholder}
+          help={t.cityHelp}
+          useAsTypedLabel={t.cityUseAsTyped}
+        />
 
         <Field label={t.addressLabel} optional help={t.addressHelp}>
           <textarea

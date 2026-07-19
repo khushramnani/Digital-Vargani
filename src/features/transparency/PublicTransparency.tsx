@@ -58,7 +58,12 @@ export function PublicTransparency() {
       ) : totals ? (
         <TransparencyReport totals={totals} categories={categories} mandalName={totals.mandalName} />
       ) : (
-        <p className="text-stone-400">{t.notPublished}</p>
+        // 0 rows = unpublished OR disabled OR not-permitted — the client can't
+        // tell them apart, so one generic friendly parchment message covers all.
+        <div className="rounded-3xl border border-amber-200/70 bg-[#f7f0e1] px-6 py-12 text-center shadow-xl shadow-amber-900/5">
+          <p className="text-sm tracking-[0.25em] text-amber-700">॥ श्री गणेशाय नमः ॥</p>
+          <p className="font-serif mt-4 text-lg text-stone-600">{t.reportNotAvailable}</p>
+        </div>
       )}
     </main>
   )

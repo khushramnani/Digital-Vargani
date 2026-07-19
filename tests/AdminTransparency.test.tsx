@@ -55,6 +55,11 @@ const config: Tables<'mandals'> = {
   expense_categories: ['Mandap'],
   bank_opening_paise: 0,
   transparency_published: false,
+  transparency_visibility: 'public',
+  city: null,
+  president_name: null,
+  inquiry_contacts: [],
+  hide_president_contact: false,
   default_lang: 'en',
   next_receipt_no: 1,
   created_at: '2026-07-17T00:00:00.000Z',
@@ -63,7 +68,7 @@ const config: Tables<'mandals'> = {
 beforeEach(() => {
   vi.clearAllMocks()
   getMandal.mockResolvedValue(config)
-  getTransparencyReport.mockResolvedValue({ totalCollectedPaise: 100000, totalExpensesPaise: 0 })
+  getTransparencyReport.mockResolvedValue({ totalCollectedPaise: 100000, totalExpensesPaise: 0, donorCount: 3 })
   getTransparencyCategories.mockResolvedValue([])
   updateMandal.mockResolvedValue(undefined)
 })
@@ -96,5 +101,13 @@ describe('AdminTransparency', () => {
     await waitFor(() =>
       expect(screen.getByText(`${window.location.origin}/transparency/vinayak-mitra-mandal`)).toBeInTheDocument(),
     )
+  })
+
+  // F5: the current transparency_visibility is surfaced as a read-only badge
+  // (the picker itself lives in Mandal Settings).
+  it('shows the current transparency visibility as a badge', async () => {
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByText(/Visibility · Anyone with the link/)).toBeInTheDocument())
   })
 })
