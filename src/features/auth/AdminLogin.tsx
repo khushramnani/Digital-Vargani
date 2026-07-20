@@ -1,14 +1,21 @@
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
-import { AuthMethods } from './AuthMethods'
+import { AuthMethods, type Status } from './AuthMethods'
 import { isAdminRole } from '../../lib/roles'
 
 const t = strings.auth
 
 export function AdminLogin() {
   const { loading, session, appUser } = useAuth()
+  // Tracks AuthMethods' own status so the footer below can hide itself once
+  // the form is replaced by "check your email" — the footer's "sign in
+  // above" copy is stale/misleading once there's no form to sign in with
+  // above it (a real regression the original two-AuthShell version avoided;
+  // collapsing to one AuthShell needs this to preserve that behavior).
+  const [authStatus, setAuthStatus] = useState<Status>('idle')
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-stone-50 font-body text-stone-400">{t.loading}</div>
@@ -28,16 +35,18 @@ export function AdminLogin() {
       title={t.loginTitle}
       subtitle={t.loginSubtitle}
       footer={
-        <div className="rounded-2xl border border-stone-200 bg-white/60 p-4 text-center">
-          <p className="text-sm font-bold text-stone-800">{t.newHereTitle}</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{t.newHere}</p>
-          <p className="mt-3 border-t border-stone-200 pt-3 text-[13px] leading-relaxed text-stone-500">
-            {t.volunteerHint}
-          </p>
-        </div>
+        authStatus === 'sent' ? undefined : (
+          <div className="rounded-2xl border border-stone-200 bg-white/60 p-4 text-center">
+            <p className="text-sm font-bold text-stone-800">{t.newHereTitle}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{t.newHere}</p>
+            <p className="mt-3 border-t border-stone-200 pt-3 text-[13px] leading-relaxed text-stone-500">
+              {t.volunteerHint}
+            </p>
+          </div>
+        )
       }
     >
-      <AuthMethods redirectTo={`${window.location.origin}/admin`} />
+      <AuthMethods redirectTo={`${window.location.origin}/admin`} onStatusChange={setAuthStatus} />
     </AuthShell>
   )
 }

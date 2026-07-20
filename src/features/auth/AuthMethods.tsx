@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
 
 const t = strings.auth
 
-type Status = 'idle' | 'sending' | 'sent' | 'error'
+export type Status = 'idle' | 'sending' | 'sent' | 'error'
 
 const inputCls =
   'rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-[15px] text-stone-900 outline-none placeholder:text-stone-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
@@ -35,11 +35,28 @@ function GoogleG() {
 // AdminLogin (lands at /admin) and JoinInvite (lands back on the invite
 // link itself, so accept_invite can run once a real session exists). Same
 // component, different `redirectTo`.
-export function AuthMethods({ redirectTo }: { redirectTo: string }) {
+//
+// onStatusChange lets a caller react to the sent-confirmation state without
+// lifting the whole form here: AdminLogin passes a footer to its outer
+// AuthShell, and that footer's copy ("sign in above") goes stale once the
+// form is replaced by "check your email" — AdminLogin hides its footer
+// exactly then. JoinInvite passes no footer, so it can ignore this prop
+// entirely.
+export function AuthMethods({
+  redirectTo,
+  onStatusChange,
+}: {
+  redirectTo: string
+  onStatusChange?: (status: Status) => void
+}) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [googleBusy, setGoogleBusy] = useState(false)
+
+  useEffect(() => {
+    onStatusChange?.(status)
+  }, [status, onStatusChange])
 
   async function handleGoogle() {
     setGoogleBusy(true)
