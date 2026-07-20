@@ -7,13 +7,25 @@ import { JoinInvite } from '../src/features/auth/JoinInvite'
 
 const { getSession, onAuthStateChange, rpc, from } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
+  // fetchAppUser chains .eq().eq().order().order().limit() before the
+  // terminal .maybeSingle() (auth_user_id + active) — this stub chain
+  // supports any number of those calls before resolving.
+  const chain: {
+    eq: () => typeof chain
+    order: () => typeof chain
+    limit: () => typeof chain
+    maybeSingle: typeof maybeSingle
+  } = {
+    eq: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    maybeSingle,
+  }
   return {
     getSession: vi.fn(),
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
     rpc: vi.fn(),
-    from: vi.fn(() => ({
-      select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }),
-    })),
+    from: vi.fn(() => ({ select: () => chain })),
   }
 })
 

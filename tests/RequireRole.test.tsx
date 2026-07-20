@@ -14,10 +14,16 @@ import { RequireRole } from '../src/features/auth/RequireRole'
 // e2e/admin-auth.spec.ts.)
 const { getSession, onAuthStateChange, rpc, maybeSingle, from, chain } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
-  // fetchAppUser chains .order().order().limit() after .eq() before the
-  // terminal .maybeSingle() (multi-mandal tie-break) — this stub chain
-  // supports any number of those calls before resolving.
-  const chain: { order: () => typeof chain; limit: () => typeof chain; maybeSingle: typeof maybeSingle } = {
+  // fetchAppUser chains .eq().eq().order().order().limit() before the
+  // terminal .maybeSingle() (auth_user_id + active, multi-mandal tie-break)
+  // — this stub chain supports any number of those calls before resolving.
+  const chain: {
+    eq: () => typeof chain
+    order: () => typeof chain
+    limit: () => typeof chain
+    maybeSingle: typeof maybeSingle
+  } = {
+    eq: () => chain,
     order: () => chain,
     limit: () => chain,
     maybeSingle,
@@ -27,7 +33,7 @@ const { getSession, onAuthStateChange, rpc, maybeSingle, from, chain } = vi.hois
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
     rpc: vi.fn(() => Promise.resolve({ data: null, error: null })),
     maybeSingle,
-    from: vi.fn(() => ({ select: () => ({ eq: () => chain }) })),
+    from: vi.fn(() => ({ select: () => chain })),
     chain,
   }
 })
@@ -81,7 +87,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
   rpc.mockResolvedValue({ data: null, error: null })
-  from.mockImplementation(() => ({ select: () => ({ eq: () => chain }) }))
+  from.mockImplementation(() => ({ select: () => chain }))
 })
 
 describe('RequireRole', () => {
