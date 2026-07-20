@@ -16,11 +16,11 @@ insert into users (id, mandal_id, name, phone, role, active) values
    'Admin Treasurer', '9000000001', 'admin', true)
 on conflict (id) do nothing;
 
-insert into users (id, mandal_id, name, phone, role, invite_token, active) values
+insert into users (id, mandal_id, name, phone, role, active) values
   ('00000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-000000000001',
-   'Volunteer One', '9000000002', 'volunteer', 'seed-invite-token-vol1', true),
+   'Volunteer One', '9000000002', 'volunteer', true),
   ('00000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-000000000001',
-   'Volunteer Two', '9000000003', 'volunteer', 'seed-invite-token-vol2', true)
+   'Volunteer Two', '9000000003', 'volunteer', true)
 on conflict (id) do nothing;
 
 update users set email = 'admin@example.com' where id = '00000000-0000-0000-0000-000000000001';
@@ -32,9 +32,9 @@ insert into users (id, mandal_id, name, phone, role, active) values
    'Other Admin', '9000000011', 'admin', true)
 on conflict (id) do nothing;
 
-insert into users (id, mandal_id, name, phone, role, invite_token, active) values
+insert into users (id, mandal_id, name, phone, role, active) values
   ('00000000-0000-0000-0000-0000000000b2', '22222222-2222-2222-2222-000000000002',
-   'Other Volunteer', '9000000012', 'volunteer', 'seed-invite-token-other', true)
+   'Other Volunteer', '9000000012', 'volunteer', true)
 on conflict (id) do nothing;
 
 update users set email = 'other-admin@example.com' where id = '00000000-0000-0000-0000-0000000000b1';
