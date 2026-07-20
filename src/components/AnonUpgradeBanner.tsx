@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/db/client'
 import { useAuth } from '../features/auth/useAuth'
 import { strings } from '../lib/strings'
+import { errorText } from './ui'
 
 const t = strings.auth
 
@@ -18,12 +19,16 @@ export function AnonUpgradeBanner() {
   const [busy, setBusy] = useState(false)
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   if (!session?.user.is_anonymous || dismissed) return null
 
   async function upgradeWithGoogle() {
     setBusy(true)
-    await supabase.auth.linkIdentity({ provider: 'google', options: { redirectTo: window.location.href } })
+    setError(null)
+    const { error } = await supabase.auth.linkIdentity({ provider: 'google', options: { redirectTo: window.location.href } })
+    setBusy(false)
+    if (error) setError(error.message)
   }
 
   async function upgradeWithEmail(event: FormEvent) {
@@ -79,6 +84,11 @@ export function AnonUpgradeBanner() {
               </button>
             </form>
           </div>
+          {error && (
+            <p role="alert" className={errorText}>
+              {error}
+            </p>
+          )}
         </>
       )}
     </div>
