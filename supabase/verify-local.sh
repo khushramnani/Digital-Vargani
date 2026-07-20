@@ -1193,29 +1193,30 @@ BEGIN
 END $$;
 SQL
 
-echo "== assertion: TENANT ISOLATION — an admin invites into their OWN mandal by default =="
+echo "== assertion: PR review Blocker 1 — direct insert into users is rejected outright, own-mandal or cross-mandal =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- No UI path inserts into `users` directly anymore (Task 2 moved that to
--- accept_invite, a SECURITY DEFINER RPC that bypasses RLS entirely) — this
--- now exercises the users_admin_insert RLS policy directly, proving it
--- still scopes/rejects by mandal_id on its own.
+-- Superseded by 20260720150000_pr_review_security_hardening.sql: this block
+-- used to prove users_admin_insert scoped a direct insert to the caller's
+-- own mandal and rejected only a forged cross-mandal one. That policy is
+-- gone now (Blocker 1) — no UI path inserts into `users` directly (every
+-- mutation goes through create_invite/accept_invite, SECURITY DEFINER RPCs
+-- that bypass RLS entirely), so a direct insert must be rejected outright,
+-- same-mandal or not, not merely scoped.
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
 
-insert into users (name, phone, role, active)
-  values ('Invited By M2', '9000000099', 'volunteer', true);
-
 DO $$
-DECLARE
-  v_mandal uuid;
 BEGIN
-  SELECT mandal_id INTO v_mandal FROM users WHERE name = 'Invited By M2';
-  ASSERT v_mandal = '22222222-2222-2222-2222-000000000002',
-    format('FAIL: invited volunteer landed in %s, not the inviting admin''s mandal', v_mandal);
-  RAISE NOTICE 'PASS: an invited volunteer defaults into the inviting admin''s mandal';
+  BEGIN
+    insert into users (name, phone, role, active)
+      values ('Invited By M2', '9000000099', 'volunteer', true);
+    RAISE EXCEPTION 'SECURITY HOLE: a direct insert into users (own mandal) succeeded with no INSERT policy';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: direct insert into users (own mandal) rejected — no INSERT policy remains (%)', SQLERRM;
+  END;
 END $$;
 
--- And an admin must not be able to invite INTO another mandal by forging it.
+-- Cross-mandal forge must be rejected the same way, for the same reason.
 DO $$
 BEGIN
   BEGIN
@@ -1223,7 +1224,7 @@ BEGIN
       values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer', true);
     RAISE EXCEPTION 'SECURITY HOLE: an admin invited a user into another mandal';
   EXCEPTION WHEN insufficient_privilege THEN
-    RAISE NOTICE 'PASS: cross-mandal invite rejected by users_admin_insert (%)', SQLERRM;
+    RAISE NOTICE 'PASS: cross-mandal invite rejected (%)', SQLERRM;
   END;
 END $$;
 reset role;
@@ -2456,10 +2457,251 @@ BEGIN
 END $$;
 
 -- Clean up this task's throwaway fixtures so later count-based assertions
--- (if this section is ever reordered before them) aren't affected.
+-- (if this section is ever reordered before them) aren't affected. Delete
+-- referencing invites first: 20260720150000_pr_review_security_hardening.sql
+-- added invites_invited_by_fkey (composite, no cascade — same shape as
+-- every other actor FK in this schema), and d2 invited a real volunteer
+-- earlier in this section (the create_invite() role-gating test), so d2
+-- can't be deleted while that invite still names it.
+delete from invites where invited_by in (
+  '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2'
+);
 delete from users where id in (
   '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2'
 );
+SQL
+
+echo "== assertion: PR review Blocker 1 — direct users UPDATE/INSERT by a plain admin is blocked outright =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Fresh plain-admin fixture (a1 — b/c/d/e/f-suffixed ids in this file are
+-- all taken; a1-a9/aa-af are not), mandal one, isolated from any earlier
+-- fixture this file's own cleanup blocks already deleted.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000a1', 'plain-admin-a1@example.com');
+insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
+  ('00000000-0000-0000-0000-0000000000a1', '11111111-1111-1111-1111-000000000001',
+   'Plain Admin A1', 'admin', 'plain-admin-a1@example.com', 'aaaaaaaa-0000-0000-0000-0000000000a1', true);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a1'; -- plain admin, not owner
+
+-- (a) Direct role=owner escalation on the real owner's row. With
+-- users_admin_update dropped, no UPDATE-applicable policy remains for this
+-- role at all — the row is invisible to the UPDATE's USING clause, so it
+-- affects 0 rows. (RLS's default-deny for UPDATE silently filters rows; it
+-- only raises for INSERT, where there's no "not visible, skip it" escape —
+-- see (c) below.)
+DO $$
+DECLARE affected int;
+BEGIN
+  UPDATE users SET role = 'owner' WHERE id = '00000000-0000-0000-0000-000000000001'; -- the real owner
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  ASSERT affected = 0,
+    format('SECURITY HOLE: a plain admin''s direct UPDATE role=owner affected %s row(s) — escalation succeeded', affected);
+  ASSERT (SELECT role FROM users WHERE id = '00000000-0000-0000-0000-000000000001') = 'owner',
+    'FAIL: test setup broken — mandal one''s owner row unexpectedly changed';
+  RAISE NOTICE 'PASS: a plain admin''s direct UPDATE role=owner on the real owner affects 0 rows (no UPDATE policy remains)';
+END $$;
+
+-- (b) Direct deactivation of the owner: same reasoning, same result.
+DO $$
+DECLARE affected int;
+BEGIN
+  UPDATE users SET active = false WHERE id = '00000000-0000-0000-0000-000000000001';
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  ASSERT affected = 0,
+    format('SECURITY HOLE: a plain admin''s direct UPDATE active=false affected %s row(s)', affected);
+  ASSERT (SELECT active FROM users WHERE id = '00000000-0000-0000-0000-000000000001') = true,
+    'FAIL: test setup broken — mandal one''s owner was deactivated';
+  RAISE NOTICE 'PASS: a plain admin''s direct UPDATE active=false on the owner affects 0 rows';
+END $$;
+
+-- (c) Direct INSERT: the new row is always checked against WITH CHECK (no
+-- "not visible, skip it" escape like UPDATE has) — with zero INSERT
+-- policies left, this raises a real RLS violation.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO users (mandal_id, name, role, active) VALUES (app_mandal_id(), 'Sneaky Direct Admin', 'admin', true);
+    RAISE EXCEPTION 'SECURITY HOLE: a plain admin inserted a new users row directly';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: direct INSERT into users is rejected outright — no INSERT policy remains (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: PR review — app_mandal_id/app_user_id/app_user_role resolve to the SECOND (most recent) mandal, not just count=2 =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Reuses the multi-mandal membership fixture (aaaaaaaa-...-d1, "the exact
+-- assertion: multi-mandal membership" section above): that identity now
+-- owns two mandals ("Owner Test Mandal" then "Second Mandal For Same
+-- Owner"). That section only proved both rows exist (count=2) — this
+-- proves WHICH one a session actually resolves to, closing the review's
+-- "the ORDER BY exists but is untested" gap.
+DO $$
+DECLARE
+  first_mandal_id  uuid;
+  second_mandal_id uuid;
+  second_user_id   uuid;
+BEGIN
+  SELECT mandal_id INTO first_mandal_id FROM users
+   WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d1'
+   ORDER BY created_at ASC, id ASC LIMIT 1;
+  SELECT id, mandal_id INTO second_user_id, second_mandal_id FROM users
+   WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d1'
+   ORDER BY created_at DESC, id DESC LIMIT 1;
+  ASSERT first_mandal_id <> second_mandal_id,
+    'FAIL: test setup broken — d1''s two memberships resolved to the same mandal';
+  PERFORM set_config('verify.d1_second_mandal_id', second_mandal_id::text, false);
+  PERFORM set_config('verify.d1_second_user_id', second_user_id::text, false);
+END $$;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d1';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  ASSERT app_mandal_id() = current_setting('verify.d1_second_mandal_id')::uuid,
+    format('FAIL: app_mandal_id() should resolve to d1''s SECOND (most recent) mandal %s, got %s',
+      current_setting('verify.d1_second_mandal_id'), app_mandal_id());
+  ASSERT app_user_id() = current_setting('verify.d1_second_user_id')::uuid,
+    format('FAIL: app_user_id() should resolve to d1''s SECOND (most recent) membership row %s, got %s',
+      current_setting('verify.d1_second_user_id'), app_user_id());
+  ASSERT app_user_role() = 'owner',
+    format('FAIL: app_user_role() should be owner in both of d1''s mandals, got %s', app_user_role());
+  RAISE NOTICE 'PASS: app_mandal_id()/app_user_id()/app_user_role() all resolve to the SECOND (most-recently-created) mandal for a multi-mandal identity — the ORDER BY tie-break is exercised, not just row-count';
+END $$;
+reset role;
+SQL
+
+echo "== assertion: PR review Item 5(a+b) — idempotent re-accept marks consumed_at; a stranger cannot replay a merely-idempotent-touched invite =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- A fresh invite; who it names doesn't matter here — what's exercised is the
+-- IDEMPOTENT branch, entered by an auth identity that ALREADY has a
+-- membership in this mandal (Volunteer One, aaaaaaaa-...-000000000002).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Idempotent Consume Check');
+  PERFORM set_config('verify.idem_consume_token', tok, false);
+END $$;
+reset role;
+
+-- Volunteer One already has a membership in mandal one -> hits the
+-- idempotent branch. Before this fix, that branch returned WITHOUT marking
+-- consumed_at, leaving the invite live and replayable by whoever else later
+-- obtained the same link.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One (already a member)
+select accept_invite(current_setting('verify.idem_consume_token'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT consumed_at FROM invites
+           WHERE token_hash = encode(extensions.digest(current_setting('verify.idem_consume_token'), 'sha256'), 'hex')
+         ) IS NOT NULL,
+    'FAIL: idempotent accept_invite() by an existing member did not mark the invite consumed';
+  RAISE NOTICE 'PASS: idempotent re-accept marks consumed_at, closing the still-live-invite replay gap';
+END $$;
+
+-- A genuinely DIFFERENT, fresh identity must NOT be able to accept the same
+-- token now — it was never originally accepted, only idempotently touched,
+-- but consumed_at blocks it just the same.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000a2', 'stranger-reuse@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a2';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.idem_consume_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: a stranger accepted an invite that was only idempotently touched, never originally accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or expired%' THEN
+      RAISE NOTICE 'PASS: a stranger cannot accept an invite only idempotently consumed by someone else (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: PR review Item 5(c) — re-inviting a deactivated member reactivates them via accept_invite =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- a3 joins mandal one as a real volunteer via the normal invite flow.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Reinvite Target', 'reinvite-target@example.com');
+  PERFORM set_config('verify.reinvite_token_1', tok, false);
+END $$;
+reset role;
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000a3', 'reinvite-target@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a3';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.reinvite_token_1'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a3'
+                  AND mandal_id = '11111111-1111-1111-1111-000000000001' AND active = true),
+    'FAIL: test setup broken — Reinvite Target did not join mandal one';
+END $$;
+
+-- Owner deactivates them (a normal offboarding).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+DO $$
+DECLARE mid uuid;
+BEGIN
+  SELECT id INTO mid FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a3';
+  PERFORM deactivate_member(mid);
+END $$;
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a3') = false,
+    'FAIL: test setup broken — Reinvite Target was not deactivated';
+END $$;
+
+-- Owner re-invites the SAME person — same mandal, same role. Only an
+-- owner/admin can mint this, which is the implicit re-authorization Item
+-- 5(c) relies on.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Reinvite Target');
+  PERFORM set_config('verify.reinvite_token_2', tok, false);
+END $$;
+reset role;
+
+-- They accept the fresh invite: hits accept_invite's idempotent branch
+-- (their auth_user_id already has a row in this mandal), which now
+-- reactivates a deactivated membership rather than silently no-opping.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a3';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.reinvite_token_2'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a3') = true,
+    'FAIL: re-inviting a deactivated member and having them accept did not reactivate them';
+  RAISE NOTICE 'PASS: a fresh invite for an already-deactivated member reactivates them on accept (implicit re-authorization)';
+END $$;
 SQL
 
 echo "== all assertions passed =="
