@@ -1,7 +1,7 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
-import { InviteRedeem } from '../features/auth/InviteRedeem'
+import { JoinInvite } from '../features/auth/JoinInvite'
 import { Signup } from '../features/auth/Signup'
 import { RequireRole } from '../features/auth/RequireRole'
 import { AdminLayout } from '../features/admin/AdminLayout'
@@ -20,13 +20,24 @@ import { DonorsContent } from '../features/donors/Donors'
 import { PublicTransparency } from '../features/transparency/PublicTransparency'
 import { AdminTransparencyContent } from '../features/transparency/AdminTransparency'
 
+// Old links (shared before v5) still point at /invite/:token. Forward to
+// /join/:token — the token itself won't resolve (invite_token was never
+// migrated into the new invites table, per the v5 plan's Decision 2), so
+// this lands on JoinInvite's own "invalid or expired" state rather than a
+// generic 404, which is the more honest message for a truly dead link.
+function LegacyInviteRedirect() {
+  const { token } = useParams<{ token: string }>()
+  return <Navigate to={`/join/${token}`} replace />
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AdminLogin />} />
       <Route path="/signup" element={<Signup />} />
-      <Route path="/invite/:token" element={<InviteRedeem />} />
+      <Route path="/join/:token" element={<JoinInvite />} />
+      <Route path="/invite/:token" element={<LegacyInviteRedirect />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />
       {/* Public, unauthenticated — community transparency report, no RequireRole guard. */}

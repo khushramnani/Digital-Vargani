@@ -33,21 +33,12 @@ export const strings = {
     googleError: 'Could not start Google sign-in. Please try again.',
     or: 'or',
     loading: 'Loading…',
-    inviteInvalid: 'This invite link is invalid or has already been used.',
-    inviteInvalidHelp: 'Ask your mandal admin to resend your invite link on WhatsApp, then open the new one.',
-    // Shown once the token is confirmed live, so the volunteer knows who
-    // invited them before anything happens.
-    inviteInvitedAs: 'You have been invited as a volunteer for',
     inviteSettingUp: 'Setting up your access…',
-    // A FAILED SIGN-IN is not a bad link — saying "invalid or already used"
-    // here sent an admin hunting a token problem that did not exist.
-    inviteSessionFailed: "Couldn't start your volunteer session",
-    inviteSessionFailedHelp:
-      'Your link is fine — this is a setup problem on the mandal’s side. Please tell your mandal admin, then open the link again.',
-    inviteSwitchTitle: "You're already signed in",
-    inviteSwitchBody: 'Opening this invite will sign you out and switch to it. Continue?',
-    inviteSwitchContinue: 'Continue and switch',
-    inviteSwitchCancel: 'Stay signed in',
+    joinInvalid: 'This invite link is invalid or has expired.',
+    joinInvalidHelp: 'Ask whoever invited you to send a fresh link from Manage Members.',
+    joinInvitedAsPrefix: 'invites you as',
+    joinRoleAdmin: 'an admin',
+    joinRoleVolunteer: 'a volunteer',
     volunteerHint: "Collecting for a mandal? Sign in the same way — Google or email — using the invite link your admin shared to join first.",
     retryTitle: "Couldn't load your account",
     retryBody: 'We reached the server but your account details did not load. Check your connection and try again.',
