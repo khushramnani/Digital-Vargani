@@ -50,8 +50,16 @@ const admin: Tables<'users'> = {
   auth_user_id: 'auth-uid-admin',
 }
 
+const owner: Tables<'users'> = {
+  ...volunteer,
+  id: 'owner-1',
+  name: 'Om Owner',
+  role: 'owner',
+  auth_user_id: 'auth-uid-owner',
+}
+
 // Mutable so a single module-level useAuth mock can serve both the default
-// volunteer tests and the admin-only Danger Zone purge test.
+// volunteer tests and the admin/owner-only Danger Zone tests.
 const auth = vi.hoisted(() => ({ appUser: null as Tables<'users'> | null }))
 
 vi.mock('../src/features/auth/useAuth', () => ({
@@ -167,8 +175,8 @@ describe('CollectionsScreen', () => {
     expect(voidRow).not.toHaveBeenCalled()
   })
 
-  it('permanently purges removed donations once the exact phrase is typed (admin only)', async () => {
-    auth.appUser = admin
+  it('permanently purges removed donations once the exact phrase is typed (owner only)', async () => {
+    auth.appUser = owner
     purgeDonations.mockResolvedValue(1)
     render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
@@ -183,5 +191,17 @@ describe('CollectionsScreen', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete removed forever' }))
 
     await waitFor(() => expect(purgeDonations).toHaveBeenCalledWith('removed'))
+  })
+
+  it('hides the purge buttons from a plain admin but keeps "clear all" visible', async () => {
+    auth.appUser = admin
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    // purge_donations() now requires is_owner() server-side; an admin (not
+    // owner) must not even see the buttons for a call that would be rejected.
+    expect(screen.queryByRole('button', { name: 'Permanently delete removed' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Permanently delete ALL history' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear all donations' })).toBeInTheDocument()
   })
 })

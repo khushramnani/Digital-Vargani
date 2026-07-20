@@ -9,6 +9,7 @@ import { sendReceiptSms, sendReceiptWhatsApp, buildReceiptMessage, receiptUrl } 
 import { LanguagePicker } from './LanguagePicker'
 import { useReceiptLang } from './useReceiptLang'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
+import { isAdminRole } from '../../lib/roles'
 import { AppShell } from '../../components/AppShell'
 import { PhoneInput } from '../../components/PhoneInput'
 import { Sheet } from '../../components/Sheet'
@@ -63,7 +64,7 @@ function readChannel(): SendChannel {
 // under /volunteer for volunteers; the /admin equivalents are their routes.
 // pending/history are the shared /collect/* routes for both roles.
 function navFor(role: 'admin' | 'volunteer'): { to: string; label: string }[] {
-  const isAdmin = role === 'admin'
+  const isAdmin = isAdminRole(role)
   return [
     { to: '/collect/pending', label: t.pendingSendLink },
     { to: '/collect/history', label: t.collectionsLink },
@@ -98,7 +99,7 @@ export function CollectionForm() {
   const [today, setToday] = useState<{ totalPaise: number; count: number }>({ totalPaise: 0, count: 0 })
   const [lang, setLang] = useReceiptLang()
 
-  const isAdmin = appUser?.role === 'admin'
+  const isAdmin = isAdminRole(appUser?.role ?? '')
   const isVolunteer = appUser?.role === 'volunteer'
 
   // Personal daily total for the greeting chip — this volunteer's own,
