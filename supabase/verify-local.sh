@@ -670,6 +670,31 @@ END $$;
 reset role;
 SQL
 
+echo "== assertion: list_admins() includes the owner role, not just 'admin' (20260720140000 fix) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Fresh fixture, isolated from the seed admin. Mandal one's seed admin (001)
+-- isn't promoted to 'owner' until the "v5 harness section" further down this
+-- script, so mandal one has no owner row yet at this point — safe to insert
+-- one here without tripping users_one_owner_per_mandal.
+insert into users (id, mandal_id, name, role, email, active) values
+  ('00000000-0000-0000-0000-0000000000f3', '11111111-1111-1111-1111-000000000001', 'Fresh Owner', 'owner', 'fresh-owner@example.com', true);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM list_admins() WHERE id = '00000000-0000-0000-0000-0000000000f3'),
+    'FAIL: list_admins() did not include an owner-role user';
+  RAISE NOTICE 'PASS: list_admins() includes the owner role, not just admin';
+END $$;
+reset role;
+
+-- Remove the throwaway owner fixture: users_one_owner_per_mandal allows only
+-- one 'owner' row per mandal, and mandal one's seed admin is promoted to
+-- 'owner' later in this script — leaving this row would collide with that.
+delete from users where id = '00000000-0000-0000-0000-0000000000f3';
+SQL
+
 echo "== assertion: Task 12 list_admins() is not exposed to anon =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role anon;
