@@ -3125,16 +3125,29 @@ export function ManageMembersContent() {
 }
 ```
 
-- [ ] **Step 3: Typecheck**
+- [ ] **Step 3: Write `tests/ManageMembers.test.tsx`**
+
+The old `admins.tsx`/`volunteers.tsx` had no test file at all — but this screen consolidates their functionality plus real new authorization-sensitive logic (role changes, ownership transfer, deactivation) that every other non-trivial component in this plan has test coverage for (`JoinInvite.test.tsx`, `RequireRole.test.tsx`, `Signup.test.tsx`). Mock `../src/lib/db/client`'s `supabase` directly (not `members.ts`), matching `tests/RequireRole.test.tsx`'s/`tests/JoinInvite.test.tsx`'s style, so the RPC-call assertions stay meaningful. Cover at minimum:
+- Renders both a pending invite row and an active member row from mocked `fetchMembers`/`fetchPendingInvites` data.
+- Filter chips narrow the visible rows (e.g. clicking "Volunteers" hides an admin row).
+- Opening the invite sheet as a plain admin (not owner) does not offer the "Admin" role option; opening it as an owner does.
+- Submitting the invite form calls `supabase.rpc('create_invite', {...})` with the right args and shows the resulting link (copy/WhatsApp-share buttons appear).
+- A plain admin sees deactivate/reactivate on a volunteer row but no role-change/transfer actions on an admin row; an owner sees role-change and transfer actions on an admin row.
+- Confirming the revoke dialog calls `supabase.rpc('revoke_invite', {...})`; confirming the deactivate dialog calls `supabase.rpc('deactivate_member', {...})`.
+
+Follow `useAuth`'s real shape (`{ appUser }` with a `role` field) the same way `RequireRole.test.tsx` mocks it, rather than mocking `useAuth` itself, unless that proves impractical — your call, but explain the choice in your report if you deviate.
+
+- [ ] **Step 4: Typecheck + run the new tests**
 
 ```bash
 npm run typecheck
+npx vitest run tests/ManageMembers.test.tsx
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/settings/members.tsx src/lib/strings.ts
+git add src/features/settings/members.tsx src/lib/strings.ts tests/ManageMembers.test.tsx
 git commit -m "feat: add Manage Members screen (replaces admins.tsx + volunteers.tsx)"
 ```
 
