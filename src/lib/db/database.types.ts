@@ -259,6 +259,59 @@ export type Database = {
           },
         ]
       }
+      invites: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          email: string | null
+          expires_at: string
+          id: string
+          invited_by: string
+          mandal_id: string
+          name: string
+          phone: string | null
+          revoked_at: string | null
+          role: string
+          token_hash: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          invited_by: string
+          mandal_id: string
+          name: string
+          phone?: string | null
+          revoked_at?: string | null
+          role: string
+          token_hash: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          mandal_id?: string
+          name?: string
+          phone?: string | null
+          revoked_at?: string | null
+          role?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invites_mandal_id_fkey"
+            columns: ["mandal_id"]
+            isOneToOne: false
+            referencedRelation: "mandals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mandals: {
         Row: {
           address: string | null
@@ -341,7 +394,6 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
-          invite_token: string | null
           mandal_id: string
           name: string
           phone: string | null
@@ -353,7 +405,6 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
-          invite_token?: string | null
           mandal_id?: string
           name: string
           phone?: string | null
@@ -365,7 +416,6 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
-          invite_token?: string | null
           mandal_id?: string
           name?: string
           phone?: string | null
@@ -386,10 +436,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invite: { Args: { token: string }; Returns: undefined }
       app_mandal_id: { Args: never; Returns: string }
       app_user_id: { Args: never; Returns: string }
       app_user_role: { Args: never; Returns: string }
       clear_donation_history: { Args: { reason: string }; Returns: number }
+      create_invite: {
+        Args: { email?: string; name: string; phone?: string; role: string }
+        Returns: string
+      }
       create_mandal: {
         Args: {
           admin_name: string
@@ -401,6 +456,7 @@ export type Database = {
         }
         Returns: string
       }
+      deactivate_member: { Args: { member_id: string }; Returns: undefined }
       donors_summary: {
         Args: { p_year?: number }
         Returns: {
@@ -455,12 +511,13 @@ export type Database = {
       invite_preview: {
         Args: { token: string }
         Returns: {
+          invitee_name: string
           mandal_name: string
-          volunteer_name: string
+          role: string
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
-      link_admin_account: { Args: never; Returns: undefined }
+      is_owner: { Args: never; Returns: boolean }
       list_admins: {
         Args: never
         Returns: {
@@ -468,11 +525,29 @@ export type Database = {
           name: string
         }[]
       }
+      list_pending_invites: {
+        Args: never
+        Returns: {
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          name: string
+          phone: string
+          role: string
+        }[]
+      }
       normalize_phone_e164: { Args: { raw: string }; Returns: string }
       purge_donations: { Args: { scope: string }; Returns: number }
-      redeem_invite: { Args: { token: string }; Returns: undefined }
-      reissue_invite: { Args: { volunteer_id: string }; Returns: string }
+      reactivate_member: { Args: { member_id: string }; Returns: undefined }
+      resend_invite: { Args: { invite_id: string }; Returns: string }
+      revoke_invite: { Args: { invite_id: string }; Returns: undefined }
+      set_member_role: {
+        Args: { member_id: string; new_role: string }
+        Returns: undefined
+      }
       slugify: { Args: { txt: string }; Returns: string }
+      transfer_ownership: { Args: { member_id: string }; Returns: undefined }
       void_row: {
         Args: { reason: string; row_id: string; target_table: string }
         Returns: undefined
