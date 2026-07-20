@@ -5,8 +5,7 @@ import { JoinInvite } from '../features/auth/JoinInvite'
 import { Signup } from '../features/auth/Signup'
 import { RequireRole } from '../features/auth/RequireRole'
 import { AdminLayout } from '../features/admin/AdminLayout'
-import { VolunteersContent } from '../features/settings/volunteers'
-import { AdminsContent } from '../features/settings/admins'
+import { ManageMembersContent } from '../features/settings/members'
 import { MandalConfigContent } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
@@ -61,8 +60,7 @@ export function AppRoutes() {
         <Route path="/admin/expenses" element={<ExpensesContent />} />
         <Route path="/admin/handovers" element={<HandoverContent />} />
         <Route path="/admin/cash-in-hand" element={<CashInHandContent />} />
-        <Route path="/admin/volunteers" element={<VolunteersContent />} />
-        <Route path="/admin/admins" element={<AdminsContent />} />
+        <Route path="/admin/members" element={<ManageMembersContent />} />
         <Route path="/admin/transparency" element={<AdminTransparencyContent />} />
         <Route path="/admin/settings" element={<MandalConfigContent />} />
       </Route>

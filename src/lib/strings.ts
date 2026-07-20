@@ -97,7 +97,7 @@ export const strings = {
   admin: {
     dashboardTitle: 'Admin Dashboard',
     dashboardSubtitle: 'Your mandal at a glance',
-    volunteersLink: 'Manage volunteers',
+    membersLink: 'Manage members',
     settingsLink: 'Mandal settings',
     expensesLink: 'Expenses',
     handoversLink: 'Handovers',
@@ -105,7 +105,6 @@ export const strings = {
     transparencyLink: 'Transparency report',
     collectionsLink: 'All collections',
     collectDonationLink: 'Collect donation',
-    adminsLink: 'Manage admins',
     donorsLink: 'Donors',
     // One-line description under each dashboard nav card.
     descriptions: {

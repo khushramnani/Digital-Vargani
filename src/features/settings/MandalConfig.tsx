@@ -92,7 +92,7 @@ function ImageField({
 // Admin-only content body (rendered inside AdminLayout's console frame at
 // /admin/settings). Single form over the admin's own mandals row + its
 // Storage-backed assets — RLS scopes the row, so there's no tenant filter here.
-// No volunteer management on this screen, that's settings/volunteers.tsx.
+// No member management on this screen, that's settings/members.tsx.
 export function MandalConfigContent() {
   const [loading, setLoading] = useState(true)
   // Held in state because updateMandal and uploadMandalAsset both need it.
