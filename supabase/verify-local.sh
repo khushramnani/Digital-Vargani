@@ -161,143 +161,6 @@ grant select on storage.buckets to anon, authenticated;
 grant select, insert, update on storage.objects to anon, authenticated;
 SQL
 
-echo "== assertion: link_admin_account() links exactly the matching admin row =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Fresh admin row created specifically for this test; auth_user_id is still
--- null (the seed admin, id ...001, is also still null at this point — its
--- own backfill happens further below, unrelated to this test). Volunteer
--- ...002 (straight from seed, email NULL) is the negative control proving
--- link_admin_account() never touches a volunteer row, even one sharing no
--- email with anyone (email is globally UNIQUE on this table, so a volunteer
--- literally cannot share an admin's email — the `role = 'admin'` guard in
--- the WHERE clause is what's actually relied on, not email uniqueness).
-insert into users (id, mandal_id, name, role, email, active) values
-  ('00000000-0000-0000-0000-000000000099', '11111111-1111-1111-1111-000000000001', 'Link Test Admin', 'admin', 'linktest-admin@example.com', true);
-
-insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-000000000099', 'linktest-admin@example.com');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
-select link_admin_account();
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
-    = 'aaaaaaaa-0000-0000-0000-000000000099',
-    'FAIL: link_admin_account() did not link the matching admin row';
-
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
-    'FAIL: link_admin_account() linked a volunteer row with no email';
-
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000001') IS NULL,
-    'FAIL: link_admin_account() linked an unrelated admin row with a different email';
-
-  RAISE NOTICE 'PASS: link_admin_account() linked exactly the matching admin row, and only that row';
-END $$;
-
--- Idempotency: re-running after already linked (e.g. a second app load)
--- must be a silent no-op, not an error and not a re-link to a different id.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
-select link_admin_account();
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
-    = 'aaaaaaaa-0000-0000-0000-000000000099',
-    'FAIL: re-running link_admin_account() should be a harmless no-op';
-  RAISE NOTICE 'PASS: link_admin_account() is idempotent on repeat calls';
-END $$;
-SQL
-
-echo "== assertion: redeem_invite() links exactly the matching volunteer row and is single-use =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Fresh volunteer row + fresh anonymous auth identity, isolated from the
--- seed volunteers (002/003) and their later backfill/RLS assertions below.
-insert into users (id, mandal_id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-000000000098', '11111111-1111-1111-1111-000000000001', 'Redeem Test Volunteer', 'volunteer', 'redeem-test-token', true);
-
-insert into auth.users (id) values
-  ('aaaaaaaa-0000-0000-0000-000000000098');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000098';
-set request.jwt.claims = '{"is_anonymous": true}'; -- redeem now requires an anonymous session (audit #5)
-select redeem_invite('redeem-test-token');
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
-    = 'aaaaaaaa-0000-0000-0000-000000000098',
-    'FAIL: redeem_invite() did not link the matching volunteer row';
-
-  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000098') IS NULL,
-    'FAIL: redeem_invite() did not clear invite_token after redemption';
-
-  RAISE NOTICE 'PASS: redeem_invite() linked the matching volunteer row and cleared invite_token';
-END $$;
-
--- Single-use: the token is now null on that row. Simulate a second person
--- (a brand-new anonymous identity) opening the same already-shared link —
--- this must fail loudly, not silently no-op and not re-link a second
--- identity to the same row.
-insert into auth.users (id) values
-  ('aaaaaaaa-0000-0000-0000-000000000097');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000097';
-set request.jwt.claims = '{"is_anonymous": true}';
-DO $$
-BEGIN
-  BEGIN
-    PERFORM redeem_invite('redeem-test-token');
-    RAISE EXCEPTION 'SECURITY HOLE: redeem_invite() succeeded a second time on an already-redeemed token';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%invalid or already-used invite link%' THEN
-      RAISE NOTICE 'PASS: redeem_invite() rejects replay of an already-used (now-null) token (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-
--- Hardening (audit #5): a real (non-anonymous) session must not redeem an
--- invite — the volunteer flow is always signInAnonymously().
-insert into users (id, mandal_id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-000000000095', '11111111-1111-1111-1111-000000000001', 'Non-anon Redeem Test', 'volunteer', 'nonanon-token', true);
-insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-000000000095');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000095';
-set request.jwt.claims = '{"is_anonymous": false}';
-DO $$
-BEGIN
-  BEGIN
-    PERFORM redeem_invite('nonanon-token');
-    RAISE EXCEPTION 'SECURITY HOLE: a non-anonymous session redeemed an invite';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%volunteer session%' THEN
-      RAISE NOTICE 'PASS: redeem_invite() rejects a non-anonymous session (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
-    = 'aaaaaaaa-0000-0000-0000-000000000098',
-    'FAIL: rejected replay must not have changed the already-linked auth_user_id';
-END $$;
-SQL
-
 echo "== backfilling auth_user_id + seeding test donations =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 -- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
@@ -788,9 +651,9 @@ DECLARE
   leaked_volunteer_count int;
 BEGIN
   -- Not asserting an exact total count: earlier assertions in this script
-  -- (e.g. link_admin_account's "Link Test Admin") already added active
-  -- admin rows, so the table isn't in a pristine seed-only state here.
-  -- Instead assert on presence/absence of specific named rows.
+  -- may have already added active admin rows, so the table isn't in a
+  -- pristine seed-only state here. Instead assert on presence/absence of
+  -- specific named rows.
   ASSERT EXISTS (SELECT 1 FROM list_admins() WHERE name = 'Admin Treasurer'),
     'FAIL: list_admins() did not return the seeded active admin';
 
@@ -1033,9 +896,9 @@ insert into auth.users (id, email) values
 insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
   ('00000000-0000-0000-0000-0000000000f1', '11111111-1111-1111-1111-000000000001',
    'Active Gate Admin', 'admin', 'active-gate-admin@example.com', 'aaaaaaaa-0000-0000-0000-0000000000f1', true);
-insert into users (id, mandal_id, name, role, invite_token, auth_user_id, active) values
+insert into users (id, mandal_id, name, role, auth_user_id, active) values
   ('00000000-0000-0000-0000-0000000000f2', '11111111-1111-1111-1111-000000000001',
-   'Active Gate Volunteer', 'volunteer', 'active-gate-vol-token', 'aaaaaaaa-0000-0000-0000-0000000000f2', true);
+   'Active Gate Volunteer', 'volunteer', 'aaaaaaaa-0000-0000-0000-0000000000f2', true);
 
 -- While ACTIVE: the admin's helpers all resolve.
 set role authenticated;
@@ -1299,7 +1162,7 @@ BEGIN
   ASSERT NOT EXISTS (
     SELECT 1 FROM users
      WHERE mandal_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
-       AND (auth_user_id IS NOT NULL OR email IS NOT NULL OR invite_token IS NOT NULL)
+       AND (auth_user_id IS NOT NULL OR email IS NOT NULL)
   ), 'SECURITY HOLE: a demo mandal user has a way to authenticate';
   RAISE NOTICE 'PASS: demo mandal has no authenticatable users';
 END $$;
@@ -1307,14 +1170,15 @@ SQL
 
 echo "== assertion: TENANT ISOLATION — an admin invites into their OWN mandal by default =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- users has no insert trigger, so mandal_id comes from the column default
--- (app_mandal_id()). This is the real path settings/volunteers.tsx uses:
--- it inserts name/phone/role/invite_token and nothing else.
+-- No UI path inserts into `users` directly anymore (Task 2 moved that to
+-- accept_invite, a SECURITY DEFINER RPC that bypasses RLS entirely) — this
+-- now exercises the users_admin_insert RLS policy directly, proving it
+-- still scopes/rejects by mandal_id on its own.
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
 
-insert into users (name, phone, role, invite_token, active)
-  values ('Invited By M2', '9000000099', 'volunteer', 'invite-default-test', true);
+insert into users (name, phone, role, active)
+  values ('Invited By M2', '9000000099', 'volunteer', true);
 
 DO $$
 DECLARE
@@ -1330,9 +1194,8 @@ END $$;
 DO $$
 BEGIN
   BEGIN
-    insert into users (mandal_id, name, role, invite_token, active)
-      values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer',
-              'invite-cross-test', true);
+    insert into users (mandal_id, name, role, active)
+      values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer', true);
     RAISE EXCEPTION 'SECURITY HOLE: an admin invited a user into another mandal';
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'PASS: cross-mandal invite rejected by users_admin_insert (%)', SQLERRM;
@@ -1367,21 +1230,16 @@ BEGIN
   SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
   ASSERT v_slug = 'shivaji-nagar-mandal', format('FAIL: unexpected slug %s', v_slug);
 
+  -- v5 (20260720120000/20260720130000, already applied): create_mandal's
+  -- founding row is now 'owner', not 'admin' — is_admin() covers both, so
+  -- every downstream admin-only check in this script still holds for an
+  -- owner. The old one-mandal-per-email cap tested here is gone too, not
+  -- ported (see that migration's own header comment): auth_user_id/email
+  -- are unique only WITHIN a mandal now, so belonging to more than one
+  -- mandal is correct v5 behaviour, not something to guard against.
   ASSERT EXISTS (SELECT 1 FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000c1'
-                   AND role = 'admin' AND mandal_id = v_id),
-    'FAIL: create_mandal did not create the first admin';
-
-  -- The one-mandal-per-email cap.
-  BEGIN
-    PERFORM create_mandal('Second Mandal', 'New Founder');
-    RAISE EXCEPTION 'FAIL: a second create_mandal for the same account succeeded';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%already belongs to a mandal%' THEN
-      RAISE NOTICE 'PASS: one-mandal-per-email cap held';
-    ELSE
-      RAISE;
-    END IF;
-  END;
+                   AND role = 'owner' AND mandal_id = v_id),
+    'FAIL: create_mandal did not create the first owner';
 END $$;
 reset role;
 
@@ -1681,47 +1539,6 @@ END $$;
 reset role;
 SQL
 
-echo "== assertion: reissue_invite() mints a fresh token and clears the old binding (audit #4) =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Runs LAST: it clears volunteer 002's auth_user_id, and 002 is used as a
--- live session by many assertions above.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
-DO $$
-DECLARE new_tok text;
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NOT NULL,
-    'FAIL: precondition — volunteer 002 should be bound before reissue';
-
-  new_tok := reissue_invite('00000000-0000-0000-0000-000000000002');
-  ASSERT new_tok IS NOT NULL AND length(new_tok) > 0, 'FAIL: reissue_invite returned no token';
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
-    'FAIL: reissue_invite did not clear the old binding';
-  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = new_tok,
-    'FAIL: reissue_invite did not set the new token';
-  RAISE NOTICE 'PASS: reissue_invite minted a fresh token and cleared the binding';
-END $$;
-reset role;
-
--- A non-admin cannot reissue.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000003'; -- a non-admin session
-DO $$
-BEGIN
-  BEGIN
-    PERFORM reissue_invite('00000000-0000-0000-0000-000000000002');
-    RAISE EXCEPTION 'SECURITY HOLE: a non-admin reissued an invite';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%only an admin%' THEN
-      RAISE NOTICE 'PASS: reissue_invite rejects a non-admin (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-SQL
-
 echo "== assertion: v3 get_public_receipt withholds the president phone server-side per the hide rule =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role authenticated;
@@ -1898,46 +1715,6 @@ END $$;
 reset role;
 SQL
 
-echo "== assertion: invite_preview names the mandal for a live token and reveals nothing for a used one =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- A fresh, unredeemed volunteer invite in mandal one.
-insert into users (id, mandal_id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-0000000000e1', '11111111-1111-1111-1111-000000000001',
-   'Preview Volunteer', 'volunteer', 'preview-invite-token', true);
-
--- The invite page has NO session, so anon must be able to read it.
-set request.jwt.claim.sub = '';
-set role anon;
-DO $$
-DECLARE m text; v text; n int;
-BEGIN
-  SELECT mandal_name, volunteer_name INTO m, v FROM invite_preview('preview-invite-token');
-  ASSERT m = 'Vinayak Mitra Mandal', format('FAIL: invite_preview should name the mandal, saw %s', m);
-  ASSERT v = 'Preview Volunteer', format('FAIL: invite_preview should name the volunteer, saw %s', v);
-
-  SELECT count(*) INTO n FROM invite_preview('no-such-token');
-  ASSERT n = 0, format('FAIL: an unknown token must reveal nothing, saw %s rows', n);
-  RAISE NOTICE 'PASS: invite_preview names the mandal for a live token, nothing for an unknown one';
-END $$;
-reset role;
-
--- Once redeemed (auth_user_id set), the token must stop previewing.
-insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-0000000000e1');
-update users set auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000e1', invite_token = null
-  where id = '00000000-0000-0000-0000-0000000000e1';
-set request.jwt.claim.sub = '';
-set role anon;
-DO $$
-DECLARE n int;
-BEGIN
-  SELECT count(*) INTO n FROM invite_preview('preview-invite-token');
-  ASSERT n = 0, format('FAIL: a redeemed token must not preview, saw %s rows', n);
-  RAISE NOTICE 'PASS: invite_preview goes dark once the invite is redeemed';
-END $$;
-reset role;
-delete from users where id = '00000000-0000-0000-0000-0000000000e1';
-SQL
-
 echo "== assertion: v4 donors_summary is not exposed to anon =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role anon;
@@ -1964,11 +1741,21 @@ BEGIN
     PERFORM purge_donations('removed');
     RAISE EXCEPTION 'FAIL: a volunteer purged donations';
   EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%only an admin%' THEN RAISE NOTICE 'PASS: a volunteer cannot purge';
+    IF SQLERRM LIKE '%only the owner%' THEN RAISE NOTICE 'PASS: a volunteer cannot purge';
     ELSE RAISE; END IF;
   END;
 END $$;
 reset role;
+
+-- v5 (20260720120000, already applied): purge_donations moved from
+-- admin-only to owner-only ("Danger zone moves to the owner"). Neither seed
+-- admin below is an owner — that migration's owner backfill ran before
+-- seed.sql existed — so promote the two this block exercises; this test is
+-- about purge's scope/tenant-isolation properties, not the admin-vs-owner
+-- boundary (already proved above), and nothing later in the script depends
+-- on these two rows' role.
+update users set role = 'owner' where id in
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1');
 
 -- 'removed' scope erases only voided rows; invalid scope rejected.
 set role authenticated;
