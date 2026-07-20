@@ -2704,4 +2704,70 @@ BEGIN
 END $$;
 SQL
 
+echo "== assertion: PR review — a deactivated member cannot self-reactivate via their own STALE (already-consumed) invite token =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- a4 joins mandal one as a real volunteer via a fresh invite (consumes it).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Stale Token Target', 'stale-token-target@example.com');
+  PERFORM set_config('verify.stale_reinvite_token', tok, false);
+END $$;
+reset role;
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000a4', 'stale-token-target@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a4';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.stale_reinvite_token'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a4') = true,
+    'FAIL: test setup broken — Stale Token Target did not join mandal one';
+  ASSERT (SELECT consumed_at FROM invites
+           WHERE token_hash = encode(extensions.digest(current_setting('verify.stale_reinvite_token'), 'sha256'), 'hex')
+         ) IS NOT NULL,
+    'FAIL: test setup broken — the original invite was not consumed';
+END $$;
+
+-- Owner deactivates them for cause (a real offboarding).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+DO $$
+DECLARE mid uuid;
+BEGIN
+  SELECT id INTO mid FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a4';
+  PERFORM deactivate_member(mid);
+END $$;
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a4') = false,
+    'FAIL: test setup broken — Stale Token Target was not deactivated';
+END $$;
+
+-- They replay their OWN original, already-consumed invite token (their real
+-- Supabase auth session still works — deactivation only flips users.active)
+-- — no fresh invite was ever minted for them post-deactivation. This must
+-- NOT reactivate them: the invite-liveness gate in accept_invite's
+-- idempotent branch is what's being proven here.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000a4';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.stale_reinvite_token'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a4') = false,
+    'SECURITY HOLE: a deactivated member self-reactivated by replaying their own stale, already-consumed invite token';
+  RAISE NOTICE 'PASS: replaying a stale, already-consumed invite token does not reactivate a deactivated member';
+END $$;
+SQL
+
 echo "== all assertions passed =="

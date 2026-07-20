@@ -61,7 +61,16 @@ begin
     -- which left an unlocked, still-live invite replayable by a stranger
     -- later, since an open/no-email-lock invite has nothing else stopping
     -- someone else from using the same link before it naturally expired).
-    update users set active = true where id = existing_member_id and not active;
+    --
+    -- Reactivation is gated on the invite STILL being live (not revoked,
+    -- not already consumed, not expired): the invite lookup above has no
+    -- status filter, so `inv` can be someone's own long-consumed original
+    -- invite. Without this gate, a deactivated member could self-reactivate
+    -- by replaying that stale token — a new bypass of deactivate_member's
+    -- offboarding control this fix would otherwise introduce.
+    update users set active = true
+     where id = existing_member_id and not active
+       and inv.revoked_at is null and inv.consumed_at is null and inv.expires_at > now();
     update invites set consumed_at = coalesce(consumed_at, now()) where id = inv.id;
     return;
   end if;
