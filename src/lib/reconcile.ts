@@ -1,11 +1,12 @@
 // Pure, testable domain logic — no I/O, no Supabase types. Only
 // non-voided rows count anywhere below.
+import { isAdminRole, type Role } from './roles'
 
 type UserId = string
 
 export interface LedgerUser {
   id: UserId
-  role: 'admin' | 'volunteer'
+  role: Role
 }
 
 export interface LedgerDonation {
@@ -72,7 +73,7 @@ export function netBalance(ledger: Ledger): number {
 
 export function cashHeldByTreasurer(ledger: Ledger): number {
   const adminIds = new Set(
-    ledger.users.filter((u) => u.role === 'admin').map((u) => u.id),
+    ledger.users.filter((u) => isAdminRole(u.role)).map((u) => u.id),
   )
   const handed = sumWhere(ledger.handovers, (h) => !h.voided)
   // An admin who collects a cash donation directly is holding that cash

@@ -367,6 +367,28 @@ describe('cashHeldByTreasurer', () => {
     expect(volunteerCashInHand('v1', ledger)).toBe(3000) // 5000 - 2000
   })
 
+  it("includes an owner's own cash donation (owner is admin-tier, held directly)", () => {
+    const ledger: Ledger = {
+      ...emptyLedger,
+      users: [
+        { id: 'v1', role: 'volunteer' },
+        { id: 'o1', role: 'owner' },
+      ],
+      donations: [
+        { amountPaise: 4000, mode: 'cash', collectedBy: 'o1', voided: false },
+        // a volunteer's cash is theirs until handed over — not the treasurer's
+        { amountPaise: 5000, mode: 'cash', collectedBy: 'v1', voided: false },
+      ],
+      handovers: [
+        { amountPaise: 2000, volunteerId: 'v1', receivedBy: 'o1', voided: false },
+      ],
+    }
+    // 2000 (handover) + 4000 (owner cash) - 0 = 6000
+    expect(cashHeldByTreasurer(ledger)).toBe(6000)
+    // the volunteer's own cash-in-hand is unaffected by the owner's collection
+    expect(volunteerCashInHand('v1', ledger)).toBe(3000) // 5000 - 2000
+  })
+
   it("excludes a voided admin cash donation", () => {
     const ledger: Ledger = {
       ...emptyLedger,

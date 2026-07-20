@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import { fetchLedgerRows, fetchActiveVolunteers } from '../../lib/db/ledger'
 import { getHandovers, type Handover } from '../../lib/db/handovers'
 import { volunteerCashInHand, type Ledger } from '../../lib/reconcile'
+import { isAdminRole } from '../../lib/roles'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { AppShell } from '../../components/AppShell'
@@ -48,7 +49,7 @@ export function CashInHandContent() {
       const rowsForLedger = await fetchLedgerRows()
       const ledger: Ledger = { ...rowsForLedger, users: [], bankOpeningPaise: 0 }
 
-      if (appUser!.role === 'admin') {
+      if (isAdminRole(appUser!.role)) {
         const volunteers = await fetchActiveVolunteers()
         setRows(volunteers.map((v) => ({ id: v.id, name: v.name, amountPaise: volunteerCashInHand(v.id, ledger) })))
         return
@@ -168,7 +169,7 @@ export function CashInHandContent() {
 // admin route renders CashInHandContent bare inside AdminLayout instead.
 export function CashInHandScreen() {
   const { appUser } = useAuth()
-  const isAdmin = appUser?.role === 'admin'
+  const isAdmin = isAdminRole(appUser?.role ?? '')
   const isVolunteer = appUser?.role === 'volunteer'
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }
