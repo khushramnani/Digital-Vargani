@@ -89,6 +89,38 @@ drop function redeem_invite(text);
 drop function reissue_invite(uuid);
 drop function invite_preview(text); -- old 2-column signature; recreated below
 
+-- ── Deterministic session resolution once multi-mandal membership is real ─
+-- Task 1 widened auth_user_id from a globally-unique constraint to a
+-- per-mandal-unique one, and create_mandal/accept_invite above are what
+-- actually let one identity accumulate a second `users` row in a second
+-- mandal. app_user_id()/app_user_role()/app_mandal_id() (defined in
+-- 20260719120000_audit_v2_features.sql) had no ORDER BY/LIMIT because more
+-- than one matching row was previously impossible — with one now possible,
+-- Postgres silently returns an arbitrary row from a multi-row match, so a
+-- session's tenant scope/role could resolve non-deterministically among a
+-- caller's own mandals on every call. Republish all three with the same
+-- deterministic tie-break the client uses (AuthProvider.fetchAppUser,
+-- Task 8: most-recently-joined membership wins, `id` as a tiebreaker for a
+-- created_at tie), so server and client always agree on which mandal a
+-- session acts in.
+create or replace function app_user_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select id from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
+
+create or replace function app_user_role() returns text
+language sql stable security definer set search_path = public as $$
+  select role from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
+
+create or replace function app_mandal_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select mandal_id from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
+
 -- ── create_invite: owner invites admin+volunteer; admin invites volunteer ─
 create or replace function create_invite(role text, name text, email text default null, phone text default null)
 returns text
@@ -333,15 +365,16 @@ begin
     if target.id = app_user_id() then
       raise exception 'the owner cannot deactivate themself — transfer ownership first';
     end if;
+    update users set active = false where id = member_id and mandal_id = app_mandal_id();
   elsif is_admin() then
-    if target.role <> 'volunteer' then
+    update users set active = false
+     where id = member_id and mandal_id = app_mandal_id() and role = 'volunteer';
+    if not found then
       raise exception 'an admin can only deactivate a volunteer';
     end if;
   else
     raise exception 'only an owner or admin can deactivate a member';
   end if;
-
-  update users set active = false where id = member_id and mandal_id = app_mandal_id();
 end;
 $$;
 
@@ -350,25 +383,22 @@ grant execute on function deactivate_member(uuid) to authenticated;
 
 create or replace function reactivate_member(member_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare
-  target users%rowtype;
 begin
-  select * into target from users where id = member_id and mandal_id = app_mandal_id();
-  if not found then
+  if not exists (select 1 from users where id = member_id and mandal_id = app_mandal_id()) then
     raise exception 'member not found';
   end if;
 
   if is_owner() then
-    null;
+    update users set active = true where id = member_id and mandal_id = app_mandal_id();
   elsif is_admin() then
-    if target.role <> 'volunteer' then
+    update users set active = true
+     where id = member_id and mandal_id = app_mandal_id() and role = 'volunteer';
+    if not found then
       raise exception 'an admin can only reactivate a volunteer';
     end if;
   else
     raise exception 'only an owner or admin can reactivate a member';
   end if;
-
-  update users set active = true where id = member_id and mandal_id = app_mandal_id();
 end;
 $$;
 
