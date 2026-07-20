@@ -1822,6 +1822,19 @@ reset role;
 SQL
 
 
+echo "== v5 harness section: ensure mandal one's seed admin is its owner =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- This section's assertions need mandal one's original admin (001) acting as
+-- owner throughout. Task 1's owner-backfill ran before seed.sql existed, so
+-- seed data was never promoted by it — an earlier, unrelated test block
+-- (purge_donations) happens to promote 001 as a side effect of its own setup,
+-- which this section should not depend on silently. Idempotent: a no-op if
+-- that promotion already happened, so this stays correct regardless of
+-- whether anything upstream changes.
+update users set role = 'owner'
+ where id = '00000000-0000-0000-0000-000000000001' and role <> 'owner';
+SQL
+
 echo "== assertion: create_mandal() creator becomes owner, not admin =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d1', 'new-owner@example.com');
@@ -1876,8 +1889,8 @@ SQL
 
 echo "== assertion: create_invite() — role gating (escalation attempts rejected) =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Mandal one's seed admin (001) is now its owner (Task 1 backfill); seed
--- volunteer 002 stays a volunteer throughout this file.
+-- Mandal one's admin (001) is now its owner, per this section's own
+-- promotion above; seed volunteer 002 stays a volunteer throughout this file.
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
 DO $$
