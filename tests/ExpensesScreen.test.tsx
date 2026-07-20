@@ -34,7 +34,6 @@ const admin: Tables<'users'> = {
   phone: null,
   email: 'admin@example.com',
   role: 'admin',
-  invite_token: null,
   auth_user_id: 'auth-uid-admin',
   active: true,
   created_at: '2026-01-01T00:00:00Z',

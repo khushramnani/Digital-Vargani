@@ -37,7 +37,6 @@ const volunteer: Tables<'users'> = {
   phone: null,
   email: null,
   role: 'volunteer',
-  invite_token: null,
   auth_user_id: 'auth-uid-volunteer',
   active: true,
   created_at: '2026-01-01T00:00:00Z',
