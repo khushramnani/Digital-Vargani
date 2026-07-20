@@ -39,9 +39,6 @@ test('an admin session can also reach the volunteer collection form to log a don
     ({ key, session }) => window.localStorage.setItem(key, JSON.stringify(session)),
     { key: STORAGE_KEY, session: fakeStoredSession(authUserId) },
   )
-  await page.route(`${SUPABASE_URL}/rest/v1/rpc/link_admin_account*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: 'null' }),
-  )
   await page.route(`${SUPABASE_URL}/rest/v1/users*`, (route) =>
     route.fulfill({
       status: 200,
@@ -52,7 +49,6 @@ test('an admin session can also reach the volunteer collection form to log a don
         phone: null,
         email: 'admin@example.com',
         role: 'admin',
-        invite_token: null,
         auth_user_id: authUserId,
         active: true,
         created_at: new Date().toISOString(),
