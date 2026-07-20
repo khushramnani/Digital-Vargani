@@ -1619,13 +1619,13 @@ git commit -m "feat(auth): owner role can reach the admin console and collect fl
 - [ ] **Step 1: Extract `AuthMethods.tsx`**
 
 ```tsx
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/db/client'
 import { strings } from '../../lib/strings'
 
 const t = strings.auth
 
-type Status = 'idle' | 'sending' | 'sent' | 'error'
+export type Status = 'idle' | 'sending' | 'sent' | 'error'
 
 const inputCls =
   'rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-[15px] text-stone-900 outline-none placeholder:text-stone-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20'
@@ -1656,11 +1656,28 @@ function GoogleG() {
 // AdminLogin (lands at /admin) and JoinInvite (lands back on the invite
 // link itself, so accept_invite can run once a real session exists). Same
 // component, different `redirectTo`.
-export function AuthMethods({ redirectTo }: { redirectTo: string }) {
+//
+// onStatusChange lets a caller react to the sent-confirmation state without
+// lifting the whole form here: AdminLogin passes a footer to its outer
+// AuthShell ("First time?" / "Collecting for a mandal?"), and that footer's
+// copy ("sign in above") goes stale/misleading once the form is replaced by
+// "check your email" — AdminLogin hides its footer exactly then. JoinInvite
+// passes no footer, so it can ignore this prop entirely.
+export function AuthMethods({
+  redirectTo,
+  onStatusChange,
+}: {
+  redirectTo: string
+  onStatusChange?: (status: Status) => void
+}) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [googleBusy, setGoogleBusy] = useState(false)
+
+  useEffect(() => {
+    onStatusChange?.(status)
+  }, [status, onStatusChange])
 
   async function handleGoogle() {
     setGoogleBusy(true)
@@ -1771,17 +1788,26 @@ export function AuthMethods({ redirectTo }: { redirectTo: string }) {
 - [ ] **Step 2: Rewrite `AdminLogin.tsx` to use it**
 
 ```tsx
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
-import { AuthMethods } from './AuthMethods'
+import { AuthMethods, type Status } from './AuthMethods'
 import { isAdminRole } from '../../lib/roles'
 
 const t = strings.auth
 
 export function AdminLogin() {
   const { loading, session, appUser } = useAuth()
+  // Tracks AuthMethods' own status so the footer below can hide itself once
+  // the form is replaced by "check your email" — the footer's "sign in
+  // above" copy is stale/misleading once there's no form to sign in with
+  // above it (a real regression an earlier version of this component had:
+  // the two states used to render as separate AuthShells, one with a footer
+  // and one without; collapsing to one AuthShell needs this to preserve
+  // that behavior).
+  const [authStatus, setAuthStatus] = useState<Status>('idle')
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-stone-50 font-body text-stone-400">{t.loading}</div>
@@ -1801,16 +1827,18 @@ export function AdminLogin() {
       title={t.loginTitle}
       subtitle={t.loginSubtitle}
       footer={
-        <div className="rounded-2xl border border-stone-200 bg-white/60 p-4 text-center">
-          <p className="text-sm font-bold text-stone-800">{t.newHereTitle}</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{t.newHere}</p>
-          <p className="mt-3 border-t border-stone-200 pt-3 text-[13px] leading-relaxed text-stone-500">
-            {t.volunteerHint}
-          </p>
-        </div>
+        authStatus === 'sent' ? undefined : (
+          <div className="rounded-2xl border border-stone-200 bg-white/60 p-4 text-center">
+            <p className="text-sm font-bold text-stone-800">{t.newHereTitle}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{t.newHere}</p>
+            <p className="mt-3 border-t border-stone-200 pt-3 text-[13px] leading-relaxed text-stone-500">
+              {t.volunteerHint}
+            </p>
+          </div>
+        )
       }
     >
-      <AuthMethods redirectTo={`${window.location.origin}/admin`} />
+      <AuthMethods redirectTo={`${window.location.origin}/admin`} onStatusChange={setAuthStatus} />
     </AuthShell>
   )
 }
