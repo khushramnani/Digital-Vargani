@@ -39,7 +39,7 @@ export function AppRoutes() {
           fix — the console no longer lives on only the dashboard. */}
       <Route
         element={
-          <RequireRole role="admin">
+          <RequireRole role={['owner', 'admin']}>
             <AdminLayout />
           </RequireRole>
         }
@@ -65,7 +65,7 @@ export function AppRoutes() {
       <Route
         path="/collect"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <CollectionForm />
           </RequireRole>
         }
@@ -73,7 +73,7 @@ export function AppRoutes() {
       <Route
         path="/collect/pending"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <PendingSend />
           </RequireRole>
         }
@@ -81,7 +81,7 @@ export function AppRoutes() {
       <Route
         path="/collect/history"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <CollectionsScreen />
           </RequireRole>
         }
