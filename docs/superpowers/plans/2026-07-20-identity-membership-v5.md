@@ -24,9 +24,11 @@
 The architecture doc (`docs/architecture-v5-identity-membership.md`) is a design spec, not code, and a few of its details only resolve once you look at the actual schema/components. These are settled — implement them as stated, don't re-derive:
 
 1. **No dual invite system during a "transition window".** The spec's migration-plan step 5 describes a phased rollout over days. This plan ships the whole thing in one pass instead, which makes most of that phasing unnecessary: `redeem_invite`/`link_admin_account`/`reissue_invite` and `users.invite_token` are dropped outright in Task 1/2, not kept alongside the new system. This is safe because **already-redeemed** volunteers (the ones actually depending on continuity) never call those RPCs again — their `users.auth_user_id` already points at a real (if anonymous) `auth.users` row, and nothing in this plan touches that row or that binding. The only piece of the transition that's genuinely still needed — because it's for people, not code — is Task 14's dismissible "secure your account" banner, so an already-signed-in anonymous volunteer can upgrade in place.
-2. **Never-redeemed old invites are abandoned, not migrated.** Any `users` row with `auth_user_id is null` at migration time (an old-style pending admin or volunteer who never completed sign-in) is deleted in Task 1 — it holds no financial data (every actor FK requires a resolved session) and has no equivalent in the new model. Whoever held that link gets a fresh one from Manage Members, exactly as the spec's own migration-plan step 5 already prescribes for locked-out volunteers.
+2. **Never-redeemed old invites are abandoned, not migrated.** Any `users` row with `auth_user_id is null` at migration time (an old-style pending admin or volunteer who never completed sign-in) is deleted in Task 1 — provided it isn't referenced by any financial row (Task 1's DELETE checks this directly, rather than assuming it from `auth_user_id is null` alone: `20260717150000_demo_mandal.sql` seeds two intentionally-unauthenticatable `users` rows that ARE referenced by `donations`/`expenses` via direct migration-time INSERT, which the naive assumption would have tried to delete and failed on a foreign-key violation — caught during Task 1's implementation, not guessed at here). A genuinely-pending row has no equivalent in the new model; whoever held that link gets a fresh one from Manage Members, exactly as the spec's own migration-plan step 5 already prescribes for locked-out volunteers.
 3. **`create_mandal`'s two "already belongs to a mandal" guards are removed, not kept.** The spec lists global `users.email` uniqueness (**"one person can never belong to two mandals"**) as one of the named reasons the current model must go. `create_mandal` currently enforces exactly that invariant in application code (`auth_user_id already exists` / `email already exists` → reject). Task 2 removes both checks — a real authenticated user can found a new mandal regardless of memberships elsewhere. What actually prevents a *duplicate* membership is the new `unique(mandal_id, auth_user_id)` / `unique(mandal_id, email)` constraints from Task 1, which are correctly scoped per-mandal instead of globally.
-4. **One membership row resolves per session, even though a person can now hold several.** `AuthProvider.fetchAppUser` currently does `.eq('auth_user_id', id).maybeSingle()`, which **throws** the moment the same auth identity has two `users` rows (now possible). Task 8 changes it to `.order('created_at', { ascending: false }).limit(1).maybeSingle()` — your most-recently-joined mandal is your active session context. There is no mandal-switcher UI in the spec's flows, so none is built here; if that's ever needed, it's new scope, not part of this plan.
+4. **One membership row resolves per session, even though a person can now hold several — client AND server, with the same tie-break.** `AuthProvider.fetchAppUser` currently does `.eq('auth_user_id', id).maybeSingle()`, which **throws** the moment the same auth identity has two `users` rows (now possible). Task 8 changes it to order by `created_at desc` (then `id desc` as a tiebreaker) and take the first row — your most-recently-joined mandal is your active session context. There is no mandal-switcher UI in the spec's flows, so none is built here; if that's ever needed, it's new scope, not part of this plan.
+
+   The same ambiguity exists **server-side** in `app_user_id()`/`app_user_role()`/`app_mandal_id()` (defined in `20260719120000_audit_v2_features.sql`, pre-dating this plan) — each is a scalar-returning `select ... from users where auth_user_id = auth.uid() and active` with no `ORDER BY`/`LIMIT`. Before this plan, `auth_user_id` was globally unique, so "more than one row" was structurally impossible and this was never a bug. Task 1 makes `auth_user_id` unique only per-mandal, and Task 2's `create_mandal`/`accept_invite` are what actually let an identity accumulate a second row — which makes a *pre-existing* latent gap live: with more than one matching row, Postgres silently returns an arbitrary one (confirmed empirically during Task 2's review), so a session's tenant scope and role could resolve non-deterministically among a caller's own mandals on every RPC call. This can't cross into a mandal the caller has no membership in, but it can misapply owner/admin authority to the wrong one of the caller's own mandals unpredictably. Task 2's migration therefore also republishes all three functions with the identical `order by created_at desc, id desc limit 1` tie-break the client uses, so server and client always agree on which mandal a session is acting in.
 5. **`transparency_visibility`/`hide_president_contact`/donor-data columns etc. are untouched.** This plan only touches `users`, adds `invites`, and touches the handful of RPCs/components named below. Every other v3/v4 feature is out of scope.
 6. **"Delete mandal" is explicitly NOT built.** The spec's permission matrix lists "delete mandal" as an owner-only capability, but no RPC, no confirmation copy, and no flow for it appears anywhere else in the document — there's nothing to implement from. `transfer_ownership` (which *is* fully specified) is built. Deleting a mandal is flagged here as a real gap in the spec, left for a future pass once it's actually specified (what happens to donations? receipts already handed to donors? the public transparency URL?).
 7. **`enable_anonymous_sign_ins` turning off is safe for already-signed-in volunteers.** That project setting only gates *new* `signInAnonymously()` calls; it does not invalidate existing anonymous `auth.users` rows or block their session refresh. Since no v5 UI path calls `signInAnonymously()` anymore, Task 19 turns it off (local config now, prod dashboard as a manual follow-up) without needing to wait for a "no anon sessions remain" checkpoint.
@@ -59,12 +61,23 @@ The architecture doc (`docs/architecture-v5-identity-membership.md`) is a design
 -- a volunteer row via invite_token, both waiting to be linked to a real
 -- session on first login. Neither RPC that performed that link
 -- (link_admin_account / redeem_invite) survives this migration (Task 2), so
--- any row that never got that far is unreachable going forward. Safe to
--- hard-delete: every actor FK (collected_by/paid_by/volunteer_id/
--- received_by) requires a resolved session (app_user_id(), which reads
--- auth_user_id), so a row with auth_user_id still null has never
--- collected/paid/received anything.
-delete from users where auth_user_id is null;
+-- any row that never got that far is unreachable going forward.
+--
+-- Safe to hard-delete PROVIDED nothing actually references it: every
+-- APP-DRIVEN write requires a resolved session (app_user_id(), which reads
+-- auth_user_id), so a genuinely-pending row is never referenced by
+-- donations/expenses/handovers through the app. But
+-- 20260717150000_demo_mandal.sql proves auth_user_id IS NULL alone isn't
+-- sufficient to prove that: it seeds two users rows with auth_user_id/
+-- email/invite_token all NULL by design, then references them directly via
+-- raw INSERT (collected_by/paid_by), bypassing the app entirely. Scope the
+-- delete by the real invariant — no financial row actually points at it —
+-- not by the auth_user_id proxy.
+delete from users u
+where u.auth_user_id is null
+  and not exists (select 1 from donations d where d.collected_by = u.id or d.voided_by = u.id)
+  and not exists (select 1 from expenses  e where e.paid_by      = u.id or e.voided_by = u.id)
+  and not exists (select 1 from handovers h where h.volunteer_id = u.id or h.received_by = u.id or h.voided_by = u.id);
 
 -- ── Role: admin/volunteer -> owner/admin/volunteer ──────────────────────
 alter table users drop constraint users_role_check;
@@ -286,6 +299,38 @@ drop function link_admin_account();
 drop function redeem_invite(text);
 drop function reissue_invite(uuid);
 drop function invite_preview(text); -- old 2-column signature; recreated below
+
+-- ── Deterministic session resolution once multi-mandal membership is real ─
+-- Task 1 widened auth_user_id from a globally-unique constraint to a
+-- per-mandal-unique one, and create_mandal/accept_invite above are what
+-- actually let one identity accumulate a second `users` row in a second
+-- mandal. app_user_id()/app_user_role()/app_mandal_id() (defined in
+-- 20260719120000_audit_v2_features.sql) had no ORDER BY/LIMIT because more
+-- than one matching row was previously impossible — with one now possible,
+-- Postgres silently returns an arbitrary row from a multi-row match, so a
+-- session's tenant scope/role could resolve non-deterministically among a
+-- caller's own mandals on every call. Republish all three with the same
+-- deterministic tie-break the client uses (AuthProvider.fetchAppUser,
+-- Task 8: most-recently-joined membership wins, `id` as a tiebreaker for a
+-- created_at tie), so server and client always agree on which mandal a
+-- session acts in.
+create or replace function app_user_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select id from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
+
+create or replace function app_user_role() returns text
+language sql stable security definer set search_path = public as $$
+  select role from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
+
+create or replace function app_mandal_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select mandal_id from users where auth_user_id = auth.uid() and active
+  order by created_at desc, id desc limit 1
+$$;
 
 -- ── create_invite: owner invites admin+volunteer; admin invites volunteer ─
 create or replace function create_invite(role text, name text, email text default null, phone text default null)
@@ -517,6 +562,13 @@ revoke execute on function transfer_ownership(uuid) from public;
 grant execute on function transfer_ownership(uuid) to authenticated;
 
 -- ── deactivate_member / reactivate_member ─────────────────────────────────
+-- The role scope check (an admin may only touch a volunteer) is embedded
+-- directly in each branch's own UPDATE ... WHERE, exactly like
+-- set_member_role() above — not decided from a separately-SELECTed snapshot
+-- and applied via a later, unfiltered UPDATE. Two statements (a snapshot
+-- SELECT, then an UPDATE with no role predicate) would leave a real, if
+-- narrow, TOCTOU window: a role change racing between them would make the
+-- admin's authorization decision stale by the time the mutation runs.
 create or replace function deactivate_member(member_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
 declare
@@ -531,15 +583,16 @@ begin
     if target.id = app_user_id() then
       raise exception 'the owner cannot deactivate themself — transfer ownership first';
     end if;
+    update users set active = false where id = member_id and mandal_id = app_mandal_id();
   elsif is_admin() then
-    if target.role <> 'volunteer' then
+    update users set active = false
+     where id = member_id and mandal_id = app_mandal_id() and role = 'volunteer';
+    if not found then
       raise exception 'an admin can only deactivate a volunteer';
     end if;
   else
     raise exception 'only an owner or admin can deactivate a member';
   end if;
-
-  update users set active = false where id = member_id and mandal_id = app_mandal_id();
 end;
 $$;
 
@@ -548,25 +601,22 @@ grant execute on function deactivate_member(uuid) to authenticated;
 
 create or replace function reactivate_member(member_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare
-  target users%rowtype;
 begin
-  select * into target from users where id = member_id and mandal_id = app_mandal_id();
-  if not found then
+  if not exists (select 1 from users where id = member_id and mandal_id = app_mandal_id()) then
     raise exception 'member not found';
   end if;
 
   if is_owner() then
-    null;
+    update users set active = true where id = member_id and mandal_id = app_mandal_id();
   elsif is_admin() then
-    if target.role <> 'volunteer' then
+    update users set active = true
+     where id = member_id and mandal_id = app_mandal_id() and role = 'volunteer';
+    if not found then
       raise exception 'an admin can only reactivate a volunteer';
     end if;
   else
     raise exception 'only an owner or admin can reactivate a member';
   end if;
-
-  update users set active = true where id = member_id and mandal_id = app_mandal_id();
 end;
 $$;
 
@@ -1427,13 +1477,17 @@ with:
 // A person can now hold a membership in more than one mandal (v5) — .single()
 // would throw the moment that's true for the signed-in identity. There's no
 // mandal-switcher in this app yet, so the most-recently-joined membership is
-// the session's active mandal, deterministically.
+// the session's active mandal, deterministically — the identical tie-break
+// (created_at desc, id desc as a tiebreaker) that Task 2's migration gives
+// app_user_id()/app_user_role()/app_mandal_id() server-side, so client and
+// server always agree on which mandal a session acts in.
 async function fetchAppUser(authUserId: string): Promise<AppUser | null> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('auth_user_id', authUserId)
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (error) throw error
