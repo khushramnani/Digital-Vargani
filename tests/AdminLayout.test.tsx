@@ -33,11 +33,11 @@ describe('AdminLayout', () => {
     for (const link of links) expect(link).toHaveAttribute('href', '/collect')
   })
 
-  it('links to the admin management screen', () => {
+  it('links to the manage-members screen', () => {
     renderAt('/admin')
-    const links = screen.getAllByRole('link', { name: 'Manage admins' })
+    const links = screen.getAllByRole('link', { name: 'Manage members' })
     expect(links.length).toBeGreaterThan(0)
-    for (const link of links) expect(link).toHaveAttribute('href', '/admin/admins')
+    for (const link of links) expect(link).toHaveAttribute('href', '/admin/members')
   })
 
   it('marks the current section active (aria-current) so the console shows where you are', () => {

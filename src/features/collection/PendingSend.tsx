@@ -13,6 +13,7 @@ import { VoidButton } from '../../components/VoidButton'
 import { AppShell } from '../../components/AppShell'
 import { VolunteerTabBar } from './VolunteerTabBar'
 import { card, btnGhost } from '../../components/ui'
+import { isAdminRole } from '../../lib/roles'
 
 const t = strings.pendingSend
 
@@ -95,7 +96,7 @@ export function PendingSend() {
 
   const isVolunteer = appUser?.role === 'volunteer'
   const home =
-    appUser?.role === 'admin'
+    isAdminRole(appUser?.role ?? '')
       ? { to: '/admin', label: strings.admin.dashboardTitle }
       : { to: '/collect', label: strings.collection.title }
 

@@ -12,14 +12,29 @@ import { RequireRole } from '../src/features/auth/RequireRole'
 // render its children or redirect for a given required role? (The
 // no-session redirect is also covered for real, with no mocking needed, by
 // e2e/admin-auth.spec.ts.)
-const { getSession, onAuthStateChange, rpc, maybeSingle, from } = vi.hoisted(() => {
+const { getSession, onAuthStateChange, rpc, maybeSingle, from, chain } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
+  // fetchAppUser chains .eq().eq().order().order().limit() before the
+  // terminal .maybeSingle() (auth_user_id + active, multi-mandal tie-break)
+  // — this stub chain supports any number of those calls before resolving.
+  const chain: {
+    eq: () => typeof chain
+    order: () => typeof chain
+    limit: () => typeof chain
+    maybeSingle: typeof maybeSingle
+  } = {
+    eq: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    maybeSingle,
+  }
   return {
     getSession: vi.fn(),
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
     rpc: vi.fn(() => Promise.resolve({ data: null, error: null })),
     maybeSingle,
-    from: vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) })),
+    from: vi.fn(() => ({ select: () => chain })),
+    chain,
   }
 })
 
@@ -40,7 +55,6 @@ const adminUser: Tables<'users'> = {
   phone: null,
   email: 'admin@example.com',
   role: 'admin',
-  invite_token: null,
   auth_user_id: 'auth-uid-1',
   active: true,
   created_at: '2026-01-01T00:00:00Z',
@@ -73,7 +87,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
   rpc.mockResolvedValue({ data: null, error: null })
-  from.mockImplementation(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }))
+  from.mockImplementation(() => ({ select: () => chain }))
 })
 
 describe('RequireRole', () => {

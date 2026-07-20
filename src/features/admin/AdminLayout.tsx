@@ -24,8 +24,7 @@ const NAV: NavItem[] = [
   { to: '/admin/expenses', icon: '💸', label: a.expensesLink },
   { to: '/admin/handovers', icon: '🤝', label: a.handoversLink },
   { to: '/admin/cash-in-hand', icon: '💰', label: a.cashInHandLink },
-  { to: '/admin/volunteers', icon: '🧑‍🤝‍🧑', label: a.volunteersLink },
-  { to: '/admin/admins', icon: '🛡️', label: a.adminsLink },
+  { to: '/admin/members', icon: '🧑‍🤝‍🧑', label: a.membersLink },
   { to: '/admin/transparency', icon: '🪷', label: a.transparencyLink },
 ]
 const SETTINGS: NavItem = { to: '/admin/settings', icon: '⚙️', label: a.settingsLink }

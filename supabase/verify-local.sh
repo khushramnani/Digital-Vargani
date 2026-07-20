@@ -161,143 +161,6 @@ grant select on storage.buckets to anon, authenticated;
 grant select, insert, update on storage.objects to anon, authenticated;
 SQL
 
-echo "== assertion: link_admin_account() links exactly the matching admin row =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Fresh admin row created specifically for this test; auth_user_id is still
--- null (the seed admin, id ...001, is also still null at this point — its
--- own backfill happens further below, unrelated to this test). Volunteer
--- ...002 (straight from seed, email NULL) is the negative control proving
--- link_admin_account() never touches a volunteer row, even one sharing no
--- email with anyone (email is globally UNIQUE on this table, so a volunteer
--- literally cannot share an admin's email — the `role = 'admin'` guard in
--- the WHERE clause is what's actually relied on, not email uniqueness).
-insert into users (id, mandal_id, name, role, email, active) values
-  ('00000000-0000-0000-0000-000000000099', '11111111-1111-1111-1111-000000000001', 'Link Test Admin', 'admin', 'linktest-admin@example.com', true);
-
-insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-000000000099', 'linktest-admin@example.com');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
-select link_admin_account();
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
-    = 'aaaaaaaa-0000-0000-0000-000000000099',
-    'FAIL: link_admin_account() did not link the matching admin row';
-
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
-    'FAIL: link_admin_account() linked a volunteer row with no email';
-
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000001') IS NULL,
-    'FAIL: link_admin_account() linked an unrelated admin row with a different email';
-
-  RAISE NOTICE 'PASS: link_admin_account() linked exactly the matching admin row, and only that row';
-END $$;
-
--- Idempotency: re-running after already linked (e.g. a second app load)
--- must be a silent no-op, not an error and not a re-link to a different id.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000099';
-select link_admin_account();
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000099')
-    = 'aaaaaaaa-0000-0000-0000-000000000099',
-    'FAIL: re-running link_admin_account() should be a harmless no-op';
-  RAISE NOTICE 'PASS: link_admin_account() is idempotent on repeat calls';
-END $$;
-SQL
-
-echo "== assertion: redeem_invite() links exactly the matching volunteer row and is single-use =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Fresh volunteer row + fresh anonymous auth identity, isolated from the
--- seed volunteers (002/003) and their later backfill/RLS assertions below.
-insert into users (id, mandal_id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-000000000098', '11111111-1111-1111-1111-000000000001', 'Redeem Test Volunteer', 'volunteer', 'redeem-test-token', true);
-
-insert into auth.users (id) values
-  ('aaaaaaaa-0000-0000-0000-000000000098');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000098';
-set request.jwt.claims = '{"is_anonymous": true}'; -- redeem now requires an anonymous session (audit #5)
-select redeem_invite('redeem-test-token');
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
-    = 'aaaaaaaa-0000-0000-0000-000000000098',
-    'FAIL: redeem_invite() did not link the matching volunteer row';
-
-  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000098') IS NULL,
-    'FAIL: redeem_invite() did not clear invite_token after redemption';
-
-  RAISE NOTICE 'PASS: redeem_invite() linked the matching volunteer row and cleared invite_token';
-END $$;
-
--- Single-use: the token is now null on that row. Simulate a second person
--- (a brand-new anonymous identity) opening the same already-shared link —
--- this must fail loudly, not silently no-op and not re-link a second
--- identity to the same row.
-insert into auth.users (id) values
-  ('aaaaaaaa-0000-0000-0000-000000000097');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000097';
-set request.jwt.claims = '{"is_anonymous": true}';
-DO $$
-BEGIN
-  BEGIN
-    PERFORM redeem_invite('redeem-test-token');
-    RAISE EXCEPTION 'SECURITY HOLE: redeem_invite() succeeded a second time on an already-redeemed token';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%invalid or already-used invite link%' THEN
-      RAISE NOTICE 'PASS: redeem_invite() rejects replay of an already-used (now-null) token (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-
--- Hardening (audit #5): a real (non-anonymous) session must not redeem an
--- invite — the volunteer flow is always signInAnonymously().
-insert into users (id, mandal_id, name, role, invite_token, active) values
-  ('00000000-0000-0000-0000-000000000095', '11111111-1111-1111-1111-000000000001', 'Non-anon Redeem Test', 'volunteer', 'nonanon-token', true);
-insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-000000000095');
-
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000095';
-set request.jwt.claims = '{"is_anonymous": false}';
-DO $$
-BEGIN
-  BEGIN
-    PERFORM redeem_invite('nonanon-token');
-    RAISE EXCEPTION 'SECURITY HOLE: a non-anonymous session redeemed an invite';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%volunteer session%' THEN
-      RAISE NOTICE 'PASS: redeem_invite() rejects a non-anonymous session (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-
-DO $$
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000098')
-    = 'aaaaaaaa-0000-0000-0000-000000000098',
-    'FAIL: rejected replay must not have changed the already-linked auth_user_id';
-END $$;
-SQL
-
 echo "== backfilling auth_user_id + seeding test donations =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 -- enforce_insert_defaults() stamps mandal_id from app_mandal_id(), which
@@ -788,9 +651,9 @@ DECLARE
   leaked_volunteer_count int;
 BEGIN
   -- Not asserting an exact total count: earlier assertions in this script
-  -- (e.g. link_admin_account's "Link Test Admin") already added active
-  -- admin rows, so the table isn't in a pristine seed-only state here.
-  -- Instead assert on presence/absence of specific named rows.
+  -- may have already added active admin rows, so the table isn't in a
+  -- pristine seed-only state here. Instead assert on presence/absence of
+  -- specific named rows.
   ASSERT EXISTS (SELECT 1 FROM list_admins() WHERE name = 'Admin Treasurer'),
     'FAIL: list_admins() did not return the seeded active admin';
 
@@ -805,6 +668,31 @@ BEGIN
   RAISE NOTICE 'PASS: a volunteer session can call list_admins(), sees the active admin(s), and no volunteer/inactive-admin rows leak through';
 END $$;
 reset role;
+SQL
+
+echo "== assertion: list_admins() includes the owner role, not just 'admin' (20260720140000 fix) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Fresh fixture, isolated from the seed admin. Mandal one's seed admin (001)
+-- isn't promoted to 'owner' until the "v5 harness section" further down this
+-- script, so mandal one has no owner row yet at this point — safe to insert
+-- one here without tripping users_one_owner_per_mandal.
+insert into users (id, mandal_id, name, role, email, active) values
+  ('00000000-0000-0000-0000-0000000000f3', '11111111-1111-1111-1111-000000000001', 'Fresh Owner', 'owner', 'fresh-owner@example.com', true);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM list_admins() WHERE id = '00000000-0000-0000-0000-0000000000f3'),
+    'FAIL: list_admins() did not include an owner-role user';
+  RAISE NOTICE 'PASS: list_admins() includes the owner role, not just admin';
+END $$;
+reset role;
+
+-- Remove the throwaway owner fixture: users_one_owner_per_mandal allows only
+-- one 'owner' row per mandal, and mandal one's seed admin is promoted to
+-- 'owner' later in this script — leaving this row would collide with that.
+delete from users where id = '00000000-0000-0000-0000-0000000000f3';
 SQL
 
 echo "== assertion: Task 12 list_admins() is not exposed to anon =="
@@ -1033,9 +921,9 @@ insert into auth.users (id, email) values
 insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
   ('00000000-0000-0000-0000-0000000000f1', '11111111-1111-1111-1111-000000000001',
    'Active Gate Admin', 'admin', 'active-gate-admin@example.com', 'aaaaaaaa-0000-0000-0000-0000000000f1', true);
-insert into users (id, mandal_id, name, role, invite_token, auth_user_id, active) values
+insert into users (id, mandal_id, name, role, auth_user_id, active) values
   ('00000000-0000-0000-0000-0000000000f2', '11111111-1111-1111-1111-000000000001',
-   'Active Gate Volunteer', 'volunteer', 'active-gate-vol-token', 'aaaaaaaa-0000-0000-0000-0000000000f2', true);
+   'Active Gate Volunteer', 'volunteer', 'aaaaaaaa-0000-0000-0000-0000000000f2', true);
 
 -- While ACTIVE: the admin's helpers all resolve.
 set role authenticated;
@@ -1299,7 +1187,7 @@ BEGIN
   ASSERT NOT EXISTS (
     SELECT 1 FROM users
      WHERE mandal_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
-       AND (auth_user_id IS NOT NULL OR email IS NOT NULL OR invite_token IS NOT NULL)
+       AND (auth_user_id IS NOT NULL OR email IS NOT NULL)
   ), 'SECURITY HOLE: a demo mandal user has a way to authenticate';
   RAISE NOTICE 'PASS: demo mandal has no authenticatable users';
 END $$;
@@ -1307,14 +1195,15 @@ SQL
 
 echo "== assertion: TENANT ISOLATION — an admin invites into their OWN mandal by default =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- users has no insert trigger, so mandal_id comes from the column default
--- (app_mandal_id()). This is the real path settings/volunteers.tsx uses:
--- it inserts name/phone/role/invite_token and nothing else.
+-- No UI path inserts into `users` directly anymore (Task 2 moved that to
+-- accept_invite, a SECURITY DEFINER RPC that bypasses RLS entirely) — this
+-- now exercises the users_admin_insert RLS policy directly, proving it
+-- still scopes/rejects by mandal_id on its own.
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
 
-insert into users (name, phone, role, invite_token, active)
-  values ('Invited By M2', '9000000099', 'volunteer', 'invite-default-test', true);
+insert into users (name, phone, role, active)
+  values ('Invited By M2', '9000000099', 'volunteer', true);
 
 DO $$
 DECLARE
@@ -1330,9 +1219,8 @@ END $$;
 DO $$
 BEGIN
   BEGIN
-    insert into users (mandal_id, name, role, invite_token, active)
-      values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer',
-              'invite-cross-test', true);
+    insert into users (mandal_id, name, role, active)
+      values ('11111111-1111-1111-1111-000000000001', 'Cross Mandal Invite', 'volunteer', true);
     RAISE EXCEPTION 'SECURITY HOLE: an admin invited a user into another mandal';
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'PASS: cross-mandal invite rejected by users_admin_insert (%)', SQLERRM;
@@ -1367,21 +1255,16 @@ BEGIN
   SELECT slug INTO v_slug FROM mandals WHERE id = v_id;
   ASSERT v_slug = 'shivaji-nagar-mandal', format('FAIL: unexpected slug %s', v_slug);
 
+  -- v5 (20260720120000/20260720130000, already applied): create_mandal's
+  -- founding row is now 'owner', not 'admin' — is_admin() covers both, so
+  -- every downstream admin-only check in this script still holds for an
+  -- owner. The old one-mandal-per-email cap tested here is gone too, not
+  -- ported (see that migration's own header comment): auth_user_id/email
+  -- are unique only WITHIN a mandal now, so belonging to more than one
+  -- mandal is correct v5 behaviour, not something to guard against.
   ASSERT EXISTS (SELECT 1 FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000c1'
-                   AND role = 'admin' AND mandal_id = v_id),
-    'FAIL: create_mandal did not create the first admin';
-
-  -- The one-mandal-per-email cap.
-  BEGIN
-    PERFORM create_mandal('Second Mandal', 'New Founder');
-    RAISE EXCEPTION 'FAIL: a second create_mandal for the same account succeeded';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%already belongs to a mandal%' THEN
-      RAISE NOTICE 'PASS: one-mandal-per-email cap held';
-    ELSE
-      RAISE;
-    END IF;
-  END;
+                   AND role = 'owner' AND mandal_id = v_id),
+    'FAIL: create_mandal did not create the first owner';
 END $$;
 reset role;
 
@@ -1681,47 +1564,6 @@ END $$;
 reset role;
 SQL
 
-echo "== assertion: reissue_invite() mints a fresh token and clears the old binding (audit #4) =="
-"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
--- Runs LAST: it clears volunteer 002's auth_user_id, and 002 is used as a
--- live session by many assertions above.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one admin
-DO $$
-DECLARE new_tok text;
-BEGIN
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NOT NULL,
-    'FAIL: precondition — volunteer 002 should be bound before reissue';
-
-  new_tok := reissue_invite('00000000-0000-0000-0000-000000000002');
-  ASSERT new_tok IS NOT NULL AND length(new_tok) > 0, 'FAIL: reissue_invite returned no token';
-  ASSERT (SELECT auth_user_id FROM users WHERE id = '00000000-0000-0000-0000-000000000002') IS NULL,
-    'FAIL: reissue_invite did not clear the old binding';
-  ASSERT (SELECT invite_token FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = new_tok,
-    'FAIL: reissue_invite did not set the new token';
-  RAISE NOTICE 'PASS: reissue_invite minted a fresh token and cleared the binding';
-END $$;
-reset role;
-
--- A non-admin cannot reissue.
-set role authenticated;
-set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000003'; -- a non-admin session
-DO $$
-BEGIN
-  BEGIN
-    PERFORM reissue_invite('00000000-0000-0000-0000-000000000002');
-    RAISE EXCEPTION 'SECURITY HOLE: a non-admin reissued an invite';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%only an admin%' THEN
-      RAISE NOTICE 'PASS: reissue_invite rejects a non-admin (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
-END $$;
-reset role;
-SQL
-
 echo "== assertion: v3 get_public_receipt withholds the president phone server-side per the hide rule =="
 "${PSQL[@]}" -d "$DB_NAME" <<'SQL'
 set role authenticated;
@@ -1924,11 +1766,21 @@ BEGIN
     PERFORM purge_donations('removed');
     RAISE EXCEPTION 'FAIL: a volunteer purged donations';
   EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%only an admin%' THEN RAISE NOTICE 'PASS: a volunteer cannot purge';
+    IF SQLERRM LIKE '%only the owner%' THEN RAISE NOTICE 'PASS: a volunteer cannot purge';
     ELSE RAISE; END IF;
   END;
 END $$;
 reset role;
+
+-- v5 (20260720120000, already applied): purge_donations moved from
+-- admin-only to owner-only ("Danger zone moves to the owner"). Neither seed
+-- admin below is an owner — that migration's owner backfill ran before
+-- seed.sql existed — so promote the two this block exercises; this test is
+-- about purge's scope/tenant-isolation properties, not the admin-vs-owner
+-- boundary (already proved above), and nothing later in the script depends
+-- on these two rows' role.
+update users set role = 'owner' where id in
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1');
 
 -- 'removed' scope erases only voided rows; invalid scope rejected.
 set role authenticated;
@@ -1992,6 +1844,622 @@ BEGIN
   RAISE NOTICE 'PASS: purge_donations(all) erases the entire mandal donation history';
 END $$;
 reset role;
+SQL
+
+
+echo "== v5 harness section: ensure mandal one's seed admin is its owner =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- This section's assertions need mandal one's original admin (001) acting as
+-- owner throughout. Task 1's owner-backfill ran before seed.sql existed, so
+-- seed data was never promoted by it — an earlier, unrelated test block
+-- (purge_donations) happens to promote 001 as a side effect of its own setup,
+-- which this section should not depend on silently. Idempotent: a no-op if
+-- that promotion already happened, so this stays correct regardless of
+-- whether anything upstream changes.
+update users set role = 'owner'
+ where id = '00000000-0000-0000-0000-000000000001' and role <> 'owner';
+SQL
+
+echo "== assertion: create_mandal() creator becomes owner, not admin =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d1', 'new-owner@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d1';
+set request.jwt.claims = '{"is_anonymous": false}';
+select create_mandal('Owner Test Mandal', 'New Owner');
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT role FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d1') = 'owner',
+    'FAIL: create_mandal() creator should become owner, not admin';
+  RAISE NOTICE 'PASS: create_mandal() creator becomes owner';
+END $$;
+SQL
+
+echo "== assertion: users_one_owner_per_mandal — a second owner in the same mandal is rejected =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+DECLARE m uuid;
+BEGIN
+  SELECT mandal_id INTO m FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d1';
+  BEGIN
+    INSERT INTO users (mandal_id, name, role, active) VALUES (m, 'Second Owner', 'owner', true);
+    RAISE EXCEPTION 'SECURITY HOLE: a mandal accepted a second owner row';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE 'PASS: users_one_owner_per_mandal rejects a second owner (%)', SQLERRM;
+  END;
+END $$;
+SQL
+
+echo "== assertion: multi-mandal membership — the SAME identity can own/join a SECOND mandal =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- This is the exact scenario the old global unique(auth_user_id)/unique(email)
+-- made impossible. d1 already owns "Owner Test Mandal" above; founding a
+-- second mandal as the same identity must now succeed.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d1';
+set request.jwt.claims = '{"is_anonymous": false}';
+select create_mandal('Second Mandal For Same Owner', 'New Owner');
+reset role;
+
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d1';
+  ASSERT n = 2, format('FAIL: same identity should now hold 2 memberships, saw %s', n);
+  RAISE NOTICE 'PASS: one auth identity can belong to two different mandals';
+END $$;
+SQL
+
+echo "== assertion: create_invite() — role gating (escalation attempts rejected) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Mandal one's admin (001) is now its owner, per this section's own
+-- promotion above; seed volunteer 002 stays a volunteer throughout this file.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'New Volunteer Invite');
+  ASSERT tok IS NOT NULL AND length(tok) > 0, 'FAIL: owner could not invite a volunteer';
+  tok := create_invite('admin', 'New Admin Invite');
+  ASSERT tok IS NOT NULL AND length(tok) > 0, 'FAIL: owner could not invite an admin';
+  RAISE NOTICE 'PASS: owner can invite both volunteer and admin';
+END $$;
+reset role;
+
+-- Give mandal one a real (non-owner) admin to test the escalation boundary.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d2', 'plain-admin@example.com');
+insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
+  ('00000000-0000-0000-0000-0000000000d2', '11111111-1111-1111-1111-000000000001',
+   'Plain Admin', 'admin', 'plain-admin@example.com', 'aaaaaaaa-0000-0000-0000-0000000000d2', true);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2'; -- plain admin, not owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Admin-Invited Volunteer');
+  ASSERT tok IS NOT NULL, 'FAIL: an admin could not invite a volunteer';
+
+  BEGIN
+    PERFORM create_invite('admin', 'Escalation Attempt');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-owner admin invited another admin';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only the owner can invite an admin%' THEN
+      RAISE NOTICE 'PASS: create_invite() blocks an admin from inviting an admin (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- A volunteer cannot invite anyone at all.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- mandal one volunteer (seed)
+DO $$
+BEGIN
+  BEGIN
+    PERFORM create_invite('volunteer', 'Volunteer Escalation Attempt');
+    RAISE EXCEPTION 'SECURITY HOLE: a volunteer created an invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only an owner or admin%' THEN
+      RAISE NOTICE 'PASS: create_invite() blocks a volunteer (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: invite_preview + accept_invite — the full join flow, and every rejection path =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- A live invite, minted the real way.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Join Flow Volunteer', 'join-flow@example.com');
+  PERFORM set_config('verify.join_flow_token', tok, false);
+END $$;
+reset role;
+
+-- invite_preview is anon-callable and names the mandal + role + invitee.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE m text; r text; n_name text;
+BEGIN
+  SELECT mandal_name, role, invitee_name INTO m, r, n_name
+    FROM invite_preview(current_setting('verify.join_flow_token'));
+  ASSERT m = 'Vinayak Mitra Mandal', format('FAIL: invite_preview mandal_name wrong, saw %s', m);
+  ASSERT r = 'volunteer', format('FAIL: invite_preview role wrong, saw %s', r);
+  ASSERT n_name = 'Join Flow Volunteer', format('FAIL: invite_preview invitee_name wrong, saw %s', n_name);
+  RAISE NOTICE 'PASS: invite_preview names mandal + role + invitee for a live token';
+END $$;
+reset role;
+
+-- An anonymous session cannot accept.
+insert into auth.users (id) values ('aaaaaaaa-0000-0000-0000-0000000000d3');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d3';
+set request.jwt.claims = '{"is_anonymous": true}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.join_flow_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: an anonymous session accepted an invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%real Google or email account%' THEN
+      RAISE NOTICE 'PASS: accept_invite() rejects an anonymous session (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Wrong email: this invite is locked to join-flow@example.com.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d4', 'wrong-person@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d4';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.join_flow_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: accept_invite ignored the email lock';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%locked to a different email%' THEN
+      RAISE NOTICE 'PASS: accept_invite() enforces the email lock (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- The real invitee accepts.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d5', 'join-flow@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d5';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.join_flow_token'));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT EXISTS (
+    SELECT 1 FROM users
+     WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d5'
+       AND role = 'volunteer' AND name = 'Join Flow Volunteer'
+       AND mandal_id = '11111111-1111-1111-1111-000000000001'
+  ), 'FAIL: accept_invite() did not create the expected membership';
+  ASSERT (SELECT consumed_at FROM invites WHERE token_hash = encode(extensions.digest(current_setting('verify.join_flow_token'), 'sha256'), 'hex')) IS NOT NULL,
+    'FAIL: accept_invite() did not mark the invite consumed';
+  RAISE NOTICE 'PASS: accept_invite() creates the membership and marks the invite consumed';
+END $$;
+
+-- Idempotent: the same person re-opening the (now consumed) link is a no-op
+-- success, not an error.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d5';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.join_flow_token'));
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT count(*) FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d5') = 1,
+    'FAIL: re-accepting an already-used link by the same person should be a no-op, not a duplicate';
+  RAISE NOTICE 'PASS: accept_invite() is idempotent for the same person';
+END $$;
+
+-- A DIFFERENT person cannot then reuse the same (consumed) token.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d6', null);
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d6';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.join_flow_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: a second, different person accepted an already-consumed invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or expired%' THEN
+      RAISE NOTICE 'PASS: a consumed invite cannot be replayed by someone else (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Hash-mismatch / unknown token: invite_preview reveals nothing, accept fails.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM invite_preview('not-a-real-token');
+  ASSERT n = 0, format('FAIL: an unknown token must preview nothing, saw %s rows', n);
+END $$;
+reset role;
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d7', 'someone@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d7';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite('not-a-real-token');
+    RAISE EXCEPTION 'SECURITY HOLE: accept_invite succeeded on an unknown token';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or expired%' THEN
+      RAISE NOTICE 'PASS: accept_invite() rejects an unknown/hash-mismatch token (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Revoked invite cannot be accepted.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Revoke Me');
+  PERFORM set_config('verify.revoke_token', tok, false);
+END $$;
+reset role;
+
+-- invites has RLS enabled with zero policies (every access path is a
+-- SECURITY DEFINER RPC) — a raw select against it while role=authenticated
+-- is still active sees zero rows, same as any other client. Look its id up
+-- as the superuser instead, same pattern as VOL1_TOKEN/VOIDROW_ID elsewhere
+-- in this script.
+DO $$
+DECLARE iid uuid;
+BEGIN
+  SELECT id INTO iid FROM invites
+   WHERE token_hash = encode(extensions.digest(current_setting('verify.revoke_token'), 'sha256'), 'hex');
+  PERFORM set_config('verify.revoke_invite_id', iid::text, false);
+END $$;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+select revoke_invite(current_setting('verify.revoke_invite_id')::uuid);
+reset role;
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d8', 'revoked-target@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d8';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.revoke_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: a revoked invite was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or expired%' THEN
+      RAISE NOTICE 'PASS: a revoked invite cannot be accepted (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Expired invite cannot be accepted (backdate expires_at directly).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Expire Me');
+  PERFORM set_config('verify.expired_token', tok, false);
+END $$;
+reset role;
+update invites set expires_at = now() - interval '1 minute'
+ where token_hash = encode(extensions.digest(current_setting('verify.expired_token'), 'sha256'), 'hex');
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d9', 'expired-target@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d9';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.expired_token'));
+    RAISE EXCEPTION 'SECURITY HOLE: an expired invite was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%expired%' THEN
+      RAISE NOTICE 'PASS: an expired invite cannot be accepted (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: revoke_invite/resend_invite/list_pending_invites — tenant scoping + anon exposure =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Mandal two's admin must not be able to revoke/resend/see mandal one's invites.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  tok := create_invite('volunteer', 'Tenant Isolation Target');
+  PERFORM set_config('verify.tenant_invite_token', tok, false);
+END $$;
+reset role;
+
+-- Same RLS reason as the revoke_invite setup above: invites has no policies
+-- of its own, so look its id up as the superuser, not while
+-- role=authenticated is still active.
+DO $$
+DECLARE iid uuid;
+BEGIN
+  SELECT id INTO iid FROM invites
+   WHERE token_hash = encode(extensions.digest(current_setting('verify.tenant_invite_token'), 'sha256'), 'hex');
+  PERFORM set_config('verify.tenant_invite_id', iid::text, false);
+END $$;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- mandal two admin
+DO $$
+BEGIN
+  BEGIN
+    PERFORM revoke_invite(current_setting('verify.tenant_invite_id')::uuid);
+    RAISE EXCEPTION 'SECURITY HOLE: mandal two revoked mandal one''s invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invite not found%' THEN
+      RAISE NOTICE 'PASS: revoke_invite() is tenant-scoped (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  BEGIN
+    PERFORM resend_invite(current_setting('verify.tenant_invite_id')::uuid);
+    RAISE EXCEPTION 'SECURITY HOLE: mandal two resent mandal one''s invite';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invite not found%' THEN
+      RAISE NOTICE 'PASS: resend_invite() is tenant-scoped (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  ASSERT NOT EXISTS (SELECT 1 FROM list_pending_invites() WHERE id = current_setting('verify.tenant_invite_id')::uuid),
+    'FAIL: list_pending_invites() leaked another mandal''s invite';
+END $$;
+reset role;
+
+-- Owner CAN revoke their own mandal's invite.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+select revoke_invite(current_setting('verify.tenant_invite_id')::uuid);
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT revoked_at FROM invites WHERE id = current_setting('verify.tenant_invite_id')::uuid) IS NOT NULL,
+    'FAIL: owner could not revoke their own mandal''s invite';
+  RAISE NOTICE 'PASS: owner can revoke an invite in their own mandal';
+END $$;
+
+-- list_pending_invites is not exposed to anon.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM list_pending_invites();
+    RAISE EXCEPTION 'SECURITY HOLE: anon called list_pending_invites()';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: list_pending_invites() has no anon grant (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== assertion: set_member_role — owner only, volunteer<->admin only (role escalation blocked) =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+select set_member_role('00000000-0000-0000-0000-000000000002', 'admin'); -- promote seed volunteer 002
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT role FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = 'admin',
+    'FAIL: owner could not promote a volunteer to admin';
+END $$;
+
+-- A non-owner (the plain admin from the create_invite test) cannot change roles.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM set_member_role('00000000-0000-0000-0000-000000000002', 'volunteer');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-owner admin changed a member''s role';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only the owner%' THEN
+      RAISE NOTICE 'PASS: set_member_role() blocks a non-owner (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Demote 002 back to volunteer so it doesn't disturb any later assertion
+-- in this file that still expects it to be a plain volunteer.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+select set_member_role('00000000-0000-0000-0000-000000000002', 'volunteer');
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT role FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = 'volunteer',
+    'FAIL: set_member_role() could not demote back to volunteer';
+  RAISE NOTICE 'PASS: set_member_role() promotes/demotes volunteer<->admin, owner-gated';
+END $$;
+SQL
+
+echo "== assertion: transfer_ownership — atomic swap, owner-only, target must be an active admin =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- A non-owner cannot transfer ownership to themself (escalation attempt).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2'; -- plain admin
+DO $$
+BEGIN
+  BEGIN
+    PERFORM transfer_ownership('00000000-0000-0000-0000-0000000000d2');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-owner admin transferred ownership to themself';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only the owner%' THEN
+      RAISE NOTICE 'PASS: transfer_ownership() blocks a non-owner caller (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+
+-- Owner transfers to the plain admin (d2); the swap must be atomic.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+select transfer_ownership('00000000-0000-0000-0000-0000000000d2');
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT role FROM users WHERE id = '00000000-0000-0000-0000-0000000000d2') = 'owner',
+    'FAIL: transfer_ownership() did not promote the target';
+  ASSERT (SELECT role FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 'admin',
+    'FAIL: transfer_ownership() did not demote the old owner';
+  ASSERT (SELECT count(*) FROM users WHERE mandal_id = '11111111-1111-1111-1111-000000000001' AND role = 'owner') = 1,
+    'FAIL: mandal one must have exactly one owner after transfer';
+  RAISE NOTICE 'PASS: transfer_ownership() swaps roles atomically, exactly one owner survives';
+END $$;
+
+-- Transfer back so later assertions relying on aaaaaaaa-...-001 being the
+-- owner (there are none after this point in the file, but this keeps the
+-- fixture state predictable for anyone re-running a slice of this script).
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2';
+select transfer_ownership('00000000-0000-0000-0000-000000000001'); -- fails: 001 is now 'admin', not active admin? it IS admin+active, so this succeeds.
+reset role;
+SQL
+
+echo "== assertion: deactivate_member/reactivate_member — sole-owner self-protection, admin scope limits =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Owner (back to aaaaaaaa-...-001 after the transfer-back above) cannot
+-- deactivate themself while sole owner.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM deactivate_member('00000000-0000-0000-0000-000000000001');
+    RAISE EXCEPTION 'SECURITY HOLE: the sole owner deactivated themself';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%cannot deactivate themself%' THEN
+      RAISE NOTICE 'PASS: the owner cannot deactivate themself (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+
+-- Owner CAN deactivate an admin.
+select deactivate_member('00000000-0000-0000-0000-0000000000d2');
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE id = '00000000-0000-0000-0000-0000000000d2') = false,
+    'FAIL: owner could not deactivate an admin';
+END $$;
+
+-- An admin cannot deactivate another admin (scope: volunteers only). Use a
+-- fresh active admin for this check.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000e1', 'scope-admin-1@example.com');
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000e2', 'scope-admin-2@example.com');
+insert into users (id, mandal_id, name, role, email, auth_user_id, active) values
+  ('00000000-0000-0000-0000-0000000000e1', '11111111-1111-1111-1111-000000000001',
+   'Scope Admin One', 'admin', 'scope-admin-1@example.com', 'aaaaaaaa-0000-0000-0000-0000000000e1', true),
+  ('00000000-0000-0000-0000-0000000000e2', '11111111-1111-1111-1111-000000000001',
+   'Scope Admin Two', 'admin', 'scope-admin-2@example.com', 'aaaaaaaa-0000-0000-0000-0000000000e2', true);
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000e1';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM deactivate_member('00000000-0000-0000-0000-0000000000e2');
+    RAISE EXCEPTION 'SECURITY HOLE: an admin deactivated another admin';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%only deactivate a volunteer%' THEN
+      RAISE NOTICE 'PASS: an admin cannot deactivate another admin (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+
+  -- ...but CAN deactivate/reactivate a volunteer.
+  PERFORM deactivate_member('00000000-0000-0000-0000-000000000002'); -- seed volunteer, back to 'volunteer' from the prior test
+END $$;
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = false,
+    'FAIL: an admin could not deactivate a volunteer';
+END $$;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000e1';
+select reactivate_member('00000000-0000-0000-0000-000000000002');
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT active FROM users WHERE id = '00000000-0000-0000-0000-000000000002') = true,
+    'FAIL: an admin could not reactivate a volunteer';
+  RAISE NOTICE 'PASS: deactivate_member/reactivate_member respect owner-vs-admin scope, and sole-owner self-protection';
+END $$;
+
+-- Clean up this task's throwaway fixtures so later count-based assertions
+-- (if this section is ever reordered before them) aren't affected.
+delete from users where id in (
+  '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2'
+);
 SQL
 
 echo "== all assertions passed =="

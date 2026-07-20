@@ -1,12 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
-import { InviteRedeem } from '../features/auth/InviteRedeem'
+import { JoinInvite } from '../features/auth/JoinInvite'
 import { Signup } from '../features/auth/Signup'
 import { RequireRole } from '../features/auth/RequireRole'
 import { AdminLayout } from '../features/admin/AdminLayout'
-import { VolunteersContent } from '../features/settings/volunteers'
-import { AdminsContent } from '../features/settings/admins'
+import { ManageMembersContent } from '../features/settings/members'
 import { MandalConfigContent } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
@@ -20,13 +19,24 @@ import { DonorsContent } from '../features/donors/Donors'
 import { PublicTransparency } from '../features/transparency/PublicTransparency'
 import { AdminTransparencyContent } from '../features/transparency/AdminTransparency'
 
+// Old links (shared before v5) still point at /invite/:token. Forward to
+// /join/:token — the token itself won't resolve (invite_token was never
+// migrated into the new invites table, per the v5 plan's Decision 2), so
+// this lands on JoinInvite's own "invalid or expired" state rather than a
+// generic 404, which is the more honest message for a truly dead link.
+function LegacyInviteRedirect() {
+  const { token } = useParams<{ token: string }>()
+  return <Navigate to={`/join/${token}`} replace />
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AdminLogin />} />
       <Route path="/signup" element={<Signup />} />
-      <Route path="/invite/:token" element={<InviteRedeem />} />
+      <Route path="/join/:token" element={<JoinInvite />} />
+      <Route path="/invite/:token" element={<LegacyInviteRedirect />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />
       {/* Public, unauthenticated — community transparency report, no RequireRole guard. */}
@@ -39,7 +49,7 @@ export function AppRoutes() {
           fix — the console no longer lives on only the dashboard. */}
       <Route
         element={
-          <RequireRole role="admin">
+          <RequireRole role={['owner', 'admin']}>
             <AdminLayout />
           </RequireRole>
         }
@@ -50,8 +60,7 @@ export function AppRoutes() {
         <Route path="/admin/expenses" element={<ExpensesContent />} />
         <Route path="/admin/handovers" element={<HandoverContent />} />
         <Route path="/admin/cash-in-hand" element={<CashInHandContent />} />
-        <Route path="/admin/volunteers" element={<VolunteersContent />} />
-        <Route path="/admin/admins" element={<AdminsContent />} />
+        <Route path="/admin/members" element={<ManageMembersContent />} />
         <Route path="/admin/transparency" element={<AdminTransparencyContent />} />
         <Route path="/admin/settings" element={<MandalConfigContent />} />
       </Route>
@@ -65,7 +74,7 @@ export function AppRoutes() {
       <Route
         path="/collect"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <CollectionForm />
           </RequireRole>
         }
@@ -73,7 +82,7 @@ export function AppRoutes() {
       <Route
         path="/collect/pending"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <PendingSend />
           </RequireRole>
         }
@@ -81,7 +90,7 @@ export function AppRoutes() {
       <Route
         path="/collect/history"
         element={
-          <RequireRole role={['admin', 'volunteer']}>
+          <RequireRole role={['owner', 'admin', 'volunteer']}>
             <CollectionsScreen />
           </RequireRole>
         }

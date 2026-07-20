@@ -3,6 +3,7 @@ import { useAuth } from '../auth/useAuth'
 import { getDonations, type Donation } from '../../lib/db/donations'
 import { voidRow, clearAllDonations, purgeDonations } from '../../lib/db/void'
 import { fetchMandalUserNames } from '../../lib/db/users'
+import { isAdminRole, isOwnerRole } from '../../lib/roles'
 import { formatForDisplay, normalizeToE164, waDigits } from '../../lib/phone'
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
@@ -159,7 +160,8 @@ export function CollectionsContent() {
     setTimeout(() => setCopiedId((c) => (c === donation.id ? null : c)), 2000)
   }
 
-  const isAdmin = appUser?.role === 'admin'
+  const isAdmin = isAdminRole(appUser?.role ?? '')
+  const isOwner = isOwnerRole(appUser?.role ?? '')
   const hasActive = donations.some((d) => !d.voided)
   const years = [...new Set(donations.map((d) => yearOf(d.created_at)))].sort((a, b) => b - a)
 
@@ -384,28 +386,30 @@ export function CollectionsContent() {
             </div>
           )}
 
-          <div className="flex flex-col gap-3 border-t border-red-200 pt-3">
-            <div>
-              <p className="text-[13px] leading-relaxed text-stone-600">{t.purgeRemovedHint}</p>
-              <button
-                type="button"
-                onClick={() => setPurgeRemovedOpen(true)}
-                className="mt-2 rounded-xl border border-red-400 bg-white px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-700 hover:text-white"
-              >
-                {t.purgeRemovedButton}
-              </button>
+          {isOwner && (
+            <div className="flex flex-col gap-3 border-t border-red-200 pt-3">
+              <div>
+                <p className="text-[13px] leading-relaxed text-stone-600">{t.purgeRemovedHint}</p>
+                <button
+                  type="button"
+                  onClick={() => setPurgeRemovedOpen(true)}
+                  className="mt-2 rounded-xl border border-red-400 bg-white px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-700 hover:text-white"
+                >
+                  {t.purgeRemovedButton}
+                </button>
+              </div>
+              <div>
+                <p className="text-[13px] leading-relaxed text-stone-600">{t.purgeAllHint}</p>
+                <button
+                  type="button"
+                  onClick={() => setPurgeAllOpen(true)}
+                  className="mt-2 rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800"
+                >
+                  {t.purgeAllButton}
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="text-[13px] leading-relaxed text-stone-600">{t.purgeAllHint}</p>
-              <button
-                type="button"
-                onClick={() => setPurgeAllOpen(true)}
-                className="mt-2 rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800"
-              >
-                {t.purgeAllButton}
-              </button>
-            </div>
-          </div>
+          )}
         </section>
       )}
 
@@ -467,7 +471,7 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
 // isVolunteer is false) — expected.
 export function CollectionsScreen() {
   const { appUser } = useAuth()
-  const isAdmin = appUser?.role === 'admin'
+  const isAdmin = isAdminRole(appUser?.role ?? '')
   const isVolunteer = appUser?.role === 'volunteer'
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }

@@ -71,11 +71,18 @@ function SheetBody({
       }}
       className="fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none items-end justify-center bg-transparent p-0 backdrop:bg-stone-900/50 backdrop:backdrop-blur-sm"
     >
+      {/* The panel owns the padding so every caller gets it for free (content
+          was rendering flush to both screen edges). The bottom pad ADDS to the
+          safe-area inset rather than relying on it — on a phone without one it
+          was zero, leaving the last row against the nav bar. */}
       <div
-        className={`max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform duration-300 ease-out will-change-transform ${
+        className={`max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white px-5 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out will-change-transform ${
           shown ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
+        {/* Grab handle: the standard bottom-sheet affordance, and it gives the
+            content breathing room off the rounded top edge. */}
+        <div aria-hidden="true" className="mx-auto mb-4 h-1 w-10 rounded-full bg-stone-300" />
         {children}
       </div>
     </dialog>

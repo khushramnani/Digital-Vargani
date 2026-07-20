@@ -66,7 +66,7 @@ test('a new founder can create a mandal and reach the admin dashboard', async ({
             name: 'E2E Founder',
             phone: null,
             email: 'founder@example.com',
-            role: 'admin',
+            role: 'owner',
             invite_token: null,
             auth_user_id: AUTH_USER_ID,
             active: true,

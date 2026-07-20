@@ -2,11 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
-
-// users.role is a plain `text` column with a CHECK constraint (not a
-// Postgres enum — see database.types.ts), so this union is asserted here
-// for call-site DX rather than derived from the generated Row type.
-type Role = 'admin' | 'volunteer'
+import type { Role } from '../../lib/roles'
 
 // Generalized from Task 4's ProtectedAdminRoute: any route can require any
 // single role, or any one of several roles (e.g. a volunteer-flow route an

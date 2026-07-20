@@ -24,6 +24,15 @@ function previewSlug(hint: string, mandalName: string): string {
   return slugify(hint) || slugify(mandalName) || 'mandal'
 }
 
+// Accepts either a bare token or a full /join/... (or legacy /invite/...)
+// URL pasted from WhatsApp — extracts just the token either way.
+function extractJoinToken(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const match = trimmed.match(/\/(join|invite)\/([^/?#\s]+)/)
+  return match ? match[2] : trimmed
+}
+
 function Field({ label, optional, help, children }: { label: string; optional?: boolean; help?: ReactNode; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">
@@ -48,6 +57,7 @@ export function Signup() {
   // in directly (Google/magic link) instead of tapping their invite link lands
   // here too, and must have a path that isn't "create a mandal" (audit #4).
   const [mode, setMode] = useState<'choose' | 'create' | 'invited'>('choose')
+  const [pasteLink, setPasteLink] = useState('')
   const [mandalName, setMandalName] = useState('')
   const [adminName, setAdminName] = useState('')
   const [cityVal, setCityVal] = useState('')
@@ -126,6 +136,28 @@ export function Signup() {
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800">
             {c.invitedHint}
           </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const token = extractJoinToken(pasteLink)
+              if (token) navigate(`/join/${token}`)
+            }}
+            className="flex flex-col gap-2"
+          >
+            <label htmlFor="paste-link" className="text-sm font-semibold text-stone-700">
+              {c.pasteLinkLabel}
+            </label>
+            <input
+              id="paste-link"
+              value={pasteLink}
+              onChange={(event) => setPasteLink(event.target.value)}
+              placeholder={c.pasteLinkPlaceholder}
+              className={inputCls}
+            />
+            <button type="submit" disabled={!pasteLink.trim()} className="mt-1 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-600/30 transition-colors hover:bg-stone-900 disabled:opacity-50">
+              {c.pasteLinkGo}
+            </button>
+          </form>
           <button
             type="button"
             onClick={() => setMode('choose')}
