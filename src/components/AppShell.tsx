@@ -4,6 +4,8 @@ import { supabase } from '../lib/db/client'
 import { useAuth } from '../features/auth/useAuth'
 import { strings } from '../lib/strings'
 import { backLink as backLinkCls } from './ui'
+import { isAdminRole } from '../lib/roles'
+import { AnonUpgradeBanner } from './AnonUpgradeBanner'
 
 // The frame every authenticated screen (admin + volunteer) sits in, so the app
 // reads as one product with the landing/auth surfaces: the same ॥ lockup and
@@ -28,7 +30,7 @@ export function AppShell({
   children: ReactNode
 }) {
   const { appUser } = useAuth()
-  const home = appUser?.role === 'admin' ? '/admin' : '/collect'
+  const home = isAdminRole(appUser?.role ?? '') ? '/admin' : '/collect'
 
   return (
     <div className="min-h-screen bg-stone-50 font-body text-stone-900">
@@ -54,6 +56,8 @@ export function AppShell({
           </button>
         </div>
       </header>
+
+      <AnonUpgradeBanner />
 
       <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-8">
         <div className="flex flex-col gap-2">

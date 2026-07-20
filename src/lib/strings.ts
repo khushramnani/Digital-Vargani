@@ -46,6 +46,12 @@ export const strings = {
     newHereTitle: 'First time?',
     newHere: "Sign in above with Google or email, and we'll walk you through creating your mandal.",
     backToLogin: 'Use a different email',
+    upgradeTitle: 'Secure your account',
+    upgradeBody: 'Add a Google account or email so you can sign in from any phone — not just this one.',
+    upgradeWithGoogle: 'Add Google',
+    upgradeWithEmail: 'Save',
+    upgradeEmailSent: "Check that email and open the confirmation link to finish.",
+    upgradeDismiss: 'Dismiss',
   },
   // The /signup fork: someone authenticated but with no mandal yet picks
   // between founding one and joining an existing one as an invited volunteer.
