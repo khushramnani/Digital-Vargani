@@ -1886,6 +1886,16 @@ git commit -m "refactor(auth): extract AuthMethods (Google+email), fix volunteer
 // Data access for the v5 membership model: the Manage Members screen (list
 // + invite + per-row actions) and the /join/:token flow both live here,
 // same as users.ts's fetchMandalUserNames — one file per data concern.
+//
+// Every function here wraps a failure in a real `Error` (not the raw
+// PostgrestError supabase-js returns), same reasoning as mandals.ts's
+// createMandal: a PostgrestError is a plain object, not an Error instance,
+// so `err instanceof Error ? err.message : String(err)` — the pattern every
+// caller of this file uses (members.tsx, JoinInvite.tsx) — would silently
+// degrade to the useless "[object Object]" on a raw throw. (Some older
+// files in this codebase — users.ts, void.ts — throw raw and happen to feed
+// callers that use the same instanceof-Error pattern anyway, which is a
+// pre-existing latent bug there, not a convention worth repeating here.)
 import { supabase } from './client'
 import type { Tables } from './database.types'
 
@@ -1908,13 +1918,13 @@ export type InvitePreview = { mandalName: string; role: string; invitee: string 
 // same as admins.tsx/volunteers.tsx's old fetches.
 export async function fetchMembers(): Promise<Member[]> {
   const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return data ?? []
 }
 
 export async function fetchPendingInvites(): Promise<PendingInvite[]> {
   const { data, error } = await supabase.rpc('list_pending_invites')
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return (data ?? []).map((row) => ({
     id: row.id,
     role: row.role,
@@ -1964,8 +1974,14 @@ export async function reactivateMember(id: string): Promise<void> {
 }
 
 // Public (pre-session) — used by /join/:token before any auth has happened.
+// Checks `error` explicitly (unlike a bare `data?.[0]` read) so a genuine RPC
+// failure (network blip, unexpected server exception) throws instead of
+// being indistinguishable from "this token doesn't resolve to a live
+// invite" — the caller (JoinInvite) still folds both into the same
+// invalid-link UI, but that's its choice to make, not this function's.
 export async function previewInvite(token: string): Promise<InvitePreview | null> {
-  const { data } = await supabase.rpc('invite_preview', { token })
+  const { data, error } = await supabase.rpc('invite_preview', { token })
+  if (error) throw new Error(error.message)
   const row = data?.[0]
   return row ? { mandalName: row.mandal_name, role: row.role, invitee: row.invitee_name } : null
 }
@@ -2048,15 +2064,24 @@ export function JoinInvite() {
       setStatus('invalid')
       return
     }
-    previewInvite(token).then((result) => {
-      if (!active) return
-      if (!result) {
-        setStatus('invalid')
-        return
-      }
-      setPreview(result)
-      setStatus('ready')
-    })
+    previewInvite(token)
+      .then((result) => {
+        if (!active) return
+        if (!result) {
+          setStatus('invalid')
+          return
+        }
+        setPreview(result)
+        setStatus('ready')
+      })
+      // previewInvite throws on a genuine RPC failure (not just an
+      // unresolved token) — this page has no retry affordance, so folding
+      // it into the same invalid-link state is the honest simplest option;
+      // the copy ("ask for a fresh link") is still directionally correct
+      // even for a transient failure.
+      .catch(() => {
+        if (active) setStatus('invalid')
+      })
     return () => {
       active = false
     }
