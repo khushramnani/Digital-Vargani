@@ -12,14 +12,23 @@ import { RequireRole } from '../src/features/auth/RequireRole'
 // render its children or redirect for a given required role? (The
 // no-session redirect is also covered for real, with no mocking needed, by
 // e2e/admin-auth.spec.ts.)
-const { getSession, onAuthStateChange, rpc, maybeSingle, from } = vi.hoisted(() => {
+const { getSession, onAuthStateChange, rpc, maybeSingle, from, chain } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
+  // fetchAppUser chains .order().order().limit() after .eq() before the
+  // terminal .maybeSingle() (multi-mandal tie-break) — this stub chain
+  // supports any number of those calls before resolving.
+  const chain: { order: () => typeof chain; limit: () => typeof chain; maybeSingle: typeof maybeSingle } = {
+    order: () => chain,
+    limit: () => chain,
+    maybeSingle,
+  }
   return {
     getSession: vi.fn(),
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
     rpc: vi.fn(() => Promise.resolve({ data: null, error: null })),
     maybeSingle,
-    from: vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) })),
+    from: vi.fn(() => ({ select: () => ({ eq: () => chain }) })),
+    chain,
   }
 })
 
@@ -72,7 +81,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
   rpc.mockResolvedValue({ data: null, error: null })
-  from.mockImplementation(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }))
+  from.mockImplementation(() => ({ select: () => ({ eq: () => chain }) }))
 })
 
 describe('RequireRole', () => {

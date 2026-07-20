@@ -9,8 +9,22 @@ import { AuthContext, type AppUser } from './useAuth'
 // genuine "no row" (data null, no error), because the two mean opposite
 // things — a fetch failure must NOT be read as "not a member" and dump the
 // user into create-a-mandal (audit 2026-07-18 #4).
+// A person can now hold a membership in more than one mandal (v5) — .single()
+// would throw the moment that's true for the signed-in identity. There's no
+// mandal-switcher in this app yet, so the most-recently-joined membership is
+// the session's active mandal, deterministically — the identical tie-break
+// (created_at desc, id desc as a tiebreaker) that Task 2's migration gives
+// app_user_id()/app_user_role()/app_mandal_id() server-side, so client and
+// server always agree on which mandal a session acts in.
 async function fetchAppUser(authUserId: string): Promise<AppUser | null> {
-  const { data, error } = await supabase.from('users').select('*').eq('auth_user_id', authUserId).maybeSingle()
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('auth_user_id', authUserId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   if (error) throw error
   return data ?? null
 }
@@ -51,18 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAppUserError(false)
         setLoading(false)
         return
-      }
-
-      // One-time linking step for the chicken-and-egg problem: a
-      // freshly-authenticated admin's `users` row has no `auth_user_id` yet.
-      // The RPC is idempotent server-side (WHERE auth_user_id is null) and a
-      // no-op for a non-admin email, so awaiting it here just avoids racing
-      // the appUser query below on first login rather than being required.
-      try {
-        await supabase.rpc('link_admin_account')
-      } catch {
-        // Non-fatal: a failed/no-op link just means appUser resolves to
-        // null below, which every route guard already treats as "no role".
       }
 
       try {
