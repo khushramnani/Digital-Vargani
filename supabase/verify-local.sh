@@ -2377,7 +2377,10 @@ END $$;
 -- fixture state predictable for anyone re-running a slice of this script).
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2';
-select transfer_ownership('00000000-0000-0000-0000-000000000001'); -- fails: 001 is now 'admin', not active admin? it IS admin+active, so this succeeds.
+-- 001 is now 'admin' (demoted by the transfer above) and still active, so
+-- this transfer-back succeeds — restoring the fixture to its original owner
+-- for anything after this point in the file that assumes it.
+select transfer_ownership('00000000-0000-0000-0000-000000000001');
 reset role;
 SQL
 

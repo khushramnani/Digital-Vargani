@@ -5,6 +5,7 @@ import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
 import { CityTypeahead } from '../../components/CityTypeahead'
+import { isAdminRole } from '../../lib/roles'
 
 const t = strings.signup
 
@@ -71,7 +72,7 @@ export function Signup() {
     return <div className="flex min-h-screen items-center justify-center bg-stone-50 font-body text-stone-400">{strings.auth.loading}</div>
   }
   if (!session) return <Navigate to="/login" replace />
-  if (appUser) return <Navigate to="/admin" replace />
+  if (appUser) return <Navigate to={isAdminRole(appUser.role) ? '/admin' : '/collect'} replace />
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

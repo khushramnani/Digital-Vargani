@@ -10,6 +10,7 @@ import { VoidButton } from '../../components/VoidButton'
 import { AppShell } from '../../components/AppShell'
 import { VolunteerTabBar } from '../collection/VolunteerTabBar'
 import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
+import { isAdminRole } from '../../lib/roles'
 
 const t = strings.expenses
 
@@ -246,7 +247,7 @@ export function ExpensesContent() {
 // bare inside AdminLayout instead.
 export function ExpensesScreen() {
   const { appUser } = useAuth()
-  const isAdmin = appUser?.role === 'admin'
+  const isAdmin = isAdminRole(appUser?.role ?? '')
   const isVolunteer = appUser?.role === 'volunteer'
   const home = isAdmin
     ? { to: '/admin', label: strings.admin.dashboardTitle }

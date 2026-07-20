@@ -216,7 +216,6 @@ export const strings = {
     copied: 'Copied!',
     regenerate: 'Regenerate link',
     regenerating: 'Regenerating…',
-    resetInvite: 'Reset & resend',
     removeButton: 'Remove',
     removeTitle: 'Remove this volunteer?',
     removeBody:
