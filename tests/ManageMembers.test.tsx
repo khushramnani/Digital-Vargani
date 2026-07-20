@@ -18,28 +18,48 @@ import { strings } from '../src/lib/strings'
 // `.maybeSingle()` resolves via its own vi.fn(); every other step returns the
 // same chain, and awaiting the chain itself (fetchMembers never calls
 // .maybeSingle()) resolves through the synthetic `.then()` below.
+// mandalFilter tracks a `.eq('mandal_id', ...)` call so the shared chain's
+// `.then()` (fetchMembers' resolution path) can actually filter membersRef —
+// the only way to prove cross-mandal exclusion behaviourally rather than by
+// just asserting call args. Reset in `from()`, the start of every fresh
+// `.from('users')...` query, so a prior call's filter can't leak into the
+// next one (fetchAppUser's `.eq('auth_user_id'/'active', ...)` calls don't
+// match 'mandal_id' and resolve via the separate `.maybeSingle()` mock
+// anyway, so they're unaffected either way).
 const { getSession, onAuthStateChange, rpc, from, maybeSingle, membersRef, invitesRef } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
   const membersRef: { current: unknown[] } = { current: [] }
   const invitesRef: { current: unknown[] } = { current: [] }
+  let mandalFilter: string | undefined
   const chain: {
-    eq: () => typeof chain
+    eq: (column: string, value: string) => typeof chain
     order: () => typeof chain
     limit: () => typeof chain
     maybeSingle: typeof maybeSingle
     then: (resolve: (v: { data: unknown; error: null }) => void) => void
   } = {
-    eq: () => chain,
+    eq: (column, value) => {
+      if (column === 'mandal_id') mandalFilter = value
+      return chain
+    },
     order: () => chain,
     limit: () => chain,
     maybeSingle,
-    then: (resolve) => resolve({ data: membersRef.current, error: null }),
+    then: (resolve) => {
+      const rows = mandalFilter
+        ? (membersRef.current as { mandal_id: string }[]).filter((r) => r.mandal_id === mandalFilter)
+        : membersRef.current
+      resolve({ data: rows, error: null })
+    },
   }
   return {
     getSession: vi.fn(),
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
     rpc: vi.fn(),
-    from: vi.fn(() => ({ select: () => chain })),
+    from: vi.fn(() => {
+      mandalFilter = undefined
+      return { select: () => chain }
+    }),
     maybeSingle,
     membersRef,
     invitesRef,
@@ -98,6 +118,7 @@ beforeEach(() => {
   rpc.mockImplementation((fn: string) => {
     if (fn === 'list_pending_invites') return Promise.resolve({ data: invitesRef.current, error: null })
     if (fn === 'create_invite') return Promise.resolve({ data: 'tok-abc123', error: null })
+    if (fn === 'resend_invite') return Promise.resolve({ data: 'tok-resend-999', error: null })
     return Promise.resolve({ data: null, error: null })
   })
   setViewer(ownerViewer)
@@ -204,6 +225,34 @@ describe('ManageMembersContent', () => {
     const adminLi = screen.getByText('Amit Admin').closest('li')!
     expect(within(adminLi).getByText(t.makeVolunteer)).toBeInTheDocument()
     expect(within(adminLi).getByText(t.makeOwner)).toBeInTheDocument()
+  })
+
+  it('shows the new link in the same ready-to-share UI after resending an invite', async () => {
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Ishaan Invitee')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: t.resendButton }))
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('resend_invite', { invite_id: 'invite-1' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByDisplayValue(/\/join\/tok-resend-999$/)).toBeInTheDocument())
+    expect(within(dialog).getByText(t.copyLink)).toBeInTheDocument()
+    expect(within(dialog).getByText(t.shareWhatsApp)).toBeInTheDocument()
+  })
+
+  it('excludes a member row belonging to a different mandal from the list', async () => {
+    const foreignMandalRow = makeUser({
+      id: 'user-foreign',
+      role: 'admin',
+      name: 'Foreign Admin',
+      mandal_id: '22222222-2222-2222-2222-000000000002',
+    })
+    membersRef.current = [adminRow, volunteerRow, foreignMandalRow]
+    renderMembers()
+
+    await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
+    expect(screen.getByText('Vera Volunteer')).toBeInTheDocument()
+    expect(screen.queryByText('Foreign Admin')).not.toBeInTheDocument()
   })
 
   it('confirming the revoke dialog calls revoke_invite', async () => {

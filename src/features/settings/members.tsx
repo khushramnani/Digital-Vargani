@@ -68,22 +68,26 @@ export function ManageMembersContent() {
   const [rowBusy, setRowBusy] = useState<string | null>(null)
 
   async function reload() {
-    const [m, i] = await Promise.all([fetchMembers(), fetchPendingInvites()])
+    const [m, i] = await Promise.all([fetchMembers(appUser!.mandal_id), fetchPendingInvites()])
     setMembers(m)
     setInvites(i)
   }
 
   useEffect(() => {
+    // RequireRole guarantees appUser is resolved before this screen ever
+    // mounts in production, but guard anyway: reload() now needs
+    // appUser.mandal_id, so wait for it rather than dereferencing null.
+    if (!appUser) return
     let active = true
     reload()
-      .catch(() => {})
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         if (active) setLoading(false)
       })
     return () => {
       active = false
     }
-  }, [])
+  }, [appUser])
 
   function resetInviteForm() {
     setInviteName('')
@@ -126,7 +130,13 @@ export function ManageMembersContent() {
     setRowBusy(invite.id)
     setError(null)
     try {
-      await resendInvite(invite.id)
+      // resend_invite revokes the old link server-side and returns the new
+      // raw token exactly once (only its hash is ever stored) — route it
+      // into the same "link ready" sheet the invite-creation flow uses, or
+      // the admin has nothing to share and the old link is already dead.
+      const token = await resendInvite(invite.id)
+      setInviteLinkReady(inviteLink(token))
+      setSheetOpen(true)
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

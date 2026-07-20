@@ -30,9 +30,15 @@ export type InvitePreview = { mandalName: string; role: string; invitee: string 
 
 // users_admin_select RLS already returns every member (owner+admin+
 // volunteer, active+inactive) in the caller's own mandal — no RPC needed,
-// same as admins.tsx/volunteers.tsx's old fetches.
-export async function fetchMembers(): Promise<Member[]> {
-  const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true })
+// same as admins.tsx/volunteers.tsx's old fetches. But users_self_select (an
+// older, deliberately mandal-unscoped policy — it's what bootstraps
+// app_mandal_id() in the first place) combines via OR with
+// users_admin_select, so a caller who holds memberships in more than one
+// mandal (v5 allows this) would otherwise get their OWN row in a *different*
+// mandal back too. Filter explicitly by the caller's mandal so that
+// self-select's necessarily-broader RLS scope can't leak into this screen.
+export async function fetchMembers(mandalId: string): Promise<Member[]> {
+  const { data, error } = await supabase.from('users').select('*').eq('mandal_id', mandalId).order('created_at', { ascending: true })
   if (error) throw new Error(error.message)
   return data ?? []
 }
