@@ -57,6 +57,9 @@ export const strings = {
     invitedTitle: 'I was invited to a mandal',
     invitedBody: 'Volunteers and admins join through the invite link their mandal shares on WhatsApp — no login needed. Open that link on this phone to continue.',
     invitedHint: "Don't have it? Ask your mandal admin to send (or resend) your invite link.",
+    pasteLinkLabel: 'Or paste your invite link',
+    pasteLinkPlaceholder: 'Paste the link here…',
+    pasteLinkGo: 'Continue',
     back: '← Back',
   },
   signup: {
