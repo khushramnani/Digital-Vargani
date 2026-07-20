@@ -48,7 +48,7 @@ export const strings = {
     inviteSwitchBody: 'Opening this invite will sign you out and switch to it. Continue?',
     inviteSwitchContinue: 'Continue and switch',
     inviteSwitchCancel: 'Stay signed in',
-    volunteerHint: 'Collecting for a mandal? Open the invite link your admin shared — volunteers need no login.',
+    volunteerHint: "Collecting for a mandal? Sign in the same way — Google or email — using the invite link your admin shared to join first.",
     retryTitle: "Couldn't load your account",
     retryBody: 'We reached the server but your account details did not load. Check your connection and try again.',
     retryButton: 'Try again',
