@@ -11,3 +11,11 @@ export function isAdminRole(role: string): boolean {
 export function isOwnerRole(role: string): boolean {
   return role === 'owner'
 }
+
+// Where a member lands once their role is known. Four screens made this same
+// decision independently (login, signup, join, resolver) and any one of them
+// getting it wrong sends someone into a route their role can't hold — which
+// RequireRole bounces, which lands them back where they started.
+export function homePathFor(role: string): string {
+  return isAdminRole(role) ? '/admin' : '/collect'
+}

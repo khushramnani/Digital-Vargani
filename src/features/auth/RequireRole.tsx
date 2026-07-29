@@ -41,11 +41,12 @@ export function RequireRole({ role, children }: { role: Role | Role[]; children:
     )
   }
 
-  // Authenticated, but not a member of any mandal yet — they came in via a
-  // magic link and never created one. /login would just re-send a link and
-  // loop them back here; /signup is the only exit.
+  // Authenticated, but not a member of any mandal yet. /continue rather
+  // than /signup: they may well have an invite waiting (stashed, or against
+  // their email) and the resolver is what finds it — it falls through to
+  // /signup on its own when there is genuinely nothing to join.
   if (!appUser) {
-    return <Navigate to="/signup" replace />
+    return <Navigate to="/continue" replace />
   }
 
   if (!allowedRoles.includes(appUser.role as Role)) {

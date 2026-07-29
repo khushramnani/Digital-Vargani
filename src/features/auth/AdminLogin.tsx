@@ -4,12 +4,11 @@ import { useAuth } from './useAuth'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
 import { AuthMethods, type Status } from './AuthMethods'
-import { isAdminRole } from '../../lib/roles'
 
 const t = strings.auth
 
 export function AdminLogin() {
-  const { loading, session, appUser } = useAuth()
+  const { loading, session } = useAuth()
   // Tracks AuthMethods' own status so the footer below can hide itself once
   // the form is replaced by "check your email" — the footer's "sign in
   // above" copy is stale/misleading once there's no form to sign in with
@@ -21,14 +20,12 @@ export function AdminLogin() {
     return <div className="flex min-h-screen items-center justify-center bg-stone-50 font-body text-stone-400">{t.loading}</div>
   }
 
-  // Already signed in? Don't show a login form. Route by role so a volunteer
-  // who lands here isn't bounced to /admin (which would send them straight
-  // back — a loop). A session with no `users` row is a fresh account that
-  // still has to create/join a mandal, so send it to onboarding.
-  if (session) {
-    if (appUser) return <Navigate to={isAdminRole(appUser.role) ? '/admin' : '/collect'} replace />
-    return <Navigate to="/signup" replace />
-  }
+  // Already signed in? Don't show a login form — hand the whole "where does
+  // this person belong" question to /continue, which is the only place that
+  // also checks for a stashed invite token or one waiting on their email.
+  // Deciding it here as well is how an invitee used to end up stranded on a
+  // create-a-mandal screen with their invite sitting unclaimed.
+  if (session) return <Navigate to="/continue" replace />
 
   return (
     <AuthShell
@@ -46,7 +43,9 @@ export function AdminLogin() {
         )
       }
     >
-      <AuthMethods redirectTo={`${window.location.origin}/admin`} onStatusChange={setAuthStatus} />
+      {/* /continue, not /admin: a volunteer signing in here would bounce
+          off RequireRole, and an invitee needs the resolver's rescue paths. */}
+      <AuthMethods redirectTo={`${window.location.origin}/continue`} onStatusChange={setAuthStatus} />
     </AuthShell>
   )
 }

@@ -77,6 +77,7 @@ function renderGuardedRoute(requiredRole: 'admin' | 'volunteer' | ('admin' | 'vo
           />
           <Route path="/login" element={<div>Login Page</div>} />
           <Route path="/signup" element={<div>Signup Page</div>} />
+          <Route path="/continue" element={<div>Continue Page</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -111,28 +112,31 @@ describe('RequireRole', () => {
   })
 
   // Authed but a member of nothing: /login would re-send a magic link that
-  // lands right back here, so this state must exit to /signup instead.
-  it('redirects to /signup when a session resolves to no appUser', async () => {
+  // lands right back here. /continue rather than /signup, because they may
+  // well have an invite waiting (stashed, or against their verified email)
+  // and the resolver is the only thing that looks — it falls through to
+  // /signup itself when there is genuinely nothing to join.
+  it('redirects to /continue when a session resolves to no appUser', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
     maybeSingle.mockResolvedValue({ data: null, error: null })
 
     renderGuardedRoute('admin')
 
-    await waitFor(() => expect(screen.getByText('Signup Page')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Continue Page')).toBeInTheDocument())
     expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
     expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
   })
 
   // A failed users lookup (network/RLS) is NOT "no membership": show a retry,
   // never the create-a-mandal redirect a real member would then be trapped in.
-  it('shows a retry (not /signup) when the users lookup errors', async () => {
+  it('shows a retry (not /continue) when the users lookup errors', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession }, error: null })
     maybeSingle.mockResolvedValue({ data: null, error: { message: 'network error' } })
 
     renderGuardedRoute('admin')
 
     await waitFor(() => expect(screen.getByText("Couldn't load your account")).toBeInTheDocument())
-    expect(screen.queryByText('Signup Page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Continue Page')).not.toBeInTheDocument()
     expect(screen.queryByText('Guarded Content')).not.toBeInTheDocument()
   })
 

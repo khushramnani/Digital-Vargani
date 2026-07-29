@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { LandingPage } from '../features/landing/LandingPage'
 import { AdminLogin } from '../features/auth/AdminLogin'
 import { JoinInvite } from '../features/auth/JoinInvite'
+import { AuthResolver } from '../features/auth/AuthResolver'
 import { Signup } from '../features/auth/Signup'
 import { RequireRole } from '../features/auth/RequireRole'
 import { AdminLayout } from '../features/admin/AdminLayout'
@@ -36,6 +37,10 @@ export function AppRoutes() {
       <Route path="/login" element={<AdminLogin />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/join/:token" element={<JoinInvite />} />
+      {/* Post-auth resolver: the one screen that decides where a
+          freshly-signed-in person belongs. Every other auth screen forwards
+          a live session here rather than guessing for itself. */}
+      <Route path="/continue" element={<AuthResolver />} />
       <Route path="/invite/:token" element={<LegacyInviteRedirect />} />
       {/* Public, unauthenticated — donor-facing receipt, no RequireRole guard. */}
       <Route path="/r/:public_token" element={<ReceiptPage />} />

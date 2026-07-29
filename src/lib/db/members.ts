@@ -22,11 +22,35 @@ export type PendingInvite = {
   name: string
   email: string | null
   phone: string | null
+  // The typeable half of the invite. Nullable only for pre-v6 rows that
+  // predate the code column; every invite minted since carries one.
+  code: string | null
   expiresAt: string
   createdAt: string
 }
 
-export type InvitePreview = { mandalName: string; role: string; invitee: string }
+// Both halves of a freshly minted invite. The server returns each exactly
+// once (only the token's hash is stored), so a caller that drops either has
+// nothing to share and no way to get it back except a resend.
+export type NewInvite = { token: string; code: string }
+
+// inviteeEmailMasked is masked server-side (p***a@gmail.com) because
+// invite_preview is anon-callable — enough to name the address in the
+// "this was sent to someone else, continue anyway?" confirm, not enough to
+// harvest. matchesCallerEmail is the actual decision: it's computed against
+// the real addresses server-side, since two different ones can mask to the
+// same string.
+export type InvitePreview = {
+  mandalName: string
+  role: string
+  invitee: string
+  inviteeEmailMasked: string | null
+  matchesCallerEmail: boolean
+}
+
+// A live invite addressed to the signed-in user's own verified email — the
+// rescue path for someone who arrived without a link or code at all.
+export type MyInvite = { code: string; mandalName: string; role: string; invitee: string }
 
 // users_admin_select RLS already returns every member (owner+admin+
 // volunteer, active+inactive) in the caller's own mandal — no RPC needed,
@@ -52,15 +76,34 @@ export async function fetchPendingInvites(): Promise<PendingInvite[]> {
     name: row.name,
     email: row.email,
     phone: row.phone,
+    code: row.code,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   }))
 }
 
-export async function createInvite(role: 'admin' | 'volunteer', name: string, email?: string, phone?: string): Promise<string> {
+// email is required as of v6: it's what makes my_pending_invites() able to
+// find this invite when the invitee arrives with neither half of it, which
+// is the normal case for anyone who opened a magic link on their phone.
+export async function createInvite(
+  role: 'admin' | 'volunteer',
+  name: string,
+  email: string,
+  phone?: string,
+): Promise<NewInvite> {
   const { data, error } = await supabase.rpc('create_invite', { role, name, email, phone })
   if (error) throw new Error(error.message)
-  return data
+  return firstInvite(data)
+}
+
+// The RPC returns a one-row set. An empty result would mean the insert
+// silently did nothing — impossible in practice, but returning
+// `{token: undefined}` from here would surface as an invite sheet showing
+// "/join/undefined", which is worse than an error.
+function firstInvite(rows: { token: string; code: string }[] | null): NewInvite {
+  const row = rows?.[0]
+  if (!row?.token || !row?.code) throw new Error('The invite was not created. Please try again.')
+  return { token: row.token, code: row.code }
 }
 
 export async function revokeInvite(id: string): Promise<void> {
@@ -68,10 +111,10 @@ export async function revokeInvite(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-export async function resendInvite(id: string): Promise<string> {
+export async function resendInvite(id: string): Promise<NewInvite> {
   const { data, error } = await supabase.rpc('resend_invite', { invite_id: id })
   if (error) throw new Error(error.message)
-  return data
+  return firstInvite(data)
 }
 
 export async function setMemberRole(id: string, role: 'admin' | 'volunteer'): Promise<void> {
@@ -104,10 +147,34 @@ export async function previewInvite(token: string): Promise<InvitePreview | null
   const { data, error } = await supabase.rpc('invite_preview', { token })
   if (error) throw new Error(error.message)
   const row = data?.[0]
-  return row ? { mandalName: row.mandal_name, role: row.role, invitee: row.invitee_name } : null
+  return row
+    ? {
+        mandalName: row.mandal_name,
+        role: row.role,
+        invitee: row.invitee_name,
+        inviteeEmailMasked: row.invitee_email_masked ?? null,
+        matchesCallerEmail: row.matches_caller_email ?? false,
+      }
+    : null
 }
 
+// Accepts either half — a raw link token or a normalized code.
 export async function acceptInvite(token: string): Promise<void> {
   const { error } = await supabase.rpc('accept_invite', { token })
   if (error) throw new Error(error.message)
+}
+
+// Live invites addressed to the caller's own VERIFIED email, in any mandal.
+// Returns every match rather than picking one: two mandals inviting the same
+// person is a real scenario, and silently joining the "newest" would put
+// them in the wrong one with no signal that a choice was ever made.
+export async function myPendingInvites(): Promise<MyInvite[]> {
+  const { data, error } = await supabase.rpc('my_pending_invites')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => ({
+    code: row.code,
+    mandalName: row.mandal_name,
+    role: row.role,
+    invitee: row.invitee_name,
+  }))
 }

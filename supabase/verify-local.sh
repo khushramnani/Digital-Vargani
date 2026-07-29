@@ -2860,6 +2860,20 @@ BEGIN
 END $$;
 reset role;
 
+-- matches_caller_email is what decides whether the client raises the
+-- mismatch confirm, so it must be false for a stranger and true for the
+-- invited address — computed server-side because two different addresses
+-- can mask to the same string.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d4'; -- wrong-person@example.com
+DO $$
+BEGIN
+  ASSERT (SELECT matches_caller_email FROM invite_preview(current_setting('verify.code_flow_code'))) = false,
+    'FAIL: invite_preview claimed a stranger matches the invited address';
+  RAISE NOTICE 'PASS: invite_preview reports a mismatch for a different signed-in address';
+END $$;
+reset role;
+
 -- accept_invite takes the code just as happily as the token.
 insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000601', 'code.flow@example.com');
 set role authenticated;

@@ -52,20 +52,62 @@ export const strings = {
     upgradeWithEmail: 'Save',
     upgradeEmailSent: "Check that email and open the confirmation link to finish.",
     upgradeDismiss: 'Dismiss',
+    goToMandal: 'Go to your mandal',
   },
-  // The /signup fork: someone authenticated but with no mandal yet picks
-  // between founding one and joining an existing one as an invited volunteer.
+  // /continue — the one screen that decides where a freshly-signed-in person
+  // belongs, and the only place the joining confirmations live.
+  resolver: {
+    working: 'Getting you in…',
+    joiningPrefix: 'Joining',
+    joiningAs: (role: string) => `as ${role}`,
+    // Shown when a stashed invite turned out to be dead. Deliberately not an
+    // error screen: we carry on to wherever they otherwise belong.
+    staleInvite: 'That invite link is no longer valid — it may have expired, been used already, or been withdrawn.',
+    staleInviteHelp: 'Ask whoever invited you for a fresh one.',
+    pickTitle: 'You have more than one invite',
+    pickBody: 'Choose the mandal you want to join now. The others stay open.',
+    pickCta: 'Join',
+    secondMandalTitle: "You're already in a mandal",
+    secondMandalBody: (mandal: string) =>
+      `Joining ${mandal} adds it to your account and switches you over to it. Your current mandal stays exactly as it is.`,
+    secondMandalConfirm: 'Join anyway',
+    mismatchTitle: 'This invite was sent to someone else',
+    mismatchBody: (invited: string, signedIn: string) =>
+      `It was addressed to ${invited}, and you're signed in as ${signedIn}. You can still join — your own address is what gets saved.`,
+    mismatchConfirm: 'Continue anyway',
+    switchAccount: 'Use a different account',
+    cancel: 'Not now',
+    roleAdmin: 'an admin',
+    roleVolunteer: 'a volunteer',
+  },
+  // /signup — now a PUBLIC fork, shown before sign-in rather than after, so
+  // "Sign up" on the landing page has somewhere real to point.
   signupChoice: {
     title: 'Welcome! What brings you here?',
+    subtitle: 'Two ways in. Pick the one that sounds like you.',
     createTitle: 'Create a new mandal',
-    createBody: "Start fresh — you'll be its first admin and can invite your team.",
+    createBody: "Start fresh — you'll be its owner and can invite your team.",
     createCta: 'Create a mandal →',
     invitedTitle: 'I was invited to a mandal',
-    invitedBody: 'Volunteers and admins join through the invite link their mandal shares on WhatsApp — no login needed. Open that link on this phone to continue.',
-    invitedHint: "Don't have it? Ask your mandal admin to send (or resend) your invite link.",
-    pasteLinkLabel: 'Or paste your invite link',
-    pasteLinkPlaceholder: 'Paste the link here…',
-    pasteLinkGo: 'Continue',
+    invitedBody: 'Someone already added you as an admin or volunteer. Sign in and we look your invite up for you.',
+    invitedCta: 'Join my mandal →',
+    // Card B, post-choice.
+    invitedAuthTitle: 'Sign in to join',
+    invitedAuthBody: "Use the email address your admin invited — we'll find your invite automatically.",
+    codeToggle: 'Have an invite code instead?',
+    codeLabel: 'Invite code',
+    codePlaceholder: 'K7M29-XPQ4R',
+    codeHelp: 'The code your admin read out or sent you. Pasting the whole invite link works too.',
+    codeGo: 'Continue',
+    codeInvalid: "That doesn't look like an invite code or link.",
+    noMatch: (email: string) => `No invite found for ${email}.`,
+    noMatchHelp: 'Enter the code your admin gave you, or ask them to resend your invite.',
+    // Card A, post-auth: an invited person taps "create" because it's first
+    // in the list, and would otherwise end up founding a duplicate mandal.
+    interjectTitle: 'You already have an invite',
+    interjectBody: (mandal: string) => `${mandal} is waiting for you to join. Is that what you meant to do?`,
+    interjectJoin: (mandal: string) => `Join ${mandal}`,
+    interjectCreate: 'No — create a new mandal',
     back: '← Back',
   },
   signup: {
@@ -249,13 +291,17 @@ export const strings = {
     roleAdmin: 'Admin',
     roleVolunteer: 'Volunteer',
     nameLabel: 'Name',
-    emailLabel: 'Email (optional)',
-    emailHelp: 'Locks the invite link to this Google/email account.',
+    emailLabel: 'Email',
+    emailHelp: "Required. If they sign in with this address we find their invite automatically — even if they lose the link.",
     phoneLabel: 'Phone (optional)',
-    sendButton: 'Create invite link',
+    sendButton: 'Create invite',
     sending: 'Creating…',
-    linkReadyTitle: 'Invite link ready',
+    linkReadyTitle: 'Invite ready',
+    linkLabel: 'Invite link',
+    codeLabel: 'Or read out this code',
+    codeHelp: 'Works instead of the link — they enter it after signing in.',
     copyLink: 'Copy link',
+    copyCode: 'Copy code',
     copied: 'Copied!',
     shareWhatsApp: 'Share on WhatsApp',
     done: 'Done',

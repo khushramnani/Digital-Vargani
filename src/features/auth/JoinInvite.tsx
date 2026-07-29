@@ -1,36 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { supabase } from '../../lib/db/client'
 import { useAuth } from './useAuth'
-import { previewInvite, acceptInvite, type InvitePreview } from '../../lib/db/members'
+import { previewInvite, type InvitePreview } from '../../lib/db/members'
 import { strings } from '../../lib/strings'
 import { AuthShell } from '../../components/AuthShell'
 import { AuthMethods } from './AuthMethods'
-import { isAdminRole } from '../../lib/roles'
+import { AcceptInvite } from './AcceptInvite'
+import { stashInvite, clearStashedInvite } from './inviteStash'
+import { homePathFor } from '../../lib/roles'
 
 const t = strings.auth
 
-type Status = 'checking' | 'invalid' | 'ready' | 'accepting' | 'accept-error'
+type Status = 'checking' | 'invalid' | 'ready'
 
-// Public route (/join/:token) — the one way anyone, admin or volunteer,
-// gets a membership under v5. No signInAnonymously anywhere: the invitee
-// signs in with a real Google/email identity (AuthMethods), then
-// accept_invite() links that identity to the invited row.
+// Public route — the fastest way in, when the link survives the trip.
 //
-// A real (non-anonymous) session already present — whether they just
-// finished the Google/email round trip back to this same URL, or they were
-// already signed in from browsing the app earlier — skips straight to
-// accepting, no extra confirm tap. accept_invite is mandal-scoped and
-// idempotent, so there's nothing unsafe about that shortcut. ponytail: no
-// "continue as X?" confirmation screen for the already-signed-in case;
-// add one only if that shortcut ever proves surprising in practice.
+// The :token param is now either half of an invite: a 64-char link token or
+// a 10-char code, since /join/K7M29XPQ4R is a URL someone can actually read
+// out. invite_preview and accept_invite both resolve either.
+//
+// The token is stashed BEFORE handing off to Google/email. If the project's
+// Supabase redirect allowlist doesn't cover this URL, the round trip comes
+// back to the landing page with the token gone — the stash is what lets
+// AuthResolver still finish the join from wherever they land. Once a real
+// session exists, AcceptInvite owns everything from here (both confirms and
+// the accept itself), shared with the resolver so both doors behave alike.
 export function JoinInvite() {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
-  const { loading, session, refreshAppUser } = useAuth()
+  const { loading, session, appUser, refreshAppUser } = useAuth()
   const [status, setStatus] = useState<Status>('checking')
   const [preview, setPreview] = useState<InvitePreview | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const acceptingRef = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -61,28 +62,11 @@ export function JoinInvite() {
     }
   }, [token])
 
-  useEffect(() => {
-    if (loading || status !== 'ready' || !session || session.user.is_anonymous || !token) return
-    if (acceptingRef.current) return
-    acceptingRef.current = true
-    setStatus('accepting')
-    acceptInvite(token)
-      .then(async () => {
-        await refreshAppUser()
-        navigate(preview && isAdminRole(preview.role) ? '/admin' : '/collect', { replace: true })
-      })
-      .catch((err: unknown) => {
-        acceptingRef.current = false
-        setError(err instanceof Error ? err.message : String(err))
-        setStatus('accept-error')
-      })
-  }, [loading, session, status, token, preview, refreshAppUser, navigate])
-
-  if (status === 'checking') {
+  if (loading || status === 'checking') {
     return <div className="flex min-h-screen items-center justify-center text-stone-400">{t.loading}</div>
   }
 
-  if (status === 'invalid') {
+  if (status === 'invalid' || !token || !preview) {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-2 px-4 text-center">
         <p role="alert" className="text-stone-900">
@@ -93,22 +77,41 @@ export function JoinInvite() {
     )
   }
 
-  if (status === 'accepting') {
-    return <div className="flex min-h-screen items-center justify-center text-stone-400">{t.inviteSettingUp}</div>
+  const roleLabel = preview.role === 'admin' ? t.joinRoleAdmin : t.joinRoleVolunteer
+
+  // A real (never anonymous) session is already here — either they just
+  // came back from the auth round trip, or they were signed in all along.
+  if (session && !session.user.is_anonymous) {
+    return (
+      <AuthShell title={preview.mandalName} subtitle={`${t.joinInvitedAsPrefix} ${roleLabel}, ${preview.invitee}`}>
+        <AcceptInvite
+          token={token}
+          preview={preview}
+          onAccepted={(role) => navigate(homePathFor(role), { replace: true })}
+          onFailed={() => {}}
+          onCancel={async () => {
+            clearStashedInvite()
+            if (appUser) {
+              navigate(homePathFor(appUser.role), { replace: true })
+            } else {
+              await supabase.auth.signOut()
+              await refreshAppUser()
+              navigate('/login', { replace: true })
+            }
+          }}
+        />
+      </AuthShell>
+    )
   }
 
-  // 'ready' or 'accept-error' — preview is always set by this point.
-  const p = preview!
-  const roleLabel = p.role === 'admin' ? t.joinRoleAdmin : t.joinRoleVolunteer
-
   return (
-    <AuthShell title={p.mandalName} subtitle={`${t.joinInvitedAsPrefix} ${roleLabel}, ${p.invitee}`}>
-      <AuthMethods redirectTo={`${window.location.origin}/join/${token}`} />
-      {status === 'accept-error' && error && (
-        <p role="alert" className="mt-3 text-sm text-red-600">
-          {error}
-        </p>
-      )}
+    <AuthShell title={preview.mandalName} subtitle={`${t.joinInvitedAsPrefix} ${roleLabel}, ${preview.invitee}`}>
+      <AuthMethods
+        redirectTo={`${window.location.origin}/join/${token}`}
+        // Belt and braces with redirectTo: that only works if this URL is in
+        // the Supabase redirect allowlist, and this works even when it isn't.
+        onBeforeRedirect={() => stashInvite(token)}
+      />
     </AuthShell>
   )
 }

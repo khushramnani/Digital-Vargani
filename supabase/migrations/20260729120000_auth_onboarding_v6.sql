@@ -218,9 +218,18 @@ grant execute on function resend_invite(uuid) to authenticated;
 drop function invite_preview(text);
 
 create function invite_preview(token text)
-returns table (mandal_name text, role text, invitee_name text, invitee_email_masked text)
-language sql stable security definer set search_path = public, extensions as $$
-  select m.name, i.role, i.name, mask_email(i.email)
+returns table (mandal_name text, role text, invitee_name text,
+               invitee_email_masked text, matches_caller_email boolean)
+language sql stable security definer set search_path = public, auth, extensions as $$
+  -- matches_caller_email is computed here rather than by comparing masks in
+  -- the client: two different addresses can mask to the same string
+  -- (priya@ and pooja@ both give p***a@), and a false "these match" would
+  -- silently skip the confirm this exists to raise. For anon the subquery
+  -- yields NULL, so the comparison is false and the client — which only
+  -- reads this with a session — is unaffected.
+  select m.name, i.role, i.name, mask_email(i.email),
+         i.email is not distinct from
+           (select lower(btrim(u.email)) from auth.users u where u.id = auth.uid())
   from invites i
   join mandals m on m.id = i.mandal_id
   where (

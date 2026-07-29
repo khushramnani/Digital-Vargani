@@ -19,6 +19,7 @@ import { Sheet } from '../../components/Sheet'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PhoneInput } from '../../components/PhoneInput'
 import { isOwnerRole, isAdminRole } from '../../lib/roles'
+import { formatInviteCode } from '../../lib/inviteCode'
 
 const t = strings.members
 
@@ -34,6 +35,12 @@ function matchesFilter(role: string, filter: Filter): boolean {
 function inviteLink(token: string): string {
   return `${window.location.origin}/join/${token}`
 }
+
+// An invite is two interchangeable halves. The link is for WhatsApp; the
+// code is for the volunteer standing in front of you, or a phone call. The
+// server returns both exactly once, so this sheet is the only chance to
+// capture them — losing either means a resend.
+type ReadyInvite = { link: string; code: string }
 
 function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000)
@@ -60,7 +67,7 @@ export function ManageMembersContent() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePhone, setInvitePhone] = useState('')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
-  const [inviteLinkReady, setInviteLinkReady] = useState<string | null>(null)
+  const [inviteReady, setInviteReady] = useState<ReadyInvite | null>(null)
 
   const [revoking, setRevoking] = useState<PendingInvite | null>(null)
   const [deactivating, setDeactivating] = useState<Member | null>(null)
@@ -94,7 +101,7 @@ export function ManageMembersContent() {
     setInviteEmail('')
     setInvitePhone('')
     setInviteRole('volunteer')
-    setInviteLinkReady(null)
+    setInviteReady(null)
   }
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
@@ -102,8 +109,8 @@ export function ManageMembersContent() {
     setInviteSubmitting(true)
     setError(null)
     try {
-      const token = await createInvite(inviteRole, inviteName, inviteEmail || undefined, invitePhone || undefined)
-      setInviteLinkReady(inviteLink(token))
+      const invite = await createInvite(inviteRole, inviteName, inviteEmail, invitePhone || undefined)
+      setInviteReady({ link: inviteLink(invite.token), code: invite.code })
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -134,8 +141,8 @@ export function ManageMembersContent() {
       // raw token exactly once (only its hash is ever stored) — route it
       // into the same "link ready" sheet the invite-creation flow uses, or
       // the admin has nothing to share and the old link is already dead.
-      const token = await resendInvite(invite.id)
-      setInviteLinkReady(inviteLink(token))
+      const fresh = await resendInvite(invite.id)
+      setInviteReady({ link: inviteLink(fresh.token), code: fresh.code })
       setSheetOpen(true)
       await reload()
     } catch (err) {
@@ -256,6 +263,9 @@ export function ManageMembersContent() {
               {(invite.email || invite.phone) && (
                 <p className="mt-0.5 text-sm text-stone-500">{[invite.email, invite.phone].filter(Boolean).join(' · ')}</p>
               )}
+              {invite.code && (
+                <p className="mt-1 font-mono text-sm tracking-[0.14em] text-stone-700">{formatInviteCode(invite.code)}</p>
+              )}
               <div className="mt-3 flex gap-2">
                 {(invite.role === 'volunteer' || iAmOwner) && (
                   <>
@@ -351,28 +361,43 @@ export function ManageMembersContent() {
       )}
 
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} labelledBy="invite-sheet-title">
-        {inviteLinkReady ? (
+        {inviteReady ? (
           <div className="flex flex-col gap-3">
             <h2 id="invite-sheet-title" className="font-display text-lg font-bold text-stone-900">
               {t.linkReadyTitle}
             </h2>
-            <input readOnly value={inviteLinkReady} className={`${field} text-sm`} />
+            <span className={labelCls}>{t.linkLabel}</span>
+            <input readOnly value={inviteReady.link} className={`${field} text-sm`} />
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => navigator.clipboard.writeText(inviteLinkReady)}
+                onClick={() => navigator.clipboard.writeText(inviteReady.link)}
                 className={`flex-1 ${btnGhost}`}
               >
                 {t.copyLink}
               </button>
               <a
-                href={`https://wa.me/?text=${encodeURIComponent(inviteLinkReady)}`}
+                href={`https://wa.me/?text=${encodeURIComponent(inviteReady.link)}`}
                 target="_blank"
                 rel="noreferrer"
                 className={`flex-1 ${btnPrimary} text-center`}
               >
                 {t.shareWhatsApp}
               </a>
+            </div>
+            <div className="mt-1 rounded-xl border border-stone-200 bg-stone-50 p-4 text-center">
+              <span className={labelCls}>{t.codeLabel}</span>
+              <p className="font-display mt-1 text-2xl font-extrabold tracking-[0.18em] text-stone-900">
+                {formatInviteCode(inviteReady.code)}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-stone-500">{t.codeHelp}</p>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(formatInviteCode(inviteReady.code))}
+                className="mt-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
+              >
+                {t.copyCode}
+              </button>
             </div>
             <button
               type="button"
@@ -422,7 +447,7 @@ export function ManageMembersContent() {
             <label htmlFor="invite-email" className={labelCls}>
               {t.emailLabel}
             </label>
-            <input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className={field} />
+            <input id="invite-email" type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className={field} />
             <p className="text-xs text-stone-500">{t.emailHelp}</p>
             <PhoneInput id="invite-phone" label={t.phoneLabel} value={invitePhone} onChange={setInvitePhone} />
             <button type="submit" disabled={inviteSubmitting} className={btnPrimary}>

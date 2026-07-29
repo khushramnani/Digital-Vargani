@@ -84,7 +84,7 @@ order is load-bearing and **every step defines its failure path**.
      │    └─ does not resolve → clear stash, set banner, fall through to 4
      └─ stash older than 7 days → clear silently, fall through to 4
 4. memberships non-empty          → /admin or /collect by newest-joined role
-5. claim_invite_by_email()
+5. my_pending_invites()
      ├─ 0 matches → /signup?nomatch=<email>
      ├─ 1 match   → INTERSTITIAL ("Joining <Mandal> as <role>") → accept → route
      └─ n matches → PICKER → accept → route
@@ -108,7 +108,7 @@ the `/signup` code field). Cleared on success, on failure, and on age > 7 days.
 The stash survives **OAuth** — same browser, same origin, one round trip. It does
 **not** reliably survive a **magic link**: the invitee taps the link in Gmail on
 their phone and lands in the system browser, a different context with empty
-localStorage. For magic-link users, `claim_invite_by_email()` (step 5) is the
+localStorage. For magic-link users, `my_pending_invites()` (step 5) is the
 *primary* path, not a fallback.
 
 Separately, add `https://<domain>/join/**` and `https://<domain>/continue` to
@@ -122,7 +122,7 @@ Renders the two-card choice **whether or not a session exists**.
 **Card A — Create a mandal**
 - No session → `AuthMethods` with `redirectTo=/signup?next=create`, which re-enters
   create mode on return rather than dumping the user back on the choice screen.
-- Session → call `claim_invite_by_email()` once. If it returns anything, show the
+- Session → call `my_pending_invites()` once. If it returns anything, show the
   **interjection**: *"You have a pending invite to **Ganesh Mandal** — join it, or
   create a new mandal anyway?"* This kills the duplicate-mandal failure class, where
   an invited user taps the first card simply because it is first.
@@ -163,7 +163,7 @@ people will paste the link into the box labelled "code".
    `unique_violation` on `users_mandal_email_key` is translated to a readable
    message. Expiry / revoked / consumed / idempotency / the `FOR UPDATE` replay lock
    / the deactivate-bypass gate are all unchanged from `20260720150000`.
-5. **`claim_invite_by_email()`** — new, authenticated-only. Matches live invites on
+5. **`my_pending_invites()`** — new, authenticated-only. Matches live invites on
    `lower(email)` = the caller's **verified** (`email_confirmed_at is not null`)
    auth email. Returns **all** matches as `(code, mandal_name, role, invitee_name)`
    — one → client claims after the interstitial, several → client shows the picker.
@@ -173,7 +173,7 @@ people will paste the link into the box labelled "code".
    `invitee_email_masked`. Also resolves a code, so `/join/K7M29XPQ4R` works.
 7. **`list_pending_invites`** — return type changes (drop + create), adding `code`.
 8. **Backfill** — `update invites set email = lower(btrim(email))` for existing
-   rows, or `claim_invite_by_email` misses them; and mint codes for existing live
+   rows, or `my_pending_invites` misses them; and mint codes for existing live
    invites.
 
 ## §5 — Membership rule
@@ -200,7 +200,7 @@ Every row is a test case and the acceptance checklist.
 |---|---|
 | Stashed token expired / revoked / consumed | Clear stash, banner, fall through to membership check — never a dead end |
 | Stash older than 7 days | Ignore + clear silently |
-| Magic link opened in a different browser/device | Stash absent → rescued by `claim_invite_by_email` |
+| Magic link opened in a different browser/device | Stash absent → rescued by `my_pending_invites` |
 | Admin typo'd email case (`Priya.Shah@…`) | Normalization makes the match succeed anyway |
 | Gmail dot-variant (`priyashah` vs `priya.shah`) | Known miss — code entry is the covered fallback |
 | Two live invites for the same email | Picker; never newest-wins |
