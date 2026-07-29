@@ -78,7 +78,17 @@ create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
 create schema if not exists auth;
-create table if not exists auth.users (id uuid primary key, email text);
+-- email_confirmed_at: real Supabase stamps this the moment an address is
+-- proven (Google, or opening a magic link). my_pending_invites() gates on it
+-- — an unverified address would let anyone claim someone else's invite just
+-- by typing their email at signup. Defaulted to now() here because this app
+-- has no password signup, so every identity it can actually mint IS
+-- confirmed; a test that needs the unconfirmed case sets it to null.
+create table if not exists auth.users (
+  id uuid primary key,
+  email text,
+  email_confirmed_at timestamptz default now()
+);
 create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -1922,9 +1932,9 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'New Volunteer Invite');
+  SELECT token INTO tok FROM create_invite('volunteer', 'New Volunteer Invite', 'new-volunteer@example.com');
   ASSERT tok IS NOT NULL AND length(tok) > 0, 'FAIL: owner could not invite a volunteer';
-  tok := create_invite('admin', 'New Admin Invite');
+  SELECT token INTO tok FROM create_invite('admin', 'New Admin Invite', 'new-admin@example.com');
   ASSERT tok IS NOT NULL AND length(tok) > 0, 'FAIL: owner could not invite an admin';
   RAISE NOTICE 'PASS: owner can invite both volunteer and admin';
 END $$;
@@ -1941,11 +1951,11 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d2'; -- plain adm
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Admin-Invited Volunteer');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Admin-Invited Volunteer', 'admin-invited-vol@example.com');
   ASSERT tok IS NOT NULL, 'FAIL: an admin could not invite a volunteer';
 
   BEGIN
-    PERFORM create_invite('admin', 'Escalation Attempt');
+    PERFORM create_invite('admin', 'Escalation Attempt', 'escalation@example.com');
     RAISE EXCEPTION 'SECURITY HOLE: a non-owner admin invited another admin';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE '%only the owner can invite an admin%' THEN
@@ -1963,7 +1973,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- mandal on
 DO $$
 BEGIN
   BEGIN
-    PERFORM create_invite('volunteer', 'Volunteer Escalation Attempt');
+    PERFORM create_invite('volunteer', 'Volunteer Escalation Attempt', 'vol-escalation@example.com');
     RAISE EXCEPTION 'SECURITY HOLE: a volunteer created an invite';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE '%only an owner or admin%' THEN
@@ -1984,7 +1994,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Join Flow Volunteer', 'join-flow@example.com');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Join Flow Volunteer', 'join-flow@example.com');
   PERFORM set_config('verify.join_flow_token', tok, false);
 END $$;
 reset role;
@@ -2024,25 +2034,47 @@ BEGIN
 END $$;
 reset role;
 
--- Wrong email: this invite is locked to join-flow@example.com.
+-- v6 BEHAVIOUR CHANGE — the email lock is deliberately gone. Possession of
+-- a link (or code) is now proof, because the lock's real-world failure mode
+-- was a dead end no invitee could clear: the admin types priya@gmail.com,
+-- Priya's actual Google account is priya.shah@gmail.com, and she is stuck
+-- until someone re-invites her. The client shows a pre-accept mismatch
+-- confirm (built on invite_preview's masked email) instead.
+--
+-- Asserted on its OWN invite, not join_flow's — accepting consumes it, and
+-- the real-invitee assertions below still need join_flow live.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  SELECT token INTO tok FROM create_invite('volunteer', 'Bearer Check', 'invited-address@example.com');
+  PERFORM set_config('verify.bearer_token', tok, false);
+END $$;
+reset role;
+
 insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d4', 'wrong-person@example.com');
 set role authenticated;
 set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000d4';
 set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.bearer_token'));
+reset role;
+
 DO $$
 BEGIN
-  BEGIN
-    PERFORM accept_invite(current_setting('verify.join_flow_token'));
-    RAISE EXCEPTION 'SECURITY HOLE: accept_invite ignored the email lock';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM LIKE '%locked to a different email%' THEN
-      RAISE NOTICE 'PASS: accept_invite() enforces the email lock (%)', SQLERRM;
-    ELSE
-      RAISE;
-    END IF;
-  END;
+  ASSERT EXISTS (
+    SELECT 1 FROM users
+     WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d4'
+       AND role = 'volunteer' AND name = 'Bearer Check'
+  ), 'FAIL: v6 — holding the link must be enough to join, whatever email you signed in with';
+  -- The membership records the address they ACTUALLY signed in with, not
+  -- the one the admin typed. Otherwise the mandal's member list would show
+  -- an address that reaches nobody.
+  ASSERT (SELECT email FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000d4')
+         = 'wrong-person@example.com',
+    'FAIL: accept_invite must record the signed-in email, not the invited one';
+  RAISE NOTICE 'PASS: link is bearer proof, and the joiner''s own email is recorded';
 END $$;
-reset role;
 
 -- The real invitee accepts.
 insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000000d5', 'join-flow@example.com');
@@ -2135,7 +2167,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Revoke Me');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Revoke Me', 'revoke-me@example.com');
   PERFORM set_config('verify.revoke_token', tok, false);
 END $$;
 reset role;
@@ -2183,7 +2215,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Expire Me');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Expire Me', 'expire-me@example.com');
   PERFORM set_config('verify.expired_token', tok, false);
 END $$;
 reset role;
@@ -2218,7 +2250,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Tenant Isolation Target');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Tenant Isolation Target', 'tenant-isolation@example.com');
   PERFORM set_config('verify.tenant_invite_token', tok, false);
 END $$;
 reset role;
@@ -2587,7 +2619,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Idempotent Consume Check');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Idempotent Consume Check', 'idempotent@example.com');
   PERFORM set_config('verify.idem_consume_token', tok, false);
 END $$;
 reset role;
@@ -2641,7 +2673,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Reinvite Target', 'reinvite-target@example.com');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Reinvite Target', 'reinvite-target@example.com');
   PERFORM set_config('verify.reinvite_token_1', tok, false);
 END $$;
 reset role;
@@ -2685,7 +2717,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Reinvite Target');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Reinvite Target', 'reinvite-target@example.com');
   PERFORM set_config('verify.reinvite_token_2', tok, false);
 END $$;
 reset role;
@@ -2715,7 +2747,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal on
 DO $$
 DECLARE tok text;
 BEGIN
-  tok := create_invite('volunteer', 'Stale Token Target', 'stale-token-target@example.com');
+  SELECT token INTO tok FROM create_invite('volunteer', 'Stale Token Target', 'stale-token-target@example.com');
   PERFORM set_config('verify.stale_reinvite_token', tok, false);
 END $$;
 reset role;
@@ -2770,6 +2802,251 @@ BEGIN
   ASSERT (SELECT active FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-0000000000a4') = false,
     'SECURITY HOLE: a deactivated member self-reactivated by replaying their own stale, already-consumed invite token';
   RAISE NOTICE 'PASS: replaying a stale, already-consumed invite token does not reactivate a deactivated member';
+END $$;
+SQL
+
+echo "== v6 assertion: invite code — generation, normalization, and either-half lookup =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text; c text;
+BEGIN
+  SELECT token, code INTO tok, c
+    FROM create_invite('volunteer', 'Code Flow Volunteer', 'Code.Flow@Example.COM');
+  PERFORM set_config('verify.code_flow_token', tok, false);
+  PERFORM set_config('verify.code_flow_code', c, false);
+
+  ASSERT length(c) = 10, format('FAIL: invite code must be 10 chars, saw %s (%s)', length(c), c);
+  -- The whole point of the alphabet: nothing in a code can be misread as
+  -- something else when it is read aloud down a phone line.
+  ASSERT c ~ '^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$',
+    format('FAIL: invite code used a character outside the unambiguous alphabet: %s', c);
+  RAISE NOTICE 'PASS: create_invite mints a 10-char unambiguous code alongside the token';
+END $$;
+reset role;
+
+-- The admin typed a capitalised address; my_pending_invites matches on
+-- lower(email), so create_invite must have normalized it on the way in.
+DO $$
+BEGIN
+  ASSERT (SELECT email FROM invites WHERE code = current_setting('verify.code_flow_code'))
+         = 'code.flow@example.com',
+    'FAIL: create_invite did not normalize the invited email to lowercase';
+  RAISE NOTICE 'PASS: create_invite normalizes the invited email';
+END $$;
+
+-- invite_preview resolves EITHER half, and masks the address so a link
+-- holder cannot harvest the invitee's real email (it is anon-callable).
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE m text; masked text; n int;
+BEGIN
+  SELECT mandal_name, invitee_email_masked INTO m, masked
+    FROM invite_preview(current_setting('verify.code_flow_code'));
+  ASSERT m = 'Vinayak Mitra Mandal', format('FAIL: invite_preview could not resolve a CODE, saw %s', m);
+
+  -- Typed the way a human will actually type it: lowercase, with the
+  -- display dash left in, and a stray space.
+  SELECT count(*) INTO n FROM invite_preview(
+    lower(substr(current_setting('verify.code_flow_code'), 1, 5)) || '- ' ||
+    lower(substr(current_setting('verify.code_flow_code'), 6, 5)));
+  ASSERT n = 1, format('FAIL: invite_preview did not normalize a messily-typed code, saw %s rows', n);
+
+  ASSERT masked NOT LIKE '%code.flow@%', format('FAIL: invite_preview leaked the full invited email: %s', masked);
+  ASSERT masked LIKE 'c%@example.com', format('FAIL: masked email is unusable for the mismatch confirm: %s', masked);
+  RAISE NOTICE 'PASS: invite_preview resolves a code (however typed) and masks the address (%)', masked;
+END $$;
+reset role;
+
+-- accept_invite takes the code just as happily as the token.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000601', 'code.flow@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000601';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(lower(current_setting('verify.code_flow_code')));
+reset role;
+
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM users
+                  WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000601' AND name = 'Code Flow Volunteer'),
+    'FAIL: accept_invite could not redeem a lowercase code';
+  RAISE NOTICE 'PASS: accept_invite redeems a code';
+END $$;
+
+-- Double-tap / refresh right after joining. The code lookup deliberately
+-- falls back to dead rows so this reaches the idempotent branch instead of
+-- telling someone who just joined that their code is invalid.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000601';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite(current_setting('verify.code_flow_code'));
+reset role;
+DO $$
+BEGIN
+  ASSERT (SELECT count(*) FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000601') = 1,
+    'FAIL: re-submitting a just-used code must be a silent no-op, not a duplicate membership';
+  RAISE NOTICE 'PASS: re-submitting a consumed code is idempotent, not an error';
+END $$;
+
+-- ...but a STRANGER still cannot ride that fallback into the mandal.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000602', 'code-stranger@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000602';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.code_flow_code'));
+    RAISE EXCEPTION 'SECURITY HOLE: a stranger replayed a consumed code';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%invalid or expired%' THEN
+      RAISE NOTICE 'PASS: a consumed code cannot be replayed by someone else (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== v6 assertion: my_pending_invites — the magic-link rescue path =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Two live invites for ONE address, in two different mandals: the client
+-- must be offered a picker, so this must return BOTH, never just the newest.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+BEGIN PERFORM create_invite('volunteer', 'Two Invite Person', 'two-invites@example.com'); END $$;
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000000b1'; -- Other Admin, mandal two
+DO $$
+BEGIN PERFORM create_invite('volunteer', 'Two Invite Person', 'TWO-INVITES@example.com'); END $$;
+reset role;
+
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000603', 'two-invites@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000603';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM my_pending_invites();
+  ASSERT n = 2, format('FAIL: my_pending_invites must return every match for the picker, saw %s', n);
+  -- Case-insensitive on BOTH sides: mandal two's admin typed it in caps.
+  ASSERT (SELECT count(DISTINCT mandal_name) FROM my_pending_invites()) = 2,
+    'FAIL: my_pending_invites missed a match stored with different capitalisation';
+  RAISE NOTICE 'PASS: my_pending_invites returns all matches, case-insensitively';
+END $$;
+reset role;
+
+-- It must never surface invites addressed to somebody else.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000604', 'nobody-invited-me@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000604';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM my_pending_invites();
+  ASSERT n = 0, format('SECURITY HOLE: my_pending_invites returned %s invites for an uninvited address', n);
+  RAISE NOTICE 'PASS: my_pending_invites shows nothing to an uninvited address';
+END $$;
+reset role;
+
+-- An UNVERIFIED address must match nothing. This is the guard that stops
+-- someone claiming another person's invite by typing their email at signup.
+insert into auth.users (id, email, email_confirmed_at)
+  values ('aaaaaaaa-0000-0000-0000-000000000605', 'two-invites@example.com', null);
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000605';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM my_pending_invites();
+  ASSERT n = 0, format('SECURITY HOLE: an UNVERIFIED email matched %s invites', n);
+  RAISE NOTICE 'PASS: my_pending_invites ignores an unverified email';
+END $$;
+reset role;
+
+-- anon must not be able to enumerate invites by email at all.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM my_pending_invites();
+    RAISE EXCEPTION 'SECURITY HOLE: anon called my_pending_invites()';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%permission denied%' THEN
+      RAISE NOTICE 'PASS: my_pending_invites() has no anon grant (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== v6 assertion: create_invite requires an email; list_pending_invites carries the code =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+BEGIN
+  BEGIN
+    PERFORM create_invite('volunteer', 'No Email Person');
+    RAISE EXCEPTION 'FAIL: create_invite accepted an invite with no email';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%email address is required%' THEN
+      RAISE NOTICE 'PASS: create_invite requires an email (%)', SQLERRM;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+
+  -- Manage Members has to be able to show the code again later — an admin
+  -- reads it out over the phone days after minting it.
+  ASSERT NOT EXISTS (SELECT 1 FROM list_pending_invites() WHERE code IS NULL),
+    'FAIL: list_pending_invites returned a live invite with no code to read out';
+  RAISE NOTICE 'PASS: list_pending_invites carries the code for every live invite';
+END $$;
+reset role;
+
+-- resend_invite frees the old code and mints a genuinely new pair.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
+DO $$
+DECLARE iid uuid; old_code text; new_tok text; new_code text;
+BEGIN
+  SELECT id, code INTO iid, old_code FROM list_pending_invites()
+   WHERE name = 'Two Invite Person' LIMIT 1;
+  SELECT token, code INTO new_tok, new_code FROM resend_invite(iid);
+  ASSERT new_code <> old_code, 'FAIL: resend_invite handed back the same code';
+  ASSERT length(new_tok) = 64, 'FAIL: resend_invite did not mint a fresh token';
+  PERFORM set_config('verify.resent_invite_id', iid::text, false);
+  RAISE NOTICE 'PASS: resend_invite mints a genuinely new token+code pair';
+END $$;
+reset role;
+
+-- invites has RLS enabled with zero policies, so the superseded row is only
+-- visible to the superuser — same reason the revoke_invite test above looks
+-- its id up outside the authenticated role.
+DO $$
+BEGIN
+  ASSERT (SELECT revoked_at FROM invites WHERE id = current_setting('verify.resent_invite_id')::uuid) IS NOT NULL,
+    'FAIL: resend_invite did not revoke the superseded invite';
+  -- Freeing the old code from the live partial index is what lets a resend
+  -- redraw without colliding with the invite it replaces.
+  ASSERT (SELECT count(*) FROM invites
+           WHERE code = (SELECT code FROM invites WHERE id = current_setting('verify.resent_invite_id')::uuid)
+             AND consumed_at IS NULL AND revoked_at IS NULL) = 0,
+    'FAIL: the superseded invite still occupies its code in the live index';
+  RAISE NOTICE 'PASS: resend_invite revokes the superseded invite and frees its code';
 END $$;
 SQL
 
