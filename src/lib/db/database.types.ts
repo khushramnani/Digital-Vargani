@@ -261,6 +261,7 @@ export type Database = {
       }
       invites: {
         Row: {
+          code: string | null
           consumed_at: string | null
           created_at: string
           email: string | null
@@ -275,6 +276,7 @@ export type Database = {
           token_hash: string
         }
         Insert: {
+          code?: string | null
           consumed_at?: string | null
           created_at?: string
           email?: string | null
@@ -289,6 +291,7 @@ export type Database = {
           token_hash: string
         }
         Update: {
+          code?: string | null
           consumed_at?: string | null
           created_at?: string
           email?: string | null
@@ -303,6 +306,13 @@ export type Database = {
           token_hash?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "invites_invited_by_fkey"
+            columns: ["invited_by", "mandal_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "mandal_id"]
+          },
           {
             foreignKeyName: "invites_mandal_id_fkey"
             columns: ["mandal_id"]
@@ -472,6 +482,7 @@ export type Database = {
           total_paise: number
         }[]
       }
+      gen_invite_code: { Args: never; Returns: string }
       get_expense_categories: { Args: never; Returns: string[] }
       get_mandal_default_lang: { Args: never; Returns: string }
       get_public_receipt: {
@@ -511,7 +522,6 @@ export type Database = {
           total_expenses_paise: number
         }[]
       }
-      gen_invite_code: { Args: never; Returns: string }
       invite_preview: {
         Args: { token: string }
         Returns: {
