@@ -105,6 +105,16 @@ $$;
 
 create role anon;
 create role authenticated;
+
+-- Hosted Supabase ships this, and a bare local cluster does not. Without it
+-- a new function's only EXECUTE grant is the implicit one to PUBLIC, so
+-- `revoke execute ... from public` genuinely locks anon out here — while on
+-- prod the same statement leaves an EXPLICIT anon grant standing, because
+-- revoking from PUBLIC does not touch a role grant. Every "anon cannot call
+-- this" assertion below was therefore passing locally and false in
+-- production. Model the default privileges so those assertions test the
+-- thing they claim to (see 20260729130000 for the fix they now guard).
+alter default privileges in schema public grant execute on functions to anon, authenticated;
 SQL
 
 echo "== stubbing storage schema (Task 6) =="
