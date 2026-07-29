@@ -3064,4 +3064,43 @@ BEGIN
 END $$;
 SQL
 
+echo "== v6 assertion: a joiner whose email already belongs to a member gets a readable error =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- Reachable only since v6: accept_invite now records the address the joiner
+-- ACTUALLY signed in with, so it can collide with users_mandal_email_key.
+-- The raw constraint text would be unreadable to a volunteer at a door.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+DECLARE tok text;
+BEGIN
+  SELECT token INTO tok FROM create_invite('volunteer', 'Email Clash', 'email-clash@example.com');
+  PERFORM set_config('verify.clash_token', tok, false);
+END $$;
+reset role;
+
+-- This identity signs in as an address ALREADY held by mandal one's owner.
+insert into auth.users (id, email)
+  values ('aaaaaaaa-0000-0000-0000-000000000606',
+          (select email from users where auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+            and mandal_id = '11111111-1111-1111-1111-000000000001'));
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000606';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM accept_invite(current_setting('verify.clash_token'));
+    RAISE EXCEPTION 'FAIL: a duplicate member email was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%already uses%' THEN
+      RAISE NOTICE 'PASS: a colliding email fails with a readable message (%)', SQLERRM;
+    ELSE
+      RAISE EXCEPTION 'FAIL: expected a readable duplicate-email message, got: %', SQLERRM;
+    END IF;
+  END;
+END $$;
+reset role;
+SQL
+
 echo "== all assertions passed =="
