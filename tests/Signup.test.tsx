@@ -234,7 +234,9 @@ describe('Signup', () => {
   // end and something they can act on.
   it('names the address that found no invite, and drops straight to the code box', () => {
     render(
-      <MemoryRouter initialEntries={['/signup?nomatch=priya.shah%40example.com']}>
+      // Router STATE, not a query param — the address must never reach the
+      // URL bar, browser history, or a hosting access log.
+      <MemoryRouter initialEntries={[{ pathname: '/signup', state: { nomatch: 'priya.shah@example.com' } }]}>
         <Signup />
       </MemoryRouter>,
     )

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { AuthResolver } from '../src/features/auth/AuthResolver'
 import { stashInvite, readStashedInvite } from '../src/features/auth/inviteStash'
 import { strings } from '../src/lib/strings'
@@ -40,6 +40,18 @@ const PREVIEW = {
   matches_caller_email: true,
 }
 
+function SignupProbe() {
+  const { search, state } = useLocation()
+  const nomatch = (state as { nomatch?: string } | null)?.nomatch
+  return (
+    <div>
+      Signup Page
+      <span data-testid="search">{search}</span>
+      <span data-testid="nomatch">{nomatch ?? ''}</span>
+    </div>
+  )
+}
+
 function renderResolver() {
   render(
     <MemoryRouter initialEntries={['/continue']}>
@@ -48,7 +60,7 @@ function renderResolver() {
         <Route path="/admin" element={<div>Admin Home</div>} />
         <Route path="/collect" element={<div>Volunteer Home</div>} />
         <Route path="/login" element={<div>Login Page</div>} />
-        <Route path="/signup" element={<div>Signup Page</div>} />
+        <Route path="/signup" element={<SignupProbe />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -155,6 +167,12 @@ describe('AuthResolver', () => {
     renderResolver()
 
     await waitFor(() => expect(screen.getByText('Signup Page')).toBeInTheDocument())
+    expect(screen.getByTestId('nomatch')).toHaveTextContent('priya@example.com')
+    // Router state, never the URL: a query param would write a real
+    // person's email into browser history and every access log that
+    // records the request path.
+    expect(screen.getByTestId('search')).toHaveTextContent('')
+    expect(screen.getByTestId('search').textContent).not.toContain('priya')
   })
 
   // Joining a second mandal switches which tenant the session acts in

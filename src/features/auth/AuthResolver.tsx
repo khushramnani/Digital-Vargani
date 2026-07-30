@@ -106,10 +106,15 @@ export function AuthResolver() {
         return
       }
 
-      // 4 — nothing to join. /signup can name the address that found no
-      // invite, which is the difference between a dead end and a fixable one.
-      const email = session?.user.email ?? ''
-      navigate(`/signup?nomatch=${encodeURIComponent(email)}`, { replace: true })
+      // 4 — nothing to join. /signup names the address that found no invite,
+      // which is the difference between a dead end and a fixable one.
+      //
+      // Router state, not a query param: a query param puts a real person's
+      // email address into the URL bar, browser history, and every hosting
+      // access log that records the path. Losing it on a refresh just falls
+      // back to the plain card, which is the right trade for not writing PII
+      // somewhere it is awkward to delete.
+      navigate('/signup', { replace: true, state: { nomatch: session?.user.email ?? '' } })
     }
 
     resolve()

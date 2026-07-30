@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { createMandal } from '../../lib/db/mandals'
 import { myPendingInvites, type MyInvite } from '../../lib/db/members'
 import { useAuth } from './useAuth'
@@ -73,11 +73,12 @@ export function Signup() {
   const { session, appUser, loading, refreshAppUser } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  // ?nomatch=<email> — /continue signed them in, found no invite for that
-  // address, and sent them here to say so rather than shrug.
-  const nomatch = params.get('nomatch')
+  // /continue signed them in, found no invite for that address, and sent
+  // them here to say so rather than shrug. Arrives as router state so the
+  // address never reaches the URL bar, history, or an access log.
+  const { nomatch } = (useLocation().state ?? {}) as { nomatch?: string }
   const [mode, setMode] = useState<'choose' | 'create' | 'invited' | 'interject'>(
-    nomatch !== null ? 'invited' : params.get('next') === 'create' ? 'create' : 'choose',
+    nomatch !== undefined ? 'invited' : params.get('next') === 'create' ? 'create' : 'choose',
   )
 
   const [waiting, setWaiting] = useState<MyInvite[]>([])

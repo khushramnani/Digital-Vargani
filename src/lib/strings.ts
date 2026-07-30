@@ -39,7 +39,9 @@ export const strings = {
     joinInvitedAsPrefix: 'invites you as',
     joinRoleAdmin: 'an admin',
     joinRoleVolunteer: 'a volunteer',
-    volunteerHint: "Collecting for a mandal? Sign in the same way — Google or email — using the invite link your admin shared to join first.",
+    // v6: the invite link is no longer a prerequisite. Signing in with the
+    // address the admin invited is enough — my_pending_invites() finds it.
+    volunteerHint: "Collecting for a mandal? Just sign in with the email address your admin invited — we'll find your invite and set you up.",
     retryTitle: "Couldn't load your account",
     retryBody: 'We reached the server but your account details did not load. Check your connection and try again.',
     retryButton: 'Try again',
