@@ -3113,4 +3113,60 @@ END $$;
 reset role;
 SQL
 
+echo "== v6 assertion: a LEGACY invite with no email still previews and still joins =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+-- create_invite requires an email as of v6, so a row like this can no longer
+-- be minted — but rows predating the change exist on live projects and must
+-- keep working. Insert one directly, the shape v5 produced.
+insert into invites (mandal_id, role, name, email, phone, token_hash, code, invited_by, expires_at)
+values (
+  '11111111-1111-1111-1111-000000000001', 'volunteer', 'Legacy No Email', null, null,
+  encode(extensions.digest('legacy-no-email-token', 'sha256'), 'hex'),
+  next_invite_code(),
+  (select id from users where mandal_id = '11111111-1111-1111-1111-000000000001'
+    and role = 'owner' limit 1),
+  now() + interval '7 days'
+);
+
+-- Anon preview must not choke on the NULL address, and must report NO
+-- mismatch — with nothing to compare against, the client would otherwise
+-- raise a "sent to someone else" confirm naming an empty string.
+set request.jwt.claim.sub = '';
+set role anon;
+DO $$
+DECLARE m text; masked text; mism boolean;
+BEGIN
+  SELECT mandal_name, invitee_email_masked, matches_caller_email
+    INTO m, masked, mism
+    FROM invite_preview('legacy-no-email-token');
+  ASSERT m = 'Vinayak Mitra Mandal', 'FAIL: a legacy no-email invite did not preview';
+  ASSERT masked IS NULL, format('FAIL: masked email should be NULL for a no-email invite, saw %s', masked);
+  ASSERT mism = false, 'FAIL: a no-email invite must not claim to match the caller';
+  RAISE NOTICE 'PASS: a legacy no-email invite previews cleanly';
+END $$;
+reset role;
+
+-- And it still joins, on the strength of the link alone.
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-000000000607', 'legacy-joiner@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000607';
+set request.jwt.claims = '{"is_anonymous": false}';
+select accept_invite('legacy-no-email-token');
+reset role;
+
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM users
+                  WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000607'
+                    AND name = 'Legacy No Email' AND role = 'volunteer'),
+    'FAIL: a legacy no-email invite could not be accepted';
+  -- With no invited address to inherit, the joiner's own must be recorded
+  -- rather than a NULL that would make them unreachable in the member list.
+  ASSERT (SELECT email FROM users WHERE auth_user_id = 'aaaaaaaa-0000-0000-0000-000000000607')
+         = 'legacy-joiner@example.com',
+    'FAIL: the joiner''s own email must be recorded on a no-email invite';
+  RAISE NOTICE 'PASS: a legacy no-email invite still joins, recording the joiner''s address';
+END $$;
+SQL
+
 echo "== all assertions passed =="
