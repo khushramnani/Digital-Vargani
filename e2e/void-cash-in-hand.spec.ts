@@ -83,11 +83,19 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
     if (method === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([donation]) })
     }
-    if (method === 'PATCH') {
-      Object.assign(donation, route.request().postDataJSON())
-      return route.fulfill({ status: 204, body: '' })
-    }
     return route.continue()
+  })
+
+  // Voiding stopped being a direct PATCH on /donations when it moved to the
+  // void_row RPC — the RPC stamps voided_by/voided_at from the session so a
+  // client cannot forge them, and the append-only trigger makes it one-way.
+  // The old PATCH stub above therefore never fired, and the row never
+  // changed, which is why the "Removed —" line never appeared and
+  // cash-in-hand never dropped. Mirror the RPC's effect on the fixture.
+  await page.route(`${SUPABASE_URL}/rest/v1/rpc/void_row*`, (route) => {
+    const { reason } = route.request().postDataJSON() as { reason: string }
+    Object.assign(donation, { voided: true, void_reason: reason })
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
   })
 
   await page.goto('/volunteer/cash-in-hand')
@@ -97,9 +105,28 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
   await page.goto('/collect/history')
   await expect(page.getByText('Void Test Donor')).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept('Wrong amount entered'))
-  await page.getByRole('button', { name: 'Void' }).click()
-  await expect(page.getByText(/Voided — Wrong amount entered/)).toBeVisible()
+  // Two things drifted out from under this spec. The collection row became
+  // a disclosure button that has to be expanded before its actions exist —
+  // and its accessible name starts with "Void", so the old locator matched
+  // the ROW, silently expanding it instead of voiding. Hence exact: true
+  // everywhere below.
+  await page.getByRole('button', { name: /^Void Test Donor/ }).click()
+
+  // And voiding itself moved from window.prompt to a real focus-trapped
+  // ConfirmDialog (the prompt froze the page and looked unbranded), so the
+  // native `dialog` event this spec waited on no longer fires at all.
+  // The volunteer-facing action is "Delete" now, and the row it marks reads
+  // "Removed — <reason>". The underlying operation is unchanged: still a
+  // reversible void that leaves the row in the books, which is why the
+  // cash-in-hand assertion below is the real subject of this test.
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  const voidDialog = page.getByRole('dialog')
+  await voidDialog.getByLabel('Reason (optional)').fill('Wrong amount entered')
+  await voidDialog.getByRole('button', { name: 'Delete donation', exact: true }).click()
+  // Removed rows moved out of the main list into a collapsed section, so
+  // they stop competing with live collections for the volunteer's attention.
+  await page.getByRole('button', { name: /^Show removed/ }).click()
+  await expect(page.getByText(/Removed — Wrong amount entered/)).toBeVisible()
 
   await page.goto('/volunteer/cash-in-hand')
   await expect(page.getByText('₹0')).toBeVisible()

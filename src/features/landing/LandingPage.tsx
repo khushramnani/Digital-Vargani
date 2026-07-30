@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
 import { strings } from '../../lib/strings'
 import { formatINR } from '../../lib/money'
 import { DemoPhone } from './DemoPhone'
@@ -71,6 +72,10 @@ function Logo() {
 
 function Nav() {
   const [open, setOpen] = useState(false)
+  // A signed-in visitor landing on the marketing page had no way back into
+  // the app at all — and this is also the last-resort catch for an invitee
+  // whose auth redirect dropped them here instead of on their invite.
+  const { session } = useAuth()
 
   return (
     <header className="sticky top-0 z-50 border-b border-stone-200 bg-stone-50/85 backdrop-blur-md">
@@ -92,15 +97,26 @@ function Nav() {
           </a>
         </nav>
         <div className="hidden items-center gap-2 md:flex">
-          <Link to="/login" className="flex h-10.5 items-center rounded-lg px-4 text-sm font-bold text-stone-800 hover:text-orange-600">
-            {t.nav.login}
-          </Link>
-          <a
-            href="#cta"
-            className="flex h-10.5 items-center rounded-lg bg-stone-900 px-5 text-sm font-bold text-stone-50 hover:bg-orange-600 hover:text-white"
-          >
-            {t.nav.startFree}
-          </a>
+          {session ? (
+            <Link
+              to="/continue"
+              className="flex h-10.5 items-center rounded-lg bg-stone-900 px-5 text-sm font-bold text-stone-50 hover:bg-orange-600 hover:text-white"
+            >
+              {strings.auth.goToMandal}
+            </Link>
+          ) : (
+            <>
+              <Link to="/login" className="flex h-10.5 items-center rounded-lg px-4 text-sm font-bold text-stone-800 hover:text-orange-600">
+                {t.nav.login}
+              </Link>
+              <Link
+                to="/signup"
+                className="flex h-10.5 items-center rounded-lg bg-stone-900 px-5 text-sm font-bold text-stone-50 hover:bg-orange-600 hover:text-white"
+              >
+                {t.nav.startFree}
+              </Link>
+            </>
+          )}
         </div>
         <button
           type="button"
@@ -141,19 +157,32 @@ function Nav() {
             {t.nav.howItWorks}
           </a>
           <div className="mt-3.5 flex gap-2.5">
-            <Link
-              to="/login"
-              className="flex-1 rounded-xl border border-stone-200 py-3 text-center text-sm font-bold text-stone-800"
-            >
-              {t.nav.login}
-            </Link>
-            <a
-              href="#cta"
-              onClick={() => setOpen(false)}
-              className="flex-1 rounded-xl bg-orange-600 py-3 text-center text-sm font-bold text-white"
-            >
-              {t.nav.startFree}
-            </a>
+            {session ? (
+              <Link
+                to="/continue"
+                onClick={() => setOpen(false)}
+                className="flex-1 rounded-xl bg-orange-600 py-3 text-center text-sm font-bold text-white"
+              >
+                {strings.auth.goToMandal}
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 rounded-xl border border-stone-200 py-3 text-center text-sm font-bold text-stone-800"
+                >
+                  {t.nav.login}
+                </Link>
+                <Link
+                  to="/signup"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 rounded-xl bg-orange-600 py-3 text-center text-sm font-bold text-white"
+                >
+                  {t.nav.startFree}
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -188,12 +217,12 @@ function Hero() {
           {t.hero.subtitle}
         </p>
         <div className="mb-8.5 flex flex-wrap gap-3.5">
-          <a
-            href="#cta"
+          <Link
+            to="/signup"
             className="flex h-13.5 items-center rounded-xl bg-orange-600 px-6.5 text-base font-bold text-white shadow-lg shadow-orange-600/40 hover:bg-stone-900"
           >
             {t.hero.ctaPrimary}
-          </a>
+          </Link>
           <a
             href="#how"
             className="flex h-13.5 items-center rounded-xl border border-stone-200 bg-white px-6 text-base font-bold text-stone-800 hover:border-orange-600 hover:text-orange-600"

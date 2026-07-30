@@ -2,23 +2,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Signup } from '../src/features/auth/Signup'
+import { readStashedInvite } from '../src/features/auth/inviteStash'
+import { strings } from '../src/lib/strings'
 
-const { createMandal, refreshAppUser, navigate } = vi.hoisted(() => ({
+const c = strings.signupChoice
+
+const { createMandal, myPendingInvites, refreshAppUser, navigate, useAuthMock } = vi.hoisted(() => ({
   createMandal: vi.fn(),
+  myPendingInvites: vi.fn(),
   refreshAppUser: vi.fn(),
   navigate: vi.fn(),
+  useAuthMock: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/mandals', () => ({ createMandal }))
-vi.mock('../src/features/auth/useAuth', () => ({
-  useAuth: () => ({ session: { user: { id: 'auth-1' } }, appUser: null, loading: false, refreshAppUser }),
-}))
+vi.mock('../src/lib/db/members', () => ({ myPendingInvites }))
+vi.mock('../src/features/auth/useAuth', () => ({ useAuth: () => useAuthMock() }))
 vi.mock('react-router-dom', async () => ({
   ...(await vi.importActual<typeof import('react-router-dom')>('react-router-dom')),
   useNavigate: () => navigate,
 }))
 
-beforeEach(() => vi.clearAllMocks())
+const SIGNED_IN = { session: { user: { id: 'auth-1', email: 'priya@example.com' } }, appUser: null, loading: false, refreshAppUser }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+  useAuthMock.mockReturnValue(SIGNED_IN)
+  // No invite waiting is the default; the interjection has its own test.
+  myPendingInvites.mockResolvedValue([])
+})
 
 // /signup opens on a fork now (create vs. "I was invited"), so every test
 // clicks into the create form before touching its fields.
@@ -125,4 +138,113 @@ describe('Signup', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('this account already belongs to a mandal')
     expect(navigate).not.toHaveBeenCalled()
   })
+
+
+  // /signup is PUBLIC as of v6 — it's what "Sign up" on the landing page
+  // points at, so the fork has to work before anyone has signed in.
+  describe('without a session', () => {
+    beforeEach(() => useAuthMock.mockReturnValue({ session: null, appUser: null, loading: false, refreshAppUser }))
+
+    it('offers both doors and asks for sign-in only after one is chosen', () => {
+      render(
+        <MemoryRouter>
+          <Signup />
+        </MemoryRouter>,
+      )
+      expect(screen.getByText(c.createTitle)).toBeInTheDocument()
+      expect(screen.getByText(c.invitedTitle)).toBeInTheDocument()
+      // Nothing about signing in until they've said which one they are.
+      expect(screen.queryByText('Continue with Google')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
+      expect(screen.getByText('Continue with Google')).toBeInTheDocument()
+    })
+
+    it('takes an invite code without making anyone sign in first', async () => {
+      render(
+        <MemoryRouter>
+          <Signup />
+        </MemoryRouter>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: /Join my mandal/ }))
+      // Typed the way a human will: lowercase, with the display dash.
+      fireEvent.change(screen.getByLabelText(c.codeToggle), { target: { value: 'k7m29-xpq4r' } })
+      fireEvent.click(screen.getByRole('button', { name: c.codeGo }))
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/join/K7M29XPQ4R'))
+      // Stashed too, so a redirect that comes back to the wrong URL still
+      // finds its way to the join.
+      expect(readStashedInvite()).toBe('K7M29XPQ4R')
+    })
+
+    it('pulls the token out of a pasted invite link, since the box invites that', async () => {
+      render(
+        <MemoryRouter>
+          <Signup />
+        </MemoryRouter>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: /Join my mandal/ }))
+      fireEvent.change(screen.getByLabelText(c.codeToggle), {
+        target: { value: 'https://vm.app/join/K7M29XPQ4R' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: c.codeGo }))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/join/K7M29XPQ4R'))
+    })
+  })
+
+  // The duplicate-mandal guard. An invited person taps the first card because
+  // it is first, and would otherwise found an empty second mandal while their
+  // real one sits waiting.
+  it('offers a waiting invite before letting an invited person create a mandal', async () => {
+    myPendingInvites.mockResolvedValue([
+      { code: 'K7M29XPQ4R', mandalName: 'Ganesh Mandal', role: 'volunteer', invitee: 'Priya' },
+    ])
+    render(
+      <MemoryRouter>
+        <Signup />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
+
+    await waitFor(() => expect(screen.getByText(c.interjectTitle)).toBeInTheDocument())
+    expect(screen.queryByLabelText('Mandal name')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: c.interjectJoin('Ganesh Mandal') }))
+    expect(navigate).toHaveBeenCalledWith('/continue')
+  })
+
+  it('still lets them create one anyway if that is genuinely what they meant', async () => {
+    myPendingInvites.mockResolvedValue([
+      { code: 'K7M29XPQ4R', mandalName: 'Ganesh Mandal', role: 'volunteer', invitee: 'Priya' },
+    ])
+    render(
+      <MemoryRouter>
+        <Signup />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Create a mandal/ }))
+    await waitFor(() => expect(screen.getByText(c.interjectTitle)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: c.interjectCreate }))
+    expect(screen.getByLabelText('Mandal name')).toBeInTheDocument()
+  })
+
+  // /continue sends them here after signing in found no invite for their
+  // address. Saying which address missed is the difference between a dead
+  // end and something they can act on.
+  it('names the address that found no invite, and drops straight to the code box', () => {
+    render(
+      // Router STATE, not a query param — the address must never reach the
+      // URL bar, browser history, or a hosting access log.
+      <MemoryRouter initialEntries={[{ pathname: '/signup', state: { nomatch: 'priya.shah@example.com' } }]}>
+        <Signup />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('priya.shah@example.com')
+    expect(screen.getByLabelText(c.codeLabel)).toBeInTheDocument()
+    // Re-offering Google here would just loop them through the same failed
+    // match — the code is the only thing left that can help.
+    expect(screen.queryByText('Continue with Google')).not.toBeInTheDocument()
+  })
 })
+

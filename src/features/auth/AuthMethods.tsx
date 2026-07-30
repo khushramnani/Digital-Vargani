@@ -42,12 +42,19 @@ function GoogleG() {
 // form is replaced by "check your email" — AdminLogin hides its footer
 // exactly then. JoinInvite passes no footer, so it can ignore this prop
 // entirely.
+// onBeforeRedirect fires immediately before control leaves the app — the
+// last moment anything can be persisted. The invite screens use it to stash
+// their token, because `redirectTo` is only honoured if the URL is in the
+// project's Supabase allowlist; when it isn't, Supabase silently falls back
+// to Site URL and the token in it is simply lost.
 export function AuthMethods({
   redirectTo,
   onStatusChange,
+  onBeforeRedirect,
 }: {
   redirectTo: string
   onStatusChange?: (status: Status) => void
+  onBeforeRedirect?: () => void
 }) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
@@ -62,6 +69,7 @@ export function AuthMethods({
     setGoogleBusy(true)
     setStatus('idle')
     setErrorMessage(null)
+    onBeforeRedirect?.()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },
@@ -79,6 +87,10 @@ export function AuthMethods({
     event.preventDefault()
     setStatus('sending')
     setErrorMessage(null)
+    // Magic links often open in a DIFFERENT browser (tapped from Gmail on a
+    // phone), where this stash won't exist — my_pending_invites() is the
+    // rescue that covers that case. Stash anyway for the same-browser half.
+    onBeforeRedirect?.()
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },

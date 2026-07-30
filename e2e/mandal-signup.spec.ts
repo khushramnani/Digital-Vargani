@@ -41,8 +41,10 @@ test('a new founder can create a mandal and reach the admin dashboard', async ({
     session: fakeStoredSession(AUTH_USER_ID),
   })
 
-  await page.route(`${SUPABASE_URL}/rest/v1/rpc/link_admin_account*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: 'null' }),
+  // No invite waiting for this founder — they really are starting fresh, so
+  // the interjection must not fire and the form must render directly.
+  await page.route(`${SUPABASE_URL}/rest/v1/rpc/my_pending_invites*`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   )
 
   // Two different callers hit /rest/v1/users and want different shapes, so
@@ -99,21 +101,27 @@ test('a new founder can create a mandal and reach the admin dashboard', async ({
 
   await page.goto('/')
 
-  // 'Start your mandal free' is on the page twice: the hero's copy of it is
-  // an <a href="#cta"> that only scrolls, and this one — inside the #cta
-  // section — is the <Link to="/signup"> that actually starts signup. Same
-  // accessible name, so scope to the section rather than picking by index.
+  // 'Start your mandal free' is on the page twice — the hero and the #cta
+  // section. Both are real <Link to="/signup"> now (the hero's used to be an
+  // href="#cta" that merely scrolled to the other one, which is the
+  // scroll-to-footer bug this change removed), so scope to the section
+  // rather than picking by index.
   await page.locator('#cta').getByRole('link', { name: 'Start your mandal free' }).click()
   await expect(page).toHaveURL(/\/signup$/)
 
-  await page.getByLabel('Mandal name').fill('E2E Test Mandal')
-  await page.getByLabel('Your name').fill('E2E Founder')
+  // /signup is a fork now: pick the create door before any form exists.
+  await page.getByRole('button', { name: /Create a mandal/ }).click()
+
+  // exact: the slug field's help text ends "...from your mandal name", so a
+  // substring match on 'Mandal name' resolves to both inputs.
+  await page.getByLabel('Mandal name', { exact: true }).fill('E2E Test Mandal')
+  await page.getByLabel('Your name', { exact: true }).fill('E2E Founder')
   // Optional, and deliberately exercised: a blank slug field must reach the
   // RPC as undefined so the server derives the slug from the mandal name.
-  await page.getByLabel('Public link (optional)').fill('e2e-test-mandal')
+  await page.getByRole('textbox', { name: /^Public link/ }).fill('e2e-test-mandal')
 
   const createMandalCall = page.waitForRequest(`${SUPABASE_URL}/rest/v1/rpc/create_mandal*`)
-  await page.getByRole('button', { name: 'Create mandal' }).click()
+  await page.getByRole('button', { name: 'Create my mandal' }).click()
 
   // create_mandal takes all three fields; asserting the payload here is what
   // stops the slug field from silently going nowhere.

@@ -117,8 +117,8 @@ beforeEach(() => {
   invitesRef.current = [pendingInviteRow]
   rpc.mockImplementation((fn: string) => {
     if (fn === 'list_pending_invites') return Promise.resolve({ data: invitesRef.current, error: null })
-    if (fn === 'create_invite') return Promise.resolve({ data: 'tok-abc123', error: null })
-    if (fn === 'resend_invite') return Promise.resolve({ data: 'tok-resend-999', error: null })
+    if (fn === 'create_invite') return Promise.resolve({ data: [{ token: 'tok-abc123', code: 'K7M29XPQ4R' }], error: null })
+    if (fn === 'resend_invite') return Promise.resolve({ data: [{ token: 'tok-resend-999', code: 'B4TXW8ZDNH' }], error: null })
     return Promise.resolve({ data: null, error: null })
   })
   setViewer(ownerViewer)
@@ -201,6 +201,9 @@ describe('ManageMembersContent', () => {
     await waitFor(() => expect(screen.getByDisplayValue(/\/join\/tok-abc123$/)).toBeInTheDocument())
     expect(screen.getByText(t.copyLink)).toBeInTheDocument()
     expect(screen.getByText(t.shareWhatsApp)).toBeInTheDocument()
+    // The typeable half, grouped for reading aloud — the whole reason it
+    // exists is that the link above cannot be dictated over a phone.
+    expect(screen.getByText('K7M29-XPQ4R')).toBeInTheDocument()
   })
 
   it('lets a plain admin deactivate/reactivate a volunteer but shows no role-change/transfer controls on an admin row', async () => {
@@ -238,6 +241,9 @@ describe('ManageMembersContent', () => {
     await waitFor(() => expect(within(dialog).getByDisplayValue(/\/join\/tok-resend-999$/)).toBeInTheDocument())
     expect(within(dialog).getByText(t.copyLink)).toBeInTheDocument()
     expect(within(dialog).getByText(t.shareWhatsApp)).toBeInTheDocument()
+    // A resend supersedes BOTH halves — showing the old code would send
+    // someone off to type a value the server has just revoked.
+    expect(within(dialog).getByText('B4TXW-8ZDNH')).toBeInTheDocument()
   })
 
   it('excludes a member row belonging to a different mandal from the list', async () => {

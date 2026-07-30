@@ -81,6 +81,12 @@ test('offline: a submitted donation lands in the local queue, shows "Waiting for
   await expect(page.getByText("Saved — will send once you're back online.")).toBeVisible()
   await expect(page.getByText(/Receipt #/)).toHaveCount(0)
 
+  // That confirmation arrives in a modal <dialog>, which covers the
+  // volunteer tab bar underneath — this spec predates it and was clicking
+  // straight through into an intercepted element. Dismiss it the way a
+  // volunteer does before navigating on.
+  await page.getByRole('button', { name: 'Close' }).click()
+
   await page.getByRole('link', { name: 'Pending sends' }).click()
   await expect(page.getByText('Offline Donor')).toBeVisible()
   await expect(page.getByText('Waiting for signal')).toBeVisible()

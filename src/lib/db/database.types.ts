@@ -261,6 +261,7 @@ export type Database = {
       }
       invites: {
         Row: {
+          code: string | null
           consumed_at: string | null
           created_at: string
           email: string | null
@@ -275,6 +276,7 @@ export type Database = {
           token_hash: string
         }
         Insert: {
+          code?: string | null
           consumed_at?: string | null
           created_at?: string
           email?: string | null
@@ -289,6 +291,7 @@ export type Database = {
           token_hash: string
         }
         Update: {
+          code?: string | null
           consumed_at?: string | null
           created_at?: string
           email?: string | null
@@ -303,6 +306,13 @@ export type Database = {
           token_hash?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "invites_invited_by_fkey"
+            columns: ["invited_by", "mandal_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "mandal_id"]
+          },
           {
             foreignKeyName: "invites_mandal_id_fkey"
             columns: ["mandal_id"]
@@ -443,7 +453,10 @@ export type Database = {
       clear_donation_history: { Args: { reason: string }; Returns: number }
       create_invite: {
         Args: { email?: string; name: string; phone?: string; role: string }
-        Returns: string
+        Returns: {
+          code: string
+          token: string
+        }[]
       }
       create_mandal: {
         Args: {
@@ -469,6 +482,7 @@ export type Database = {
           total_paise: number
         }[]
       }
+      gen_invite_code: { Args: never; Returns: string }
       get_expense_categories: { Args: never; Returns: string[] }
       get_mandal_default_lang: { Args: never; Returns: string }
       get_public_receipt: {
@@ -511,8 +525,10 @@ export type Database = {
       invite_preview: {
         Args: { token: string }
         Returns: {
+          invitee_email_masked: string
           invitee_name: string
           mandal_name: string
+          matches_caller_email: boolean
           role: string
         }[]
       }
@@ -528,6 +544,7 @@ export type Database = {
       list_pending_invites: {
         Args: never
         Returns: {
+          code: string
           created_at: string
           email: string
           expires_at: string
@@ -537,10 +554,28 @@ export type Database = {
           role: string
         }[]
       }
+      mask_email: { Args: { e: string }; Returns: string }
+      my_pending_invites: {
+        Args: never
+        Returns: {
+          code: string
+          invitee_name: string
+          mandal_name: string
+          role: string
+        }[]
+      }
+      next_invite_code: { Args: never; Returns: string }
+      normalize_invite_code: { Args: { raw: string }; Returns: string }
       normalize_phone_e164: { Args: { raw: string }; Returns: string }
       purge_donations: { Args: { scope: string }; Returns: number }
       reactivate_member: { Args: { member_id: string }; Returns: undefined }
-      resend_invite: { Args: { invite_id: string }; Returns: string }
+      resend_invite: {
+        Args: { invite_id: string }
+        Returns: {
+          code: string
+          token: string
+        }[]
+      }
       revoke_invite: { Args: { invite_id: string }; Returns: undefined }
       set_member_role: {
         Args: { member_id: string; new_role: string }
