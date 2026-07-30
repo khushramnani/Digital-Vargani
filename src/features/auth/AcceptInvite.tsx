@@ -65,7 +65,15 @@ export function AcceptInvite({
         onAccepted(preview.role)
       })
       .catch((err: unknown) => {
-        acceptingRef.current = false
+        // The guard is deliberately NOT released. This screen offers no
+        // retry, so one attempt is the whole contract — and both callers
+        // pass inline callbacks, so every PARENT re-render hands this effect
+        // fresh dependencies. AuthProvider rebuilds its context value on
+        // each auth event (token refresh, tab focus), so releasing the guard
+        // re-attempts the join on every one of them, indefinitely, for
+        // anyone who leaves a failed invite page open. AcceptInvite's own
+        // setState can't expose this — it keeps the props' identity — which
+        // is why the regression test drives a parent re-render.
         const message = err instanceof Error ? err.message : String(err)
         // A failed accept must not leave the stash behind to retry itself
         // on every future visit.
