@@ -37,6 +37,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
+    // Users are in IST and every "which day is this?" decision is made in
+    // the device's local zone (lib/dayFilter.ts), so the unit suite runs as an
+    // IST device — the day-boundary tests are then facts, not a property of
+    // whichever machine happens to run them.
+    env: { TZ: 'Asia/Kolkata' },
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
     css: false,
     coverage: {
