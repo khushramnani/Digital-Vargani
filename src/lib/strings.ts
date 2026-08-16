@@ -643,6 +643,15 @@ export const strings = {
     insightUniqueDonors: 'Unique donors',
     insightAvgDonation: 'Average',
     insightLargestDonation: 'Largest',
+    // 2026-08-16: today's-collection tile + the "collection by day" card
+    todaysCollectionLabel: "Today's collection",
+    dayCardTitle: 'Collection by day',
+    dayToday: 'Today',
+    dayYesterday: 'Yesterday',
+    dayPickLabel: 'Pick a date',
+    noCollectionsOnDay: 'No collections on this day.',
+    byVolunteerTitle: 'By volunteer',
+    byModeTitle: 'By payment mode',
   },
   landing: {
     productName: 'Digital Vargani',
