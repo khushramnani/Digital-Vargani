@@ -115,3 +115,44 @@ export async function getDonations(): Promise<Donation[]> {
   if (error) throw error
   return data ?? []
 }
+
+// The aggregate-safe shape (plan 2026-08-16 §2c): what the dashboard cards,
+// the day summaries and the Collections totals strip need — and, for the
+// search filter to be applied identically to the list and to the totals,
+// the same searchable fields (donor_name/donor_phone/receipt_no).
+export type DonationLite = Pick<
+  Donation,
+  'amount_paise' | 'mode' | 'category' | 'collected_by' | 'created_at' | 'voided' | 'donor_name' | 'donor_phone' | 'receipt_no'
+>
+
+const LITE_COLUMNS =
+  'amount_paise, mode, category, collected_by, created_at, voided, donor_name, donor_phone, receipt_no'
+
+// One PostgREST page. Supabase's API "Max rows" setting defaults to 1000, so
+// a plain unlimited select is silently capped there — the same cap
+// getDonations() applies on purpose. Paging in 1000s is what makes this
+// query genuinely uncapped.
+export const LITE_PAGE = 1000
+
+// Every donation the caller may see (RLS-scoped exactly like getDonations:
+// admins the whole mandal, a volunteer only their own rows), narrowed to the
+// lite columns and NEVER capped — a season past 1000 donations must not
+// silently undercount a day total or the fund pool. Pages oldest-first with
+// an id tiebreak so a donation appended mid-fetch lands after the cursor
+// instead of shifting rows across page boundaries.
+// ponytail: assumes the project's Max rows is ≥ LITE_PAGE (the default); a
+// lowered setting would end the loop early — bump LITE_PAGE down to match.
+export async function getDonationsLite(): Promise<DonationLite[]> {
+  const rows: DonationLite[] = []
+  for (let from = 0; ; from += LITE_PAGE) {
+    const { data, error } = await supabase
+      .from('donations')
+      .select(LITE_COLUMNS)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + LITE_PAGE - 1)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if ((data ?? []).length < LITE_PAGE) return rows
+  }
+}
