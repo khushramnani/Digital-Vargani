@@ -105,6 +105,17 @@ describe('getDonationsLite', () => {
     expect(range2).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps paging to an empty page when no count came back, rather than stopping after page one', async () => {
+    const range = vi.fn()
+    range.mockResolvedValueOnce({ data: rowsOf(LITE_PAGE), error: null, count: null })
+    range.mockResolvedValueOnce({ data: rowsOf(1, LITE_PAGE), error: null, count: null })
+    range.mockResolvedValueOnce({ data: [], error: null, count: null })
+    from.mockReturnValue({ select: () => ({ order: () => ({ order: () => ({ range }) }) }) })
+
+    expect(await getDonationsLite()).toHaveLength(LITE_PAGE + 1)
+    expect(range).toHaveBeenCalledTimes(3)
+  })
+
   it('throws the Supabase error instead of returning a partial list', async () => {
     const range = vi.fn().mockResolvedValue({ data: null, error: new Error('rls says no'), count: null })
     from.mockReturnValue({ select: () => ({ order: () => ({ order: () => ({ range }) }) }) })
