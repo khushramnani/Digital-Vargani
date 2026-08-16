@@ -46,7 +46,7 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      include: ['src/lib/money.ts', 'src/lib/reconcile.ts'],
+      include: ['src/lib/money.ts', 'src/lib/reconcile.ts', 'src/lib/dayFilter.ts'],
       thresholds: {
         'src/lib/money.ts': {
           statements: 100,
@@ -55,6 +55,12 @@ export default defineConfig({
           lines: 100,
         },
         'src/lib/reconcile.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'src/lib/dayFilter.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

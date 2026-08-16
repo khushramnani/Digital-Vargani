@@ -78,7 +78,10 @@ export function CollectionsContent() {
   const [donations, setDonations] = useState<Donation[]>([])
   // The same rows in lite shape but UNCAPPED (getDonations stops at 1000), so
   // the totals strip never undercounts even when the list itself is capped.
-  const [lite, setLite] = useState<DonationLite[]>([])
+  // Best-effort: null when that fetch failed, and then the strip simply isn't
+  // shown — the list must never blank because its totals couldn't load, and
+  // the strip must never fall back to capped-list totals (silent undercount).
+  const [lite, setLite] = useState<DonationLite[] | null>(null)
   // collected_by (a users.id) → display name; admin-only server-side, so a
   // volunteer session just gets {} and every collector falls back to "Unknown".
   const [names, setNames] = useState<Record<string, string>>({})
@@ -89,8 +92,11 @@ export function CollectionsContent() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [sourceFilter, setSourceFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('all')
-  // 'all' | 'today' | a 'yyyy-mm-dd' picked in the date input.
-  const [dayFilter, setDayFilter] = useState('all')
+  // Date filter: All / Today / a picked day. `picked` is the date input's own
+  // value and stays mounted while editing — a cleared or half-edited input
+  // simply imposes no day constraint until it holds a full date again.
+  const [dayFilter, setDayFilter] = useState<'all' | 'today' | 'pick'>('all')
+  const [picked, setPicked] = useState('')
   const [search, setSearch] = useState('')
   const [clearOpen, setClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -100,7 +106,7 @@ export function CollectionsContent() {
   const [notice, setNotice] = useState<string | null>(null)
 
   function load() {
-    return Promise.all([getDonations(), getDonationsLite()]).then(([d, l]) => {
+    return Promise.all([getDonations(), getDonationsLite().catch((): null => null)]).then(([d, l]) => {
       setDonations(d)
       setLite(l)
     })
@@ -202,12 +208,12 @@ export function CollectionsContent() {
   // both the capped list rows and the uncapped lite rows so the totals strip
   // always describes exactly the view the list is showing.
   const todayStr = formatLocalDay(new Date())
-  const day = dayFilter === 'all' ? null : dayFilter === 'today' ? new Date() : parseLocalDay(dayFilter)
+  const day = dayFilter === 'today' ? new Date() : dayFilter === 'pick' ? parseLocalDay(picked) : null
   const q = search.trim().toLowerCase()
   const matches = (d: DonationLite) =>
     (sourceFilter === 'all' || d.category === sourceFilter) &&
     (yearFilter === 'all' || String(yearOf(d.created_at)) === yearFilter) &&
-    (dayFilter === 'all' || (day !== null && isOnLocalDay(d.created_at, day))) &&
+    (day === null || isOnLocalDay(d.created_at, day)) &&
     matchesQuery(d, q, names)
 
   const filtered = donations.filter(matches)
@@ -215,7 +221,7 @@ export function CollectionsContent() {
   const active = filtered.filter((d) => !d.voided)
   const visible = showRemoved ? filtered : active
   // Non-voided only (totalsOf) — "Show removed" reveals rows, never adds money.
-  const totals = totalsOf(lite.filter(matches))
+  const totals = lite === null ? null : totalsOf(lite.filter(matches))
 
   return (
     <>
@@ -258,21 +264,25 @@ export function CollectionsContent() {
                 input, pre-set to today; the input's value is then the filter. */}
             <select
               aria-label={t.dateFilterLabel}
-              value={dayFilter === 'all' || dayFilter === 'today' ? dayFilter : 'pick'}
-              onChange={(e) => setDayFilter(e.target.value === 'pick' ? todayStr : e.target.value)}
+              value={dayFilter}
+              onChange={(e) => {
+                const next = e.target.value as typeof dayFilter
+                setDayFilter(next)
+                if (next === 'pick' && !picked) setPicked(todayStr)
+              }}
               className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
             >
               <option value="all">{t.dateFilterAll}</option>
               <option value="today">{t.dateFilterToday}</option>
               <option value="pick">{t.dateFilterPick}</option>
             </select>
-            {dayFilter !== 'all' && dayFilter !== 'today' && (
+            {dayFilter === 'pick' && (
               <input
                 type="date"
                 aria-label={t.dateFilterPick}
-                value={dayFilter}
+                value={picked}
                 max={todayStr}
-                onChange={(e) => setDayFilter(e.target.value || 'all')}
+                onChange={(e) => setPicked(e.target.value)}
                 className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-sm text-stone-700"
               />
             )}
@@ -288,7 +298,7 @@ export function CollectionsContent() {
           </div>
         </div>
       )}
-      {visible.length > 0 && (
+      {totals !== null && visible.length > 0 && (
         <p className="rounded-xl bg-stone-100 px-4 py-2 text-sm text-stone-600 tabular-nums">
           {t.totalPrefix}
           <span className="font-bold text-stone-900">{formatINR(totals.totalPaise)}</span>

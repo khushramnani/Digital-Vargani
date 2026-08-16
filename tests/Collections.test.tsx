@@ -308,11 +308,27 @@ describe('CollectionsScreen', () => {
     expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
     expect(screen.queryByText('Today Donor')).not.toBeInTheDocument()
 
-    // Clearing the date input drops the date filter altogether.
+    // A cleared (or half-edited) date input stays mounted and simply imposes
+    // no day constraint until it holds a full date again.
     fireEvent.change(dateInput, { target: { value: '' } })
+    expect(screen.getByLabelText(t.dateFilterPick)).toHaveValue('')
     expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
     expect(screen.getByText('Today Donor')).toBeInTheDocument()
+
+    // Back to All dates hides the input; the picked day is remembered.
+    fireEvent.change(dateSelect, { target: { value: 'all' } })
     expect(screen.queryByLabelText(t.dateFilterPick)).not.toBeInTheDocument()
+  })
+
+  it('still shows the list (without a totals strip) when only the lite totals fetch fails', async () => {
+    getDonations.mockResolvedValue([activeDonation, voidedDonation])
+    getDonationsLite.mockRejectedValue(new Error('network down'))
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(t.empty)).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(`^${t.totalPrefix.trim()}`))).not.toBeInTheDocument()
   })
 
   // Plan 2026-08-16 §3c: the totals strip describes the CURRENT filter, counts

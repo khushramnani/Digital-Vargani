@@ -130,8 +130,8 @@ const LITE_COLUMNS =
 
 // One PostgREST page. Supabase's API "Max rows" setting defaults to 1000, so
 // a plain unlimited select is silently capped there — the same cap
-// getDonations() applies on purpose. Paging in 1000s is what makes this
-// query genuinely uncapped.
+// getDonations() applies on purpose. Paging is what makes this query
+// genuinely uncapped.
 export const LITE_PAGE = 1000
 
 // Every donation the caller may see (RLS-scoped exactly like getDonations:
@@ -139,20 +139,23 @@ export const LITE_PAGE = 1000
 // lite columns and NEVER capped — a season past 1000 donations must not
 // silently undercount a day total or the fund pool. Pages oldest-first with
 // an id tiebreak so a donation appended mid-fetch lands after the cursor
-// instead of shifting rows across page boundaries.
-// ponytail: assumes the project's Max rows is ≥ LITE_PAGE (the default); a
-// lowered setting would end the loop early — bump LITE_PAGE down to match.
+// instead of shifting rows across page boundaries. Each page also carries the
+// exact row count, and the cursor advances by what actually came back, so the
+// loop is right even if the project's Max rows is later lowered below
+// LITE_PAGE (it would just take more pages); it stops on an empty page too,
+// so rows purged mid-fetch can't make it spin.
 export async function getDonationsLite(): Promise<DonationLite[]> {
   const rows: DonationLite[] = []
-  for (let from = 0; ; from += LITE_PAGE) {
-    const { data, error } = await supabase
+  for (;;) {
+    const { data, error, count } = await supabase
       .from('donations')
-      .select(LITE_COLUMNS)
+      .select(LITE_COLUMNS, { count: 'exact' })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
-      .range(from, from + LITE_PAGE - 1)
+      .range(rows.length, rows.length + LITE_PAGE - 1)
     if (error) throw error
-    rows.push(...(data ?? []))
-    if ((data ?? []).length < LITE_PAGE) return rows
+    const page = data ?? []
+    rows.push(...page)
+    if (page.length === 0 || rows.length >= (count ?? 0)) return rows
   }
 }

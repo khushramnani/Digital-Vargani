@@ -213,11 +213,12 @@ function Dashboard({
   )
 }
 
+// Same value/label/icon triple as CollectionForm's mode picker.
 const DAY_MODES = [
-  ['cash', '💵'],
-  ['upi', '📱'],
-  ['bank', '🏦'],
-] as const
+  { value: 'cash', label: strings.collection.modeCash, icon: '💵' },
+  { value: 'upi', label: strings.collection.modeUpi, icon: '📱' },
+  { value: 'bank', label: strings.collection.modeBank, icon: '🏦' },
+]
 
 // Plan 2026-08-16 §2b — the daily tally. Volunteers come back in the evening
 // and the treasurer checks the day's take: pick a day (defaults to today; the
@@ -278,11 +279,11 @@ function DayCard({ donations, names }: { donations: DonationLite[]; names: Recor
             </p>
             <p className="mt-4 text-xs font-semibold tracking-wide text-stone-500 uppercase">{t.byModeTitle}</p>
             <ul className="mt-1.5 flex flex-col gap-1.5">
-              {DAY_MODES.map(([mode, icon]) => (
-                <li key={mode} className="flex items-center gap-2 text-sm">
-                  <span aria-hidden="true">{icon}</span>
-                  <span className="flex-1 text-stone-700 capitalize">{mode}</span>
-                  <span className="font-semibold tabular-nums text-stone-800">{formatINR(summary.byMode[mode] ?? 0)}</span>
+              {DAY_MODES.map((m) => (
+                <li key={m.value} className="flex items-center gap-2 text-sm">
+                  <span aria-hidden="true">{m.icon}</span>
+                  <span className="flex-1 text-stone-700">{m.label}</span>
+                  <span className="font-semibold tabular-nums text-stone-800">{formatINR(summary.byMode[m.value] ?? 0)}</span>
                 </li>
               ))}
             </ul>
@@ -585,8 +586,8 @@ function DashboardSkeleton(): ReactNode {
   return (
     <>
       <div className={`${card} h-20 animate-pulse`} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {[0, 1, 2].map((i) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
           <div key={i} className={`${card} p-4`}>
             <div className="h-3 w-24 animate-pulse rounded bg-stone-200" />
             <div className="mt-2 h-7 w-20 animate-pulse rounded bg-stone-200" />

@@ -110,6 +110,12 @@ describe('summarizeDay', () => {
     expect(s.byMode).toEqual({ cash: 50010, upi: 20002, bank: 30003 })
     expect(s.byVolunteer).toEqual({ 'v-1': 30003, 'v-2': 70007, 'v-3': 5 })
   })
+
+  it('never drops a rupee for a mode outside cash/upi/bank (DB CHECK forbids it, but the sum must not depend on that)', () => {
+    const s = summarizeDay([row({ amount_paise: 700, mode: 'cheque' })], aug16)
+    expect(s.totalPaise).toBe(700)
+    expect(s.byMode).toEqual({ cash: 0, upi: 0, bank: 0, cheque: 700 })
+  })
 })
 
 describe('totalsOf', () => {
