@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { getDonations, type Donation } from '../../lib/db/donations'
+import { getDonations, getDonationsLite, type Donation, type DonationLite } from '../../lib/db/donations'
 import { voidRow, clearAllDonations, purgeDonations } from '../../lib/db/void'
 import { fetchMandalUserNames } from '../../lib/db/users'
 import { isAdminRole, isOwnerRole } from '../../lib/roles'
 import { formatForDisplay, normalizeToE164, waDigits } from '../../lib/phone'
 import { formatINR } from '../../lib/money'
+import { formatLocalDay, isOnLocalDay, parseLocalDay, totalsOf } from '../../lib/dayFilter'
 import { strings } from '../../lib/strings'
 import { VoidButton } from '../../components/VoidButton'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -39,6 +40,26 @@ function fullTime(iso: string): string {
 
 const yearOf = (iso: string): number => new Date(iso).getFullYear()
 
+const digitsOf = (s: string): string => s.replace(/\D/g, '')
+
+// The search box (plan 2026-08-16 §3a): case-insensitive, trimmed match on the
+// donor name, the receipt number (leading "#" tolerated, prefix match so it
+// narrows as you type), the collector's name (admins — the names map is empty
+// for a volunteer session), and the phone by raw digits. The phone match needs
+// ≥4 digits: a 1–3 digit query is a receipt number being typed, and matching
+// it inside every phone would flood the list instead of narrowing it.
+function matchesQuery(d: DonationLite, q: string, names: Record<string, string>): boolean {
+  if (q === '') return true
+  const receipt = q.replace(/^#/, '')
+  const qDigits = digitsOf(q)
+  return (
+    d.donor_name.toLowerCase().includes(q) ||
+    (receipt !== '' && String(d.receipt_no).startsWith(receipt)) ||
+    (names[d.collected_by] ?? '').toLowerCase().includes(q) ||
+    (qDigits.length >= 4 && digitsOf(d.donor_phone ?? '').includes(qDigits))
+  )
+}
+
 // SPEC.md's "my collections" (volunteer) / "all collections" (admin) screen.
 // Content-only body: rendered inside AdminLayout's <Outlet/> at
 // /admin/collections (console frame) and inside the AppShell wrapper below at
@@ -49,9 +70,15 @@ const yearOf = (iso: string): number => new Date(iso).getFullYear()
 // public report while the record survives for the audit trail); removed rows
 // are hidden behind a toggle. Admins additionally get a Danger Zone: the
 // everyday soft "clear all", plus a true permanent purge (v4 §8).
+// Plan 2026-08-16 §3: a search box, a date filter (All / Today / a picked day)
+// and a totals strip for whatever is currently filtered — a volunteer's
+// "Today" is automatically THEIR today, since RLS already scopes the rows.
 export function CollectionsContent() {
   const { appUser } = useAuth()
   const [donations, setDonations] = useState<Donation[]>([])
+  // The same rows in lite shape but UNCAPPED (getDonations stops at 1000), so
+  // the totals strip never undercounts even when the list itself is capped.
+  const [lite, setLite] = useState<DonationLite[]>([])
   // collected_by (a users.id) → display name; admin-only server-side, so a
   // volunteer session just gets {} and every collector falls back to "Unknown".
   const [names, setNames] = useState<Record<string, string>>({})
@@ -62,6 +89,9 @@ export function CollectionsContent() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [sourceFilter, setSourceFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('all')
+  // 'all' | 'today' | a 'yyyy-mm-dd' picked in the date input.
+  const [dayFilter, setDayFilter] = useState('all')
+  const [search, setSearch] = useState('')
   const [clearOpen, setClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [purgeRemovedOpen, setPurgeRemovedOpen] = useState(false)
@@ -70,7 +100,10 @@ export function CollectionsContent() {
   const [notice, setNotice] = useState<string | null>(null)
 
   function load() {
-    return getDonations().then(setDonations)
+    return Promise.all([getDonations(), getDonationsLite()]).then(([d, l]) => {
+      setDonations(d)
+      setLite(l)
+    })
   }
 
   useEffect(() => {
@@ -98,7 +131,7 @@ export function CollectionsContent() {
     setNotice(null)
     try {
       await voidRow('donations', donation.id, reason)
-      setDonations(await getDonations())
+      await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -110,7 +143,7 @@ export function CollectionsContent() {
     setNotice(null)
     try {
       await clearAllDonations(reason)
-      setDonations(await getDonations())
+      await load()
       setNotice(t.cleared)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -141,7 +174,7 @@ export function CollectionsContent() {
     setNotice(null)
     try {
       await purgeDonations(scope)
-      setDonations(await getDonations())
+      await load()
       setNotice(scope === 'all' ? t.purgedAllNotice : t.purgedRemovedNotice)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -165,53 +198,104 @@ export function CollectionsContent() {
   const hasActive = donations.some((d) => !d.voided)
   const years = [...new Set(donations.map((d) => yearOf(d.created_at)))].sort((a, b) => b - a)
 
-  const filtered = donations.filter(
-    (d) =>
-      (sourceFilter === 'all' || d.category === sourceFilter) &&
-      (yearFilter === 'all' || String(yearOf(d.created_at)) === yearFilter),
-  )
+  // One predicate for every filter (source · year · day · search), applied to
+  // both the capped list rows and the uncapped lite rows so the totals strip
+  // always describes exactly the view the list is showing.
+  const todayStr = formatLocalDay(new Date())
+  const day = dayFilter === 'all' ? null : dayFilter === 'today' ? new Date() : parseLocalDay(dayFilter)
+  const q = search.trim().toLowerCase()
+  const matches = (d: DonationLite) =>
+    (sourceFilter === 'all' || d.category === sourceFilter) &&
+    (yearFilter === 'all' || String(yearOf(d.created_at)) === yearFilter) &&
+    (dayFilter === 'all' || (day !== null && isOnLocalDay(d.created_at, day))) &&
+    matchesQuery(d, q, names)
+
+  const filtered = donations.filter(matches)
   const removed = filtered.filter((d) => d.voided)
   const active = filtered.filter((d) => !d.voided)
   const visible = showRemoved ? filtered : active
+  // Non-voided only (totalsOf) — "Show removed" reveals rows, never adds money.
+  const totals = totalsOf(lite.filter(matches))
 
   return (
     <>
       {donations.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label={t.detailCategory}
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
-          >
-            <option value="all">{t.categoryFilterAll}</option>
-            <option value="society">{strings.collection.categorySociety}</option>
-            <option value="shop">{strings.collection.categoryShop}</option>
-            <option value="other">{strings.collection.categoryOther}</option>
-          </select>
-          <select
-            aria-label={t.yearFilterLabel}
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-            className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
-          >
-            <option value="all">{t.allYears}</option>
-            {years.map((y) => (
-              <option key={y} value={String(y)}>
-                {y}
-              </option>
-            ))}
-          </select>
-          {removed.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowRemoved((s) => !s)}
-              className="ml-auto flex-none rounded-lg px-2.5 py-1.5 text-sm font-semibold text-stone-500 hover:bg-stone-100"
+        <div className="flex flex-col gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t.searchPlaceholder}
+            aria-label={t.searchPlaceholder}
+            className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-orange-400 focus:outline-none"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label={t.detailCategory}
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
             >
-              {showRemoved ? t.removedHide : `${t.removedShow} (${removed.length})`}
-            </button>
-          )}
+              <option value="all">{t.categoryFilterAll}</option>
+              <option value="society">{strings.collection.categorySociety}</option>
+              <option value="shop">{strings.collection.categoryShop}</option>
+              <option value="other">{strings.collection.categoryOther}</option>
+            </select>
+            <select
+              aria-label={t.yearFilterLabel}
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
+            >
+              <option value="all">{t.allYears}</option>
+              {years.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            {/* All / Today / Pick date — choosing "Pick date" reveals the date
+                input, pre-set to today; the input's value is then the filter. */}
+            <select
+              aria-label={t.dateFilterLabel}
+              value={dayFilter === 'all' || dayFilter === 'today' ? dayFilter : 'pick'}
+              onChange={(e) => setDayFilter(e.target.value === 'pick' ? todayStr : e.target.value)}
+              className="rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm text-stone-700"
+            >
+              <option value="all">{t.dateFilterAll}</option>
+              <option value="today">{t.dateFilterToday}</option>
+              <option value="pick">{t.dateFilterPick}</option>
+            </select>
+            {dayFilter !== 'all' && dayFilter !== 'today' && (
+              <input
+                type="date"
+                aria-label={t.dateFilterPick}
+                value={dayFilter}
+                max={todayStr}
+                onChange={(e) => setDayFilter(e.target.value || 'all')}
+                className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-sm text-stone-700"
+              />
+            )}
+            {removed.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowRemoved((s) => !s)}
+                className="ml-auto flex-none rounded-lg px-2.5 py-1.5 text-sm font-semibold text-stone-500 hover:bg-stone-100"
+              >
+                {showRemoved ? t.removedHide : `${t.removedShow} (${removed.length})`}
+              </button>
+            )}
+          </div>
         </div>
+      )}
+      {visible.length > 0 && (
+        <p className="rounded-xl bg-stone-100 px-4 py-2 text-sm text-stone-600 tabular-nums">
+          {t.totalPrefix}
+          <span className="font-bold text-stone-900">{formatINR(totals.totalPaise)}</span>
+          {' · '}
+          {totals.count}
+          {t.donationsSuffix}
+        </p>
       )}
       {notice && (
         <p role="status" className="rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-800">

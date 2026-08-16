@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
+import { strings } from '../src/lib/strings'
+import { formatLocalDay } from '../src/lib/dayFilter'
 import { CollectionsScreen } from '../src/features/collection/Collections'
 
 // Per the established pattern (ExpensesScreen.test.tsx): mock
 // lib/db/donations.ts and lib/db/void.ts directly, not the raw Supabase
-// client.
-const { getDonations } = vi.hoisted(() => ({ getDonations: vi.fn() }))
+// client. getDonations feeds the (capped) list, getDonationsLite the
+// (uncapped) totals strip — both mocked, defaulting to the same rows.
+const { getDonations, getDonationsLite } = vi.hoisted(() => ({ getDonations: vi.fn(), getDonationsLite: vi.fn() }))
 
-vi.mock('../src/lib/db/donations', () => ({ getDonations }))
+vi.mock('../src/lib/db/donations', () => ({ getDonations, getDonationsLite }))
+
+const t = strings.collections
 
 const { voidRow, clearAllDonations, purgeDonations } = vi.hoisted(() => ({
   voidRow: vi.fn(),
@@ -103,12 +108,45 @@ const voidedDonation: Tables<'donations'> = {
   voided_at: '2026-01-03T00:00:00Z',
 }
 
+// Two more rows for the search / date / totals tests: a shop donation by a
+// second collector, and one logged just now (the only "today" row).
+const shopDonation: Tables<'donations'> = {
+  ...activeDonation,
+  id: 'donation-3',
+  receipt_no: 12,
+  public_token: 'tok-3',
+  donor_name: 'Lakshmi Traders',
+  donor_phone: '+919111122222',
+  amount_paise: 120000,
+  mode: 'upi',
+  category: 'shop',
+  collected_by: 'volunteer-2',
+  created_at: '2026-01-04T06:00:00Z',
+}
+
+const todayDonation: Tables<'donations'> = {
+  ...activeDonation,
+  id: 'donation-4',
+  receipt_no: 20,
+  public_token: 'tok-4',
+  donor_name: 'Today Donor',
+  donor_phone: null,
+  amount_paise: 12300,
+  created_at: new Date().toISOString(),
+}
+
+// Loads the given rows into BOTH mocks (list + totals) — the default shape.
+function loadRows(rows: Tables<'donations'>[]) {
+  getDonations.mockResolvedValue(rows)
+  getDonationsLite.mockResolvedValue(rows)
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   auth.appUser = volunteer
-  getDonations.mockResolvedValue([activeDonation, voidedDonation])
+  loadRows([activeDonation, voidedDonation])
   voidRow.mockResolvedValue(undefined)
-  fetchMandalUserNames.mockResolvedValue({ 'volunteer-1': 'Sita Volunteer' })
+  fetchMandalUserNames.mockResolvedValue({ 'volunteer-1': 'Sita Volunteer', 'volunteer-2': 'Raju Helper' })
 })
 
 describe('CollectionsScreen', () => {
@@ -116,7 +154,7 @@ describe('CollectionsScreen', () => {
     render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    expect(screen.getByText('₹500.00')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /Ganesh Donor/ })).getByText('₹500.00')).toBeInTheDocument()
     // A payment-mode icon tile per row (💵 cash / 📱 upi / 🏦 bank).
     expect(screen.getByText('💵')).toBeInTheDocument()
     // A voided donation is removed from the current ledger — hidden by default.
@@ -203,5 +241,123 @@ describe('CollectionsScreen', () => {
     expect(screen.queryByRole('button', { name: 'Permanently delete removed' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Permanently delete ALL history' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clear all donations' })).toBeInTheDocument()
+  })
+
+  // Plan 2026-08-16 §3a: one search box over name, phone digits, receipt
+  // number and (admin) collector name, AND-ed with the other filters.
+  it('search narrows the list by donor name, phone digits, receipt number and collector name', async () => {
+    loadRows([activeDonation, voidedDonation, shopDonation])
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+    const search = screen.getByRole('searchbox', { name: t.searchPlaceholder })
+
+    // Name (case-insensitive, partial).
+    fireEvent.change(search, { target: { value: 'LAKSH' } })
+    expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
+    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
+
+    // Phone digits — the legacy 10-digit row matches its own digits.
+    fireEvent.change(search, { target: { value: '9000 0000' } })
+    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
+    expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
+
+    // Receipt number, "#" tolerated; a short digit query is a receipt, not a
+    // phone fragment (so "1" does not match every phone containing a 1).
+    fireEvent.change(search, { target: { value: '#12' } })
+    expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
+    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
+    fireEvent.change(search, { target: { value: '7' } })
+    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
+    expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
+
+    // Collector name via the id → name map.
+    fireEvent.change(search, { target: { value: 'raju' } })
+    expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
+    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
+
+    // Composes with the source filter (AND): Lakshmi is a shop donation.
+    fireEvent.change(screen.getByRole('combobox', { name: t.detailCategory }), { target: { value: 'society' } })
+    expect(screen.getByText(t.noFilterResults)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: t.detailCategory }), { target: { value: 'all' } })
+
+    // No match → the filtered-empty copy, never the "no donations yet" one.
+    fireEvent.change(search, { target: { value: 'zzz' } })
+    expect(screen.getByText(t.noFilterResults)).toBeInTheDocument()
+    expect(screen.queryByText(t.empty)).not.toBeInTheDocument()
+  })
+
+  // Plan 2026-08-16 §3b: All / Today / a picked day, decided in the device's
+  // local timezone (lib/dayFilter.ts).
+  it('filters by Today or by a picked date', async () => {
+    loadRows([activeDonation, voidedDonation, todayDonation])
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+    const dateSelect = screen.getByRole('combobox', { name: t.dateFilterLabel })
+
+    fireEvent.change(dateSelect, { target: { value: 'today' } })
+    expect(screen.getByText('Today Donor')).toBeInTheDocument()
+    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
+
+    // "Pick date" reveals a date input pre-set to today; changing it filters
+    // to that (local) day.
+    fireEvent.change(dateSelect, { target: { value: 'pick' } })
+    const dateInput = screen.getByLabelText(t.dateFilterPick)
+    expect(dateInput).toHaveValue(formatLocalDay(new Date()))
+    expect(screen.getByText('Today Donor')).toBeInTheDocument()
+    fireEvent.change(dateInput, { target: { value: formatLocalDay(new Date(activeDonation.created_at)) } })
+    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
+    expect(screen.queryByText('Today Donor')).not.toBeInTheDocument()
+
+    // Clearing the date input drops the date filter altogether.
+    fireEvent.change(dateInput, { target: { value: '' } })
+    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
+    expect(screen.getByText('Today Donor')).toBeInTheDocument()
+    expect(screen.queryByLabelText(t.dateFilterPick)).not.toBeInTheDocument()
+  })
+
+  // Plan 2026-08-16 §3c: the totals strip describes the CURRENT filter, counts
+  // non-voided rows only (even with "Show removed" on), and reads from the
+  // uncapped lite rows rather than the capped list.
+  it('shows a totals strip for the filtered view that never counts removed rows', async () => {
+    loadRows([activeDonation, voidedDonation, shopDonation])
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    // Unfiltered: ₹500 + ₹1,200 (the ₹900 removed row does not count).
+    // The strip is one <p> whose text reads "Total: ₹X · N donations".
+    const strip = () => screen.getByText(new RegExp(`^${t.totalPrefix.trim()}`))
+    const reads = (total: string, count: number) => `${t.totalPrefix}${total} · ${count}${t.donationsSuffix}`
+    expect(strip()).toHaveTextContent(reads('₹1,700.00', 2))
+
+    // Revealing removed rows changes what is listed, not the money.
+    fireEvent.click(screen.getByRole('button', { name: /Show removed/ }))
+    expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
+    expect(strip()).toHaveTextContent(reads('₹1,700.00', 2))
+
+    // A filter that leaves only the removed row: listed, but ₹0 · 0 donations.
+    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'duplicate' } })
+    expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
+    expect(strip()).toHaveTextContent(reads('₹0.00', 0))
+
+    // A filter with active rows: the strip follows it.
+    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'lakshmi' } })
+    expect(strip()).toHaveTextContent(reads('₹1,200.00', 1))
+
+    // Filtered to nothing → no strip at all.
+    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'zzz' } })
+    expect(screen.queryByText(new RegExp(`^${t.totalPrefix.trim()}`))).not.toBeInTheDocument()
+  })
+
+  it('totals come from the uncapped lite rows, so they include donations the capped list dropped', async () => {
+    getDonations.mockResolvedValue([activeDonation])
+    // The lite query returns one more (non-voided) row than the list did.
+    getDonationsLite.mockResolvedValue([activeDonation, { ...shopDonation, amount_paise: 100000 }])
+    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`^${t.totalPrefix.trim()}`))).toHaveTextContent(
+      `${t.totalPrefix}₹1,500.00 · 2${t.donationsSuffix}`,
+    )
   })
 })
