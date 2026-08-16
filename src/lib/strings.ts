@@ -430,6 +430,14 @@ export const strings = {
     categoryFilterAll: 'All sources',
     noFilterResults: 'No donations match these filters.',
     keepPastYearsHint: 'Keep past years — use the year filter above instead of clearing.',
+    // 2026-08-16: search + date filter + totals strip
+    searchPlaceholder: 'Search name, phone or receipt #',
+    dateFilterLabel: 'Date',
+    dateFilterAll: 'All dates',
+    dateFilterToday: 'Today',
+    dateFilterPick: 'Pick date',
+    totalPrefix: 'Total: ',
+    donationsSuffix: ' donations',
     // v4: permanent purge (Danger Zone), separate from the everyday soft "clear"
     purgeRemovedButton: 'Permanently delete removed',
     purgeRemovedHint: 'Erase only the already-removed donations from the database.',
@@ -643,6 +651,15 @@ export const strings = {
     insightUniqueDonors: 'Unique donors',
     insightAvgDonation: 'Average',
     insightLargestDonation: 'Largest',
+    // 2026-08-16: today's-collection tile + the "collection by day" card
+    todaysCollectionLabel: "Today's collection",
+    dayCardTitle: 'Collection by day',
+    dayToday: 'Today',
+    dayYesterday: 'Yesterday',
+    dayPickLabel: 'Pick a date',
+    noCollectionsOnDay: 'No collections on this day.',
+    byVolunteerTitle: 'By volunteer',
+    byModeTitle: 'By payment mode',
   },
   landing: {
     productName: 'Digital Vargani',

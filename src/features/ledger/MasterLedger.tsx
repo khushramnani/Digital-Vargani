@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { fetchFullLedger, fetchActiveVolunteers, type VolunteerSummary } from '../../lib/db/ledger'
 import { getExpenses, type Expense } from '../../lib/db/expenses'
-import { getDonations, type Donation } from '../../lib/db/donations'
+import { getDonationsLite, type DonationLite } from '../../lib/db/donations'
+import { fetchMandalUserNames } from '../../lib/db/users'
+import { formatLocalDay, parseLocalDay, summarizeDay } from '../../lib/dayFilter'
 import { normalizeToE164 } from '../../lib/phone'
 import {
   totalCollected,
@@ -54,23 +56,35 @@ function toExpenseSegments(expenses: Expense[]): DonutSegment[] {
 // which supplies the console frame (dark rail / mobile pill header + title).
 // fetchFullLedger()/fetchActiveVolunteers()/getExpenses() are all admin-only at
 // the RLS level and mandal-scoped, so this only ever sums this mandal's books.
+// Donations come from getDonationsLite — uncapped, so the source/insight/day
+// figures can't undercount a big season the way the 1000-row list query would.
 export function MasterLedgerContent() {
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [volunteers, setVolunteers] = useState<VolunteerSummary[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
-  const [donations, setDonations] = useState<Donation[]>([])
+  const [donations, setDonations] = useState<DonationLite[]>([])
+  // collected_by → display name for the per-volunteer day breakdown; every
+  // user in the mandal (active or not), best-effort like Collections.tsx.
+  const [names, setNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchFullLedger(), fetchActiveVolunteers(), getExpenses(), getDonations()])
-      .then(([l, v, e, d]) => {
+    Promise.all([
+      fetchFullLedger(),
+      fetchActiveVolunteers(),
+      getExpenses(),
+      getDonationsLite(),
+      fetchMandalUserNames().catch((): Record<string, string> => ({})),
+    ])
+      .then(([l, v, e, d, n]) => {
         if (!active) return
         setLedger(l)
         setVolunteers(v)
         setExpenses(e)
         setDonations(d)
+        setNames(n)
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : String(err))
@@ -94,7 +108,9 @@ export function MasterLedgerContent() {
       {loading ? (
         <DashboardSkeleton />
       ) : (
-        ledger && <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} donations={donations} />
+        ledger && (
+          <Dashboard ledger={ledger} volunteers={volunteers} expenses={expenses} donations={donations} names={names} />
+        )
       )}
     </>
   )
@@ -105,11 +121,13 @@ function Dashboard({
   volunteers,
   expenses,
   donations,
+  names,
 }: {
   ledger: Ledger
   volunteers: VolunteerSummary[]
   expenses: Expense[]
-  donations: Donation[]
+  donations: DonationLite[]
+  names: Record<string, string>
 }) {
   const donationCount = ledger.donations.filter((d) => !d.voided).length
   const paymentCount = ledger.expenses.filter((e) => !e.voided).length
@@ -120,6 +138,7 @@ function Dashboard({
     .reduce((sum, u) => sum + volunteerCashInHand(u.id, ledger), 0)
   const treasurerCash = cashHeldByTreasurer(ledger)
   const bank = bankBalance(ledger)
+  const today = summarizeDay(donations, new Date())
 
   return (
     <>
@@ -132,9 +151,11 @@ function Dashboard({
         bank={bank}
       />
 
-      {/* Mobile: 2×2 grid whose 4th tile is "Cash w/ volunteers" (design v3).
-          Desktop: the trio in a row (the 4th tile is hidden). */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      {/* Mobile: 2×2 grid whose 4th tile is "Cash w/ volunteers" (design v3),
+          with today's collection as a full-width band beneath it (the 360px
+          one-handed layout stays a 2-column grid). Desktop: a row of four
+          (the cash-w/-volunteers tile is hidden — CashTracker has it). */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label={t.fundPoolLabel}
           value={formatINR(totalCollected(ledger))}
@@ -154,7 +175,16 @@ function Dashboard({
           valueClass="text-[#7a2e2a]"
           className="lg:hidden"
         />
+        <StatCard
+          label={t.todaysCollectionLabel}
+          value={formatINR(today.totalPaise)}
+          valueClass="text-emerald-700"
+          sub={`${today.count}${t.donationsCountSuffix}`}
+          className="col-span-2 lg:col-span-1"
+        />
       </div>
+
+      <DayCard donations={donations} names={names} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <CashTracker ledger={ledger} volunteers={volunteers} volunteersTotal={volunteersTotal} />
@@ -183,10 +213,104 @@ function Dashboard({
   )
 }
 
+// Same value/label/icon triple as CollectionForm's mode picker.
+const DAY_MODES = [
+  { value: 'cash', label: strings.collection.modeCash, icon: '💵' },
+  { value: 'upi', label: strings.collection.modeUpi, icon: '📱' },
+  { value: 'bank', label: strings.collection.modeBank, icon: '🏦' },
+]
+
+// Plan 2026-08-16 §2b — the daily tally. Volunteers come back in the evening
+// and the treasurer checks the day's take: pick a day (defaults to today; the
+// Today/Yesterday chips just set the input, which stays the source of truth),
+// see the total, the mode split and who collected how much. All client-side
+// over the lite rows via summarizeDay, so a date change is instant. Names
+// come from fetchMandalUserNames (every mandal user, active or not); anything
+// it didn't return falls back to "Unknown", never to a blank row.
+function DayCard({ donations, names }: { donations: DonationLite[]; names: Record<string, string> }) {
+  const todayStr = formatLocalDay(new Date())
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = formatLocalDay(yesterday)
+  const [day, setDay] = useState(todayStr)
+
+  const selected = parseLocalDay(day)
+  const summary = selected ? summarizeDay(donations, selected) : null
+  const byVolunteer = summary ? Object.entries(summary.byVolunteer).sort((a, b) => b[1] - a[1]) : []
+
+  const chip = (value: string, label: string) => (
+    <button
+      type="button"
+      aria-pressed={day === value}
+      onClick={() => setDay(value)}
+      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+        day === value ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+      }`}
+    >
+      {label}
+    </button>
+  )
+
+  return (
+    <div className={`${card} p-5`}>
+      <h2 className="font-display text-lg font-bold text-stone-900">{t.dayCardTitle}</h2>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {chip(todayStr, t.dayToday)}
+        {chip(yesterdayStr, t.dayYesterday)}
+        <input
+          type="date"
+          aria-label={t.dayPickLabel}
+          value={day}
+          max={todayStr}
+          onChange={(e) => setDay(e.target.value)}
+          className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-sm text-stone-700"
+        />
+      </div>
+
+      {!summary || summary.count === 0 ? (
+        <p className="py-6 text-center text-sm text-stone-400">{t.noCollectionsOnDay}</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <div>
+            <p className="text-3xl font-bold tabular-nums text-emerald-700">{formatINR(summary.totalPaise)}</p>
+            <p className="mt-0.5 text-xs text-stone-500">
+              {summary.count}
+              {t.donationsCountSuffix}
+            </p>
+            <p className="mt-4 text-xs font-semibold tracking-wide text-stone-500 uppercase">{t.byModeTitle}</p>
+            <ul className="mt-1.5 flex flex-col gap-1.5">
+              {DAY_MODES.map((m) => (
+                <li key={m.value} className="flex items-center gap-2 text-sm">
+                  <span aria-hidden="true">{m.icon}</span>
+                  <span className="flex-1 text-stone-700">{m.label}</span>
+                  <span className="font-semibold tabular-nums text-stone-800">{formatINR(summary.byMode[m.value] ?? 0)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="text-xs font-semibold tracking-wide text-stone-500 uppercase">{t.byVolunteerTitle}</p>
+            <ul className="mt-1.5">
+              {byVolunteer.map(([id, paise]) => (
+                <li key={id} className="flex items-center gap-3 border-t border-stone-100 py-2 text-sm first:border-0">
+                  <span className="min-w-0 flex-1 truncate font-medium text-stone-800">
+                    {names[id] ?? strings.collections.unknownCollector}
+                  </span>
+                  <span className="font-semibold tabular-nums text-stone-900">{formatINR(paise)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // v4 §2: per-source (Society/Shop/Other) amount + donation count. `category` is
 // constrained to those three at the DB level; any stray value buckets into
 // Society (the column default) so no rupee is dropped.
-function SourceCard({ donations }: { donations: Donation[] }) {
+function SourceCard({ donations }: { donations: DonationLite[] }) {
   const rows = [
     { key: 'society', label: t.sourceSocietyLabel, color: '#2f7d44' },
     { key: 'shop', label: t.sourceShopLabel, color: '#e2680f' },
@@ -234,7 +358,7 @@ function SourceCard({ donations }: { donations: Donation[] }) {
 // v4 §2 / §1 stats: total count, unique donors (distinct phone-or-lowercased
 // name, phones normalized so a 10-digit legacy row and its +91 twin count once),
 // average and largest — all over non-voided donations.
-function InsightCard({ donations }: { donations: Donation[] }) {
+function InsightCard({ donations }: { donations: DonationLite[] }) {
   const active = donations.filter((d) => !d.voided)
   const total = active.reduce((sum, d) => sum + d.amount_paise, 0)
   const uniqueDonors = new Set(
@@ -462,8 +586,8 @@ function DashboardSkeleton(): ReactNode {
   return (
     <>
       <div className={`${card} h-20 animate-pulse`} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {[0, 1, 2].map((i) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
           <div key={i} className={`${card} p-4`}>
             <div className="h-3 w-24 animate-pulse rounded bg-stone-200" />
             <div className="mt-2 h-7 w-20 animate-pulse rounded bg-stone-200" />

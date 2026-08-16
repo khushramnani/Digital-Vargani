@@ -115,3 +115,49 @@ export async function getDonations(): Promise<Donation[]> {
   if (error) throw error
   return data ?? []
 }
+
+// The aggregate-safe shape (plan 2026-08-16 §2c): what the dashboard cards,
+// the day summaries and the Collections totals strip need — and, for the
+// search filter to be applied identically to the list and to the totals,
+// the same searchable fields (donor_name/donor_phone/receipt_no).
+export type DonationLite = Pick<
+  Donation,
+  'amount_paise' | 'mode' | 'category' | 'collected_by' | 'created_at' | 'voided' | 'donor_name' | 'donor_phone' | 'receipt_no'
+>
+
+const LITE_COLUMNS =
+  'amount_paise, mode, category, collected_by, created_at, voided, donor_name, donor_phone, receipt_no'
+
+// One PostgREST page. Supabase's API "Max rows" setting defaults to 1000, so
+// a plain unlimited select is silently capped there — the same cap
+// getDonations() applies on purpose. Paging is what makes this query
+// genuinely uncapped.
+export const LITE_PAGE = 1000
+
+// Every donation the caller may see (RLS-scoped exactly like getDonations:
+// admins the whole mandal, a volunteer only their own rows), narrowed to the
+// lite columns and NEVER capped — a season past 1000 donations must not
+// silently undercount a day total or the fund pool. Pages oldest-first with
+// an id tiebreak so a donation appended mid-fetch lands after the cursor
+// instead of shifting rows across page boundaries. Each page also carries the
+// exact row count, and the cursor advances by what actually came back, so the
+// loop is right even if the project's Max rows is later lowered below
+// LITE_PAGE (it would just take more pages); it stops on an empty page too,
+// so rows purged mid-fetch can't make it spin.
+export async function getDonationsLite(): Promise<DonationLite[]> {
+  const rows: DonationLite[] = []
+  for (;;) {
+    const { data, error, count } = await supabase
+      .from('donations')
+      .select(LITE_COLUMNS, { count: 'exact' })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(rows.length, rows.length + LITE_PAGE - 1)
+    if (error) throw error
+    const page = data ?? []
+    rows.push(...page)
+    // A missing count (no Content-Range reached the client) must not end the
+    // loop early — fall through to the empty-page stop instead.
+    if (page.length === 0 || (count !== null && rows.length >= count)) return rows
+  }
+}
