@@ -8,14 +8,20 @@
 // PREVIOUS date — so every day decision happens in the device's local
 // timezone via the Date getters below. Never slice the ISO string, never
 // `new Date('yyyy-mm-dd')` (that parses as UTC midnight).
+import { sourceLabel } from './sources'
 
 export type Countable = { amount_paise: number; voided: boolean }
-export type DayRow = Countable & { created_at: string; mode: string; collected_by: string }
+export type DayRow = Countable & { created_at: string; mode: string; collected_by: string; category: string }
 
 export type Totals = { totalPaise: number; count: number }
 export type DaySummary = Totals & {
   byMode: Record<string, number> // keyed cash/upi/bank, always all three present
   byVolunteer: Record<string, number> // collected_by (users.id) → paise
+  // Plan 2026-08-18: the day card's "by source" rows. Keyed by the source's
+  // LABEL (lib/sources.ts), so a legacy 'society' row and a new 'Society' row
+  // land in the same bucket instead of reading as two sources.
+  bySource: Record<string, number> // label → paise
+  bySourceCount: Record<string, number> // label → donation count
 }
 
 // Same local-day idiom Collections.tsx's shortTime() and CollectionForm's
@@ -54,15 +60,40 @@ export function totalsOf(rows: Countable[]): Totals {
   return { totalPaise, count }
 }
 
-// One day's take: total, count, split by payment mode and by collector.
+// One day's take: total, count, split by payment mode, source and collector.
 export function summarizeDay(rows: DayRow[], day: Date): DaySummary {
-  const s: DaySummary = { totalPaise: 0, count: 0, byMode: { cash: 0, upi: 0, bank: 0 }, byVolunteer: {} }
+  const s: DaySummary = {
+    totalPaise: 0,
+    count: 0,
+    byMode: { cash: 0, upi: 0, bank: 0 },
+    byVolunteer: {},
+    bySource: {},
+    bySourceCount: {},
+  }
   for (const r of rows) {
     if (r.voided || !isOnLocalDay(r.created_at, day)) continue
     s.totalPaise += r.amount_paise
     s.count += 1
     s.byMode[r.mode] = (s.byMode[r.mode] ?? 0) + r.amount_paise
     s.byVolunteer[r.collected_by] = (s.byVolunteer[r.collected_by] ?? 0) + r.amount_paise
+    const source = sourceLabel(r.category)
+    s.bySource[source] = (s.bySource[source] ?? 0) + r.amount_paise
+    s.bySourceCount[source] = (s.bySourceCount[source] ?? 0) + 1
   }
   return s
+}
+
+// Which local days actually have money on them — the dots on the day tiles and
+// on the picker's calendar grid. Keys are formatLocalDay strings, so a lookup is
+// exact and needs no re-parsing. Voided rows never light a day: the dot claims
+// "there is a collection here", and a voided row is not one.
+export function daysWithCollections(rows: DayRow[]): Set<string> {
+  const days = new Set<string>()
+  for (const r of rows) {
+    if (r.voided) continue
+    const d = new Date(r.created_at)
+    if (Number.isNaN(d.getTime())) continue
+    days.add(formatLocalDay(d))
+  }
+  return days
 }

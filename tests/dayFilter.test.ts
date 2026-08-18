@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { isOnLocalDay, parseLocalDay, formatLocalDay, summarizeDay, totalsOf } from '../src/lib/dayFilter'
+import {
+  isOnLocalDay,
+  parseLocalDay,
+  formatLocalDay,
+  summarizeDay,
+  totalsOf,
+  daysWithCollections,
+} from '../src/lib/dayFilter'
 
 // vite.config.ts pins TZ=Asia/Kolkata for the whole unit suite, so the IST
 // boundary cases below are deterministic on any machine — that pin is what
@@ -11,6 +18,7 @@ const row = (over: Partial<Parameters<typeof summarizeDay>[0][number]> = {}) => 
   created_at: '2026-08-16T04:30:00Z', // 10:00 IST, Aug 16
   mode: 'cash',
   collected_by: 'v-1',
+  category: 'society',
   ...over,
 })
 
@@ -75,6 +83,8 @@ describe('summarizeDay', () => {
       count: 0,
       byMode: { cash: 0, upi: 0, bank: 0 },
       byVolunteer: {},
+      bySource: {},
+      bySourceCount: {},
     })
     // Rows exist, but none on this day.
     expect(summarizeDay([row({ created_at: '2026-08-14T04:30:00Z' })], aug16).count).toBe(0)
@@ -131,5 +141,70 @@ describe('totalsOf', () => {
 
   it('is zero for no rows', () => {
     expect(totalsOf([])).toEqual({ totalPaise: 0, count: 0 })
+  })
+})
+
+// ── Plan 2026-08-18: per-source split + the calendar dots ──────────────────
+describe('summarizeDay bySource', () => {
+  const aug16 = new Date(2026, 7, 16)
+
+  it('buckets by source LABEL, folding a legacy slug into its proper name', () => {
+    const s = summarizeDay(
+      [
+        row({ category: 'society', amount_paise: 10000 }),
+        row({ category: 'Society', amount_paise: 5000 }),
+        row({ category: 'Galli', amount_paise: 2500 }),
+      ],
+      aug16,
+    )
+    // 'society' and 'Society' are the same source seen from either side of the
+    // custom-sources migration — two rows in the list would read as two sources.
+    expect(s.bySource).toEqual({ Society: 15000, Galli: 2500 })
+    expect(s.bySourceCount).toEqual({ Society: 2, Galli: 1 })
+  })
+
+  it('leaves out voided rows and other days', () => {
+    const s = summarizeDay(
+      [
+        row({ category: 'Shop', amount_paise: 10000, voided: true }),
+        row({ category: 'Shop', amount_paise: 7000, created_at: '2026-08-17T04:30:00Z' }),
+        row({ category: 'Shop', amount_paise: 300 }),
+      ],
+      aug16,
+    )
+    expect(s.bySource).toEqual({ Shop: 300 })
+    expect(s.bySourceCount).toEqual({ Shop: 1 })
+  })
+
+  it('is empty for a day with nothing on it', () => {
+    expect(summarizeDay([], aug16).bySource).toEqual({})
+  })
+})
+
+describe('daysWithCollections', () => {
+  it('keys days in the LOCAL zone, not the UTC date', () => {
+    // 18:35Z on Aug 15 is 00:05 IST on Aug 16 — the substring(0,10) trap again.
+    expect([...daysWithCollections([row({ created_at: '2026-08-15T18:35:00Z' })])]).toEqual(['2026-08-16'])
+  })
+
+  it('collapses several donations on one day into one key', () => {
+    const days = daysWithCollections([
+      row({ created_at: '2026-08-16T04:30:00Z' }),
+      row({ created_at: '2026-08-16T09:00:00Z' }),
+      row({ created_at: '2026-08-17T04:30:00Z' }),
+    ])
+    expect([...days].sort()).toEqual(['2026-08-16', '2026-08-17'])
+  })
+
+  it('does not light a day whose only donations were voided', () => {
+    expect(daysWithCollections([row({ voided: true })]).size).toBe(0)
+  })
+
+  it('ignores an unparseable timestamp instead of adding an Invalid Date key', () => {
+    expect(daysWithCollections([row({ created_at: 'not-a-date' })]).size).toBe(0)
+  })
+
+  it('is empty for no rows', () => {
+    expect(daysWithCollections([]).size).toBe(0)
   })
 })
