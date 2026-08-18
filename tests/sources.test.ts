@@ -32,6 +32,15 @@ describe('sourceLabel', () => {
     expect(sourceLabel('whatever-a-future-client-sent')).toBe('whatever-a-future-client-sent')
   })
 
+  // The column is NOT NULL, so a real row always has one — but this value comes
+  // straight off the network, and one absent field used to take the whole
+  // Collections tab down with a `.trim()` of undefined.
+  it('returns an empty label for anything that is not a string, instead of throwing', () => {
+    expect(sourceLabel(undefined as unknown as string)).toBe('')
+    expect(sourceLabel(null as unknown as string)).toBe('')
+    expect(sourceLabel(7 as unknown as string)).toBe('')
+  })
+
   it('agrees with the exported legacy map', () => {
     for (const [slug, label] of Object.entries(LEGACY_SOURCE_LABELS)) {
       expect(sourceLabel(slug)).toBe(label)
@@ -161,6 +170,10 @@ describe('sourceFilterOptions', () => {
   it('returns nothing when there is nothing to offer', () => {
     expect(sourceFilterOptions([], [])).toEqual([])
   })
+
+  it('skips a row whose category is missing rather than throwing', () => {
+    expect(sourceFilterOptions(['Society'], [undefined as unknown as string, 'Shop'])).toEqual(['Society', 'Shop'])
+  })
 })
 
 describe('matchesSource', () => {
@@ -182,5 +195,11 @@ describe('matchesSource', () => {
   it('is case-insensitive, so a re-cased rename never orphans past rows', () => {
     expect(matchesSource('Society', 'society')).toBe(true)
     expect(matchesSource('SPONSOR', 'sponsor')).toBe(true)
+  })
+
+  it('never matches a missing category against a real option', () => {
+    expect(matchesSource(undefined as unknown as string, 'Society')).toBe(false)
+    // ...but "all" still means all, including a row we cannot label.
+    expect(matchesSource(undefined as unknown as string, 'all')).toBe(true)
   })
 })

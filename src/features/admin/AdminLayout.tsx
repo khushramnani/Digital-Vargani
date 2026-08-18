@@ -72,22 +72,23 @@ export function AdminLayout() {
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-stone-50/93 backdrop-blur-[10px]">
         <div className="mx-auto max-w-lg">
           <div className="flex items-end justify-between gap-2.5 px-4 pt-1.5">
-            <Link to="/admin" className="flex min-w-0 items-center gap-2.5">
+            {/* The lockup links home; the screen title is a sibling <h1> rather
+                than living inside that link, so every console screen has a real
+                heading a screen reader can jump to. */}
+            <Link to="/admin" aria-label={strings.landing.productName} className="flex-none">
               <span
                 aria-hidden="true"
-                className="font-mark flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[11px] bg-linear-[150deg,var(--color-amber-500),var(--color-orange-600)] text-lg text-amber-950 shadow-[0_5px_12px_-6px_rgba(234,88,12,.6)]"
+                className="font-mark flex h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-linear-[150deg,var(--color-amber-500),var(--color-orange-600)] text-lg text-amber-950 shadow-[0_5px_12px_-6px_rgba(234,88,12,.6)]"
               >
                 {a.logoMark}
               </span>
-              <span className="min-w-0">
-                <span className="block text-[9.5px] font-bold tracking-[0.15em] text-stone-400 uppercase">
-                  {a.consoleEyebrow}
-                </span>
-                <span className="font-display block text-xl leading-tight font-extrabold tracking-[-0.02em]">
-                  {TITLES[active.to] ?? a.titles.overview}
-                </span>
-              </span>
             </Link>
+            <div className="min-w-0 flex-1">
+              <p className="text-[9.5px] font-bold tracking-[0.15em] text-stone-400 uppercase">{a.consoleEyebrow}</p>
+              <h1 className="font-display truncate text-xl leading-tight font-extrabold tracking-[-0.02em]">
+                {TITLES[active.to] ?? a.titles.overview}
+              </h1>
+            </div>
             <button
               type="button"
               onClick={() => setMenuOpen(true)}

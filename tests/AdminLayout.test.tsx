@@ -77,11 +77,11 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('link', { name: 'Cash in hand' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('titles the screen after the active section', () => {
+  it('titles the screen after the active section, as a real heading', () => {
     renderAt('/admin')
-    expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument()
     renderAt('/admin/collections')
-    expect(screen.getByText('Collections')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Collections', level: 1 })).toBeInTheDocument()
   })
 
   it('puts the sections the tab row cannot hold, and sign out, behind Menu', () => {

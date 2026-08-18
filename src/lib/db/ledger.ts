@@ -20,9 +20,9 @@ export const LEDGER_PAGE = 1000
 // booksBalanceCheck report a discrepancy that only exists because rows were
 // dropped in transit. The redesign puts those figures in the largest type on the
 // Overview hero, so the cap had to go. Same paging shape as getDonationsLite:
-// stable order with an id tiebreak so a row appended mid-fetch lands after the
-// cursor, the exact count from each page, and an empty-page stop so rows purged
-// mid-fetch can't make it spin.
+// stable order by id so a row appended mid-fetch lands after the cursor rather
+// than shifting rows across page boundaries, the exact count from each page, and
+// an empty-page stop so rows purged mid-fetch can't make it spin.
 async function fetchAllRows<T>(table: 'donations' | 'expenses' | 'handovers', columns: string): Promise<T[]> {
   const rows: T[] = []
   for (;;) {
@@ -34,6 +34,9 @@ async function fetchAllRows<T>(table: 'donations' | 'expenses' | 'handovers', co
     if (error) throw error
     const page = (data ?? []) as T[]
     rows.push(...page)
+    // Stop on the exact count when one arrived, and on an empty page otherwise.
+    // NOT on a short page: if the project's Max rows is set below LEDGER_PAGE,
+    // every page is short and stopping there would silently drop the rest.
     if (page.length === 0 || (count !== null && rows.length >= count)) return rows
   }
 }

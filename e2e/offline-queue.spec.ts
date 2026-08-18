@@ -70,23 +70,19 @@ test('offline: a submitted donation lands in the local queue, shows "Waiting for
   // genuinely disconnected network, not a stubbed response.
   await context.setOffline(true)
 
-  await page.getByLabel('Donor Name').fill('Offline Donor')
+  await page.getByLabel('Donor name').fill('Offline Donor')
   await page.getByLabel('Phone').fill('9876543210')
-  await page.getByLabel('Amount (₹)').fill('250')
+  await page.getByLabel('Amount').fill('250')
   await page.getByRole('button', { name: 'Cash' }).click()
-  await page.getByRole('button', { name: 'Record Donation' }).click()
+  await page.getByRole('button', { name: 'Record donation' }).click()
 
   // Saved-offline confirmation, not an error — no receipt number, since
   // there's no public_token until the row actually syncs.
   await expect(page.getByText("Saved — will send once you're back online.")).toBeVisible()
-  await expect(page.getByText(/Receipt #/)).toHaveCount(0)
+  await expect(page.getByText(/receipt #/i)).toHaveCount(0)
 
-  // That confirmation arrives in a modal <dialog>, which covers the
-  // volunteer tab bar underneath — this spec predates it and was clicking
-  // straight through into an intercepted element. Dismiss it the way a
-  // volunteer does before navigating on.
-  await page.getByRole('button', { name: 'Close' }).click()
-
+  // The confirmation is a full screen rather than a modal over the tab bar
+  // (redesign 2026-08-18), so nothing intercepts the navigation below.
   await page.getByRole('link', { name: 'Pending sends' }).click()
   await expect(page.getByText('Offline Donor')).toBeVisible()
   await expect(page.getByText('Waiting for signal')).toBeVisible()

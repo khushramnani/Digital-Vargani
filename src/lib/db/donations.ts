@@ -168,7 +168,9 @@ export async function getDonationsLite(): Promise<DonationLite[]> {
     const page = data ?? []
     rows.push(...page)
     // A missing count (no Content-Range reached the client) must not end the
-    // loop early — fall through to the empty-page stop instead.
+    // loop early — fall through to the empty-page stop instead. And NOT a
+    // short-page stop: if the project's Max rows is set below LITE_PAGE, every
+    // page is short and stopping there would silently drop the rest.
     if (page.length === 0 || (count !== null && rows.length >= count)) return rows
   }
 }

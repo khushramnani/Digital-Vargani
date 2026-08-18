@@ -31,7 +31,15 @@ export const LEGACY_SOURCE_LABELS: Readonly<Record<string, string>> = {
 
 // What a donation row's source chip reads. `d.srcName ?? SRC_LABEL[d.src]` from
 // the design, collapsed to one column: a legacy slug maps, a name passes through.
+//
+// This is the trust boundary for whatever actually arrives in `category`. The
+// column is NOT NULL so a real row always has one, but every caller here feeds a
+// value straight off the network into string work, and one absent field used to
+// take the whole Collections tab down with it. Anything that isn't a string
+// becomes '' — which sourceFilterOptions then skips and matchesSource can never
+// match, so an unusable value is invisible rather than fatal.
 export function sourceLabel(value: string): string {
+  if (typeof value !== 'string') return ''
   return LEGACY_SOURCE_LABELS[value] ?? value
 }
 
