@@ -943,6 +943,8 @@ export const strings = {
     homeLink: 'Digital Vargani',
     // ── 2026-08-18 redesign ───────────────────────────────────────────────
     previewEyebrow: 'Preview',
+    ofEveryHundred: 'Of every ₹100',
+    isSpent: 'is spent',
     notPublishedTitle: 'Not published yet',
     notPublishedBody: 'Only signed-in members of this mandal can open the link.',
     publishedTitle: 'Live for anyone with the link',

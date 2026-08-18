@@ -48,6 +48,12 @@ export function TransparencyReport({
 }) {
   const segments = toSegments(categories)
   const inHandPaise = totals.totalCollectedPaise - totals.totalExpensesPaise
+  // Whole rupees out of every hundred collected. Zero when nothing has come in
+  // yet, rather than NaN.
+  const spentPerHundred =
+    totals.totalCollectedPaise > 0
+      ? Math.round((totals.totalExpensesPaise / totals.totalCollectedPaise) * 100)
+      : 0
   const familyLine =
     totals.donorCount === 1
       ? `${t.familyPrefix}${totals.donorCount}${t.familySuffix}`
@@ -56,15 +62,20 @@ export function TransparencyReport({
   return (
     <div className="overflow-hidden rounded-3xl border border-amber-200/70 bg-[#f7f0e1] shadow-xl shadow-amber-900/5">
       <div className="flex flex-col gap-8 px-5 py-8 sm:px-8 sm:py-10">
-        {/* Header — mantra + identity */}
+        {/* Header — mantra + identity. The redesign sets the mandal's name in
+            Marcellus (the wordmark face) and separates it from the eyebrow with
+            a drawn rule, so the top of the page reads as a masthead. */}
         <header className="text-center">
           <p className="text-sm tracking-[0.25em] text-amber-700">॥ श्री गणेशाय नमः ॥</p>
           {mandalName && (
-            <h2 className="font-serif mt-2.5 text-3xl leading-tight font-semibold text-stone-800 sm:text-4xl">
-              {mandalName}
-            </h2>
+            <h2 className="font-mark mt-2.5 text-3xl leading-tight text-stone-800 sm:text-4xl">{mandalName}</h2>
           )}
-          <p className="mt-2 text-[11px] font-semibold tracking-[0.22em] text-stone-400 uppercase">
+          <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-2.5">
+            <span className="h-px w-9 bg-amber-300/70" />
+            <span className="text-[7px] text-amber-500">◆</span>
+            <span className="h-px w-9 bg-amber-300/70" />
+          </div>
+          <p className="mt-2.5 text-[11px] font-semibold tracking-[0.22em] text-stone-400 uppercase">
             {t.reportEyebrow}
           </p>
         </header>
@@ -87,7 +98,22 @@ export function TransparencyReport({
             <p className="text-center text-stone-400">{t.noExpenses}</p>
           ) : (
             <>
-              <FundDonut segments={segments} />
+              {/* "Of every ₹100, ₹68 is spent" — the one figure a reader takes
+                  away from a fund report, in the middle of the ring. */}
+              <FundDonut
+                segments={segments}
+                center={
+                  <>
+                    <span className="text-[8.5px] font-semibold tracking-[0.14em] text-stone-400 uppercase">
+                      {t.ofEveryHundred}
+                    </span>
+                    <span className="font-serif mt-0.5 text-xl font-semibold text-stone-800">
+                      ₹{spentPerHundred}
+                    </span>
+                    <span className="text-[9.5px] text-stone-400">{t.isSpent}</span>
+                  </>
+                }
+              />
               {/* Spent vs. still-in-hand — both derive from data already on
                   screen; the honest close to a fund report. */}
               <div className="mt-8 grid grid-cols-2 gap-3">
