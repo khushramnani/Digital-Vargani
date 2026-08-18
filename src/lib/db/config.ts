@@ -29,6 +29,32 @@ export async function getExpenseCategories(): Promise<string[]> {
   return data ?? []
 }
 
+// Plan 2026-08-18 §1: the mandal's donation-source list, read through the
+// get_donation_sources() RPC for the same reason getExpenseCategories() exists
+// — mandals' select policy is admin-only, and the collect form needs this list
+// on a volunteer's phone.
+export async function getDonationSources(): Promise<string[]> {
+  const { data, error } = await supabase.rpc('get_donation_sources')
+  if (error) throw error
+  return data ?? []
+}
+
+// The volunteer's ONLY write path into the source list (decided open question 1:
+// volunteers add, admins rename and remove). The RPC re-validates the name,
+// re-checks the six-slot cap and the case-insensitive duplicate rule under a row
+// lock, so two volunteers adding at once can't both slip past — lib/sources.ts's
+// copies of those rules are for immediate feedback, not enforcement. Returns the
+// new list so the caller doesn't need a second round trip.
+//
+// Rename/remove deliberately do NOT get an RPC: they go through
+// updateMandal({ donation_sources }) and the existing admin-only
+// mandals_admin_update policy, which is what keeps them admin-only.
+export async function addDonationSource(name: string): Promise<string[]> {
+  const { data, error } = await supabase.rpc('add_donation_source', { p_name: name })
+  if (error) throw error
+  return data ?? []
+}
+
 // mandals is admin-only at the RLS level, so a volunteer session reads this
 // one column through the RPC instead — same pattern as getExpenseCategories.
 // Never throws: the picker's preset is a convenience, and failing it would

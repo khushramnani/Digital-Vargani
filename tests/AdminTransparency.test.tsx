@@ -44,6 +44,7 @@ const config: Tables<'mandals'> = {
   upi_vpa: null,
   upi_qr_url: null,
   receipt_prefix: 'VM',
+  donation_sources: ['Society', 'Shop', 'Other'],
   expense_categories: ['Mandap'],
   bank_opening_paise: 0,
   transparency_published: false,

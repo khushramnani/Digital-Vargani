@@ -351,10 +351,13 @@ function Features() {
                 NEW
               </span>
             )}
+            {/* Part 4 of the 2026-08-18 plan: no emoji, no icon font. The
+                design labels a thing with an uppercase text chip, so the tinted
+                tile becomes a tinted chip carrying the feature's own name. */}
             <div
-              className={`mb-4 flex h-12.5 w-12.5 items-center justify-center rounded-2xl text-2xl ${FEATURE_ICON_STYLE[i % FEATURE_ICON_STYLE.length]}`}
+              className={`mb-4 inline-flex items-center rounded-full px-3 py-1.5 text-[10px] font-extrabold tracking-[0.14em] text-stone-700 uppercase ${FEATURE_ICON_STYLE[i % FEATURE_ICON_STYLE.length]}`}
             >
-              {f.icon}
+              {f.tag}
             </div>
             <div className="font-display mb-2 text-lg font-bold tracking-tight">{f.title}</div>
             <div className="text-[15px] leading-relaxed text-stone-500">{f.desc}</div>

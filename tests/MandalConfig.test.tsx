@@ -45,6 +45,7 @@ const existingConfig: Tables<'mandals'> = {
   upi_vpa: 'mandal@upi',
   upi_qr_url: null,
   receipt_prefix: 'VM',
+  donation_sources: ['Society', 'Shop', 'Other'],
   expense_categories: ['Mandap', 'Prasad'],
   bank_opening_paise: 500000, // ₹5000
   transparency_published: false,
