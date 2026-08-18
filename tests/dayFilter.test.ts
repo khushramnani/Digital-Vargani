@@ -6,6 +6,7 @@ import {
   summarizeDay,
   totalsOf,
   daysWithCollections,
+  matchesWhen,
 } from '../src/lib/dayFilter'
 
 // vite.config.ts pins TZ=Asia/Kolkata for the whole unit suite, so the IST
@@ -206,5 +207,63 @@ describe('daysWithCollections', () => {
 
   it('is empty for no rows', () => {
     expect(daysWithCollections([]).size).toBe(0)
+  })
+})
+
+describe('matchesWhen', () => {
+  // A fixed "now" so every window below is a fact rather than a property of the
+  // day the suite happens to run. Local noon, Wed 12 Aug 2026.
+  const now = new Date(2026, 7, 12, 12, 0)
+  const localNoon = (y: number, m: number, d: number) => new Date(y, m, d, 12, 0).toISOString()
+
+  it('passes everything for "all"', () => {
+    expect(matchesWhen(localNoon(2020, 0, 1), 'all', '', now)).toBe(true)
+    expect(matchesWhen('not-a-date', 'all', '', now)).toBe(true)
+  })
+
+  it('narrows "today" to the local day, not the UTC date', () => {
+    expect(matchesWhen(localNoon(2026, 7, 12), 'today', '', now)).toBe(true)
+    expect(matchesWhen(localNoon(2026, 7, 11), 'today', '', now)).toBe(false)
+    // 18:35Z on 11 Aug is 00:05 IST on 12 Aug — still today.
+    expect(matchesWhen('2026-08-11T18:35:00Z', 'today', '', now)).toBe(true)
+  })
+
+  it('makes "week" the last seven days including today', () => {
+    expect(matchesWhen(localNoon(2026, 7, 12), 'week', '', now)).toBe(true)
+    expect(matchesWhen(localNoon(2026, 7, 6), 'week', '', now)).toBe(true) // six days back
+    expect(matchesWhen(localNoon(2026, 7, 5), 'week', '', now)).toBe(false) // seven, out
+  })
+
+  it('includes a donation from earlier on the seventh day back, since the window starts at local midnight', () => {
+    expect(matchesWhen(new Date(2026, 7, 6, 0, 1).toISOString(), 'week', '', now)).toBe(true)
+  })
+
+  it('makes "month" the current calendar month, not a rolling 30 days', () => {
+    expect(matchesWhen(localNoon(2026, 7, 1), 'month', '', now)).toBe(true)
+    expect(matchesWhen(localNoon(2026, 7, 31), 'month', '', now)).toBe(true)
+    expect(matchesWhen(localNoon(2026, 6, 31), 'month', '', now)).toBe(false)
+    // Same month number, different year.
+    expect(matchesWhen(localNoon(2025, 7, 12), 'month', '', now)).toBe(false)
+  })
+
+  it('narrows "date" to the picked local day', () => {
+    expect(matchesWhen(localNoon(2026, 7, 9), 'date', '2026-08-09', now)).toBe(true)
+    expect(matchesWhen(localNoon(2026, 7, 10), 'date', '2026-08-09', now)).toBe(false)
+  })
+
+  it('imposes no constraint while the picked date is empty or half-typed', () => {
+    expect(matchesWhen(localNoon(2020, 0, 1), 'date', '', now)).toBe(true)
+    expect(matchesWhen(localNoon(2020, 0, 1), 'date', '2026-0', now)).toBe(true)
+  })
+
+  it('excludes an unparseable timestamp from every bounded window', () => {
+    expect(matchesWhen('not-a-date', 'today', '', now)).toBe(false)
+    expect(matchesWhen('not-a-date', 'week', '', now)).toBe(false)
+    expect(matchesWhen('not-a-date', 'month', '', now)).toBe(false)
+    expect(matchesWhen('not-a-date', 'date', '2026-08-12', now)).toBe(false)
+  })
+
+  it('defaults "now" to the real clock', () => {
+    expect(matchesWhen(new Date().toISOString(), 'today', '')).toBe(true)
   })
 })

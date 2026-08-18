@@ -97,3 +97,27 @@ export function daysWithCollections(rows: DayRow[]): Set<string> {
   }
   return days
 }
+
+// The design's "When" filter, as one predicate so a list and its totals can
+// never disagree about which rows are in scope. Every comparison is made on
+// LOCAL day boundaries (see the file header) — 'today' at 00:05 IST must not
+// fall out because the stored timestamp says yesterday in UTC.
+export type WhenFilter = 'all' | 'today' | 'week' | 'month' | 'date'
+
+export function matchesWhen(iso: string, when: WhenFilter, pickedDay: string, now: Date = new Date()): boolean {
+  if (when === 'all') return true
+  if (when === 'today') return isOnLocalDay(iso, now)
+  if (when === 'date') {
+    const day = parseLocalDay(pickedDay)
+    // A half-typed or cleared date imposes no constraint, the same way the old
+    // date input behaved — narrowing to nothing mid-edit reads as data loss.
+    return day === null ? true : isOnLocalDay(iso, day)
+  }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return false
+  if (when === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  // 'week' is the last seven days INCLUDING today, so six days back from local
+  // midnight — the same window the design's chip promises.
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
+  return d.getTime() >= from.getTime()
+}

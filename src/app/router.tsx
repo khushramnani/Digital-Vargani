@@ -10,13 +10,12 @@ import { ManageMembersContent } from '../features/settings/members'
 import { MandalConfigContent } from '../features/settings/MandalConfig'
 import { CollectionForm } from '../features/collection/CollectionForm'
 import { PendingSend } from '../features/collection/PendingSend'
-import { CollectionsScreen, CollectionsContent } from '../features/collection/Collections'
+import { CollectionsScreen, CollectionsContent, DonorsContent } from '../features/collection/Collections'
 import { ReceiptPage } from '../features/receipt/ReceiptPage'
 import { ExpensesScreen, ExpensesContent } from '../features/expenses/ExpensesScreen'
 import { HandoverScreen, HandoverContent } from '../features/cashinhand/handover'
 import { CashInHandScreen, CashInHandContent } from '../features/cashinhand/CashInHand'
 import { MasterLedgerContent } from '../features/ledger/MasterLedger'
-import { DonorsContent } from '../features/donors/Donors'
 import { PublicTransparency } from '../features/transparency/PublicTransparency'
 import { AdminTransparencyContent } from '../features/transparency/AdminTransparency'
 
@@ -47,11 +46,11 @@ export function AppRoutes() {
       {/* Public, unauthenticated — community transparency report, no RequireRole guard. */}
       <Route path="/transparency/:slug" element={<PublicTransparency />} />
 
-      {/* The treasurer console: ONE persistent AdminLayout (dark rail on
-          desktop, sticky pill header + Collect FAB on mobile) with the section
-          pages swapped through its <Outlet/>. The role guard wraps the layout
-          once; every child route inherits it. This is the "make it one app"
-          fix — the console no longer lives on only the dashboard. */}
+      {/* The treasurer console: ONE persistent AdminLayout (sticky header, pill
+          tab row, Collect FAB) with the section pages swapped through its
+          <Outlet/>. The role guard wraps the layout once; every child route
+          inherits it. This is the "make it one app" fix — the console no longer
+          lives on only the dashboard. */}
       <Route
         element={
           <RequireRole role={['owner', 'admin']}>
@@ -61,6 +60,9 @@ export function AppRoutes() {
       >
         <Route path="/admin" element={<MasterLedgerContent />} />
         <Route path="/admin/collections" element={<CollectionsContent />} />
+        {/* The design merges donors into the Collections tab as a second view
+            of the same money; this URL survives so old links keep working and
+            lands straight on that view. */}
         <Route path="/admin/donors" element={<DonorsContent />} />
         <Route path="/admin/expenses" element={<ExpensesContent />} />
         <Route path="/admin/handovers" element={<HandoverContent />} />
@@ -73,7 +75,7 @@ export function AppRoutes() {
       {/* Role-neutral collection flow: both an admin and a volunteer collect
           money the same way, so the route encodes the task, not the role
           (audit 2026-07-18 #q2). Kept OUTSIDE the console — it has its own
-          AppShell + volunteer tab bar, so volunteers never see the admin rail.
+          AppShell + volunteer tab bar, so volunteers never see the console.
           /volunteer/* below stay as redirects for old links (invite emails,
           bookmarks). */}
       <Route
