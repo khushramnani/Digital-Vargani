@@ -119,10 +119,13 @@ describe('PendingSend', () => {
     await waitFor(() => expect(getPendingSendDonations).toHaveBeenCalledWith('volunteer-1'))
   })
 
-  it('renders each pending row with donor name and formatted amount', async () => {
+  it('renders each pending row with donor name, amount and the number it will go to', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
-    expect(screen.getByText('₹501.00')).toBeInTheDocument()
+    // The redesign splits every figure into bold rupees + a dimmed paise tail
+    // (components/console.tsx Money), so match the row rather than one text node.
+    expect(screen.getByText('Ramesh Kulkarni').closest('div')!.parentElement!).toHaveTextContent('₹501.00')
+    expect(screen.getByText(/9876543210/)).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no pending donations', async () => {
@@ -131,14 +134,16 @@ describe('PendingSend', () => {
     await waitFor(() => expect(screen.getByText('No pending receipts to send.')).toBeInTheDocument())
   })
 
-  it('hides the send buttons and shows the no-phone hint for a phoneless pending donation', async () => {
-    getPendingSendDonations.mockResolvedValue([{ ...pendingDonation, donor_phone: null }])
+  // Plan 2026-08-18 §2: a phone-less donation never reaches this tray at all —
+  // getPendingSendDonations excludes it (tests/donations.test.ts asserts the
+  // query shape), because it can never be sent and so would sit here forever as
+  // a chore nobody can finish. Every row the tray does receive is sendable.
+  it('offers both channels on every row it receives, since all of them have a number', async () => {
     renderPendingSend()
     await waitFor(() => expect(screen.getByText('Ramesh Kulkarni')).toBeInTheDocument())
 
-    expect(screen.queryByRole('button', { name: 'SMS' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'WhatsApp' })).not.toBeInTheDocument()
-    expect(screen.getByText('No phone number given — receipt cannot be sent.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'SMS' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'WhatsApp' })).toBeInTheDocument()
   })
 
   it('tapping SMS fires the same SMS link flow and marks the donation sent', async () => {
@@ -194,7 +199,7 @@ describe('PendingSend', () => {
     renderPendingSend()
 
     await waitFor(() => expect(screen.getByText('Queued Donor')).toBeInTheDocument())
-    expect(screen.getByText('₹200.00')).toBeInTheDocument()
+    expect(screen.getByText('Queued Donor').closest('div')!.parentElement!).toHaveTextContent('₹200.00')
     expect(screen.getByText('Waiting for signal')).toBeInTheDocument()
     // The server-fetched row still gets its send buttons — only the queued
     // (not-yet-synced) row has none, since it has no public_token yet.

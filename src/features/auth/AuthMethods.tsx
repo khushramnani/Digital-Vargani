@@ -106,7 +106,12 @@ export function AuthMethods({
   if (status === 'sent') {
     return (
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl">✉️</div>
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+          <span aria-hidden="true" className="relative block h-[17px] w-[24px] rounded-[3px] border-[1.6px] border-current">
+            <span className="absolute top-0 left-0 h-[1.6px] w-[15px] origin-top-left rotate-[35deg] bg-current" />
+            <span className="absolute top-0 right-0 h-[1.6px] w-[15px] origin-top-right -rotate-[35deg] bg-current" />
+          </span>
+        </div>
         <p className="text-[15px] leading-relaxed text-stone-600">
           {t.checkEmailSentTo} <span className="font-semibold text-stone-900">{email}</span>.
         </p>

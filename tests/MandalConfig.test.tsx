@@ -197,7 +197,7 @@ describe('MandalConfigContent — the Settings tab', () => {
 
     // F6: one extra receipt contact + hide the president's number.
     // v4 §3: the phone is entered via the PhoneInput national field (default
-    // 🇮🇳 +91) and stored as E.164.
+    // IN +91) and stored as E.164.
     openSection('Receipts')
     fireEvent.click(screen.getByRole('button', { name: /Add another contact/ }))
     fireEvent.change(screen.getByLabelText('Name 1'), { target: { value: 'Suresh Kulkarni' } })

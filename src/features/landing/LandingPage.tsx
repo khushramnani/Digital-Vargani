@@ -601,14 +601,14 @@ function Multilingual() {
             receiptNo="VYM-1042"
             donorName="Anjali Kulkarni"
             amountRupees={501}
-            thanks={`${receiptText.thanks} 🙏`}
+            thanks={receiptText.thanks}
           />
           <div className="mt-3.5 flex gap-2">
             <div className="flex h-11 flex-1 items-center justify-center rounded-xl bg-emerald-600 text-sm font-bold text-white">
               {t.multilingual.sendWhatsapp}
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-900 text-lg text-white">
-              ✉
+            <div className="flex h-11 items-center justify-center rounded-xl bg-stone-900 px-4 text-xs font-bold tracking-wide text-white uppercase">
+              {t.multilingual.sendSms}
             </div>
           </div>
         </div>

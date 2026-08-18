@@ -91,8 +91,8 @@ function DialogBody({
     >
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-start gap-3.5">
-          <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-xl text-red-600">
-            ⚠
+          <div className="font-display flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-xl font-bold text-red-600">
+            !
           </div>
           <div className="flex-1 pt-0.5">
             <h2 id={titleId} className="font-display text-lg font-bold tracking-tight text-stone-900">

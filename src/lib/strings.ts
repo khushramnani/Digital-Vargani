@@ -1230,6 +1230,7 @@ export const strings = {
       ],
       sendInLabel: 'Send receipt in',
       sendWhatsapp: 'Send on WhatsApp',
+      sendSms: 'SMS',
       langs: [
         { code: 'en', native: 'English', tag: 'Primary' },
         { code: 'gu', native: 'ગુજરાતી', tag: 'Gujarati' },
