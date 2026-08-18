@@ -113,8 +113,6 @@ export function MandalConfigContent() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null)
   const [upiQrUrl, setUpiQrUrl] = useState<string | null>(null)
-  const [categories, setCategories] = useState<string[]>([])
-  const [newCategory, setNewCategory] = useState('')
   // Kept as the raw rupees string the admin is typing, not paise — toPaise
   // only happens at submit, toRupees only at load.
   const [bankOpeningRupees, setBankOpeningRupees] = useState('0')
@@ -152,7 +150,6 @@ export function MandalConfigContent() {
       setLogoUrl(config.logo_url)
       setSignatureUrl(config.signature_url)
       setUpiQrUrl(config.upi_qr_url)
-      setCategories(config.expense_categories)
       setBankOpeningRupees(String(toRupees(config.bank_opening_paise)))
       setDefaultLang(toLang(config.default_lang))
     }
@@ -191,17 +188,6 @@ export function MandalConfigContent() {
     } finally {
       setUploading(null)
     }
-  }
-
-  function addCategory() {
-    const trimmed = newCategory.trim()
-    if (!trimmed || categories.includes(trimmed)) return
-    setCategories((current) => [...current, trimmed])
-    setNewCategory('')
-  }
-
-  function removeCategory(category: string) {
-    setCategories((current) => current.filter((c) => c !== category))
   }
 
   // F6: up to two extra receipt contacts besides the president.
@@ -270,7 +256,6 @@ export function MandalConfigContent() {
         logo_url: logoUrl,
         signature_url: signatureUrl,
         upi_qr_url: upiQrUrl,
-        expense_categories: categories,
         bank_opening_paise: toPaise(Number(bankOpeningRupees) || 0),
         default_lang: defaultLang,
       })
@@ -468,51 +453,10 @@ export function MandalConfigContent() {
             </div>
           </Section>
 
+          {/* Plan 2026-08-18 §3: expense categories moved to the Expenses tab,
+              where they are actually used. Two screens editing one array meant
+              whichever saved last won, silently. */}
           <Section title={t.sectionBooks}>
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-semibold text-stone-700">{t.categoriesLabel}</span>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <span
-                    key={category}
-                    className="flex items-center gap-1.5 rounded-full bg-stone-100 py-1 pr-2 pl-3 text-sm text-stone-700"
-                  >
-                    {category}
-                    <button
-                      type="button"
-                      onClick={() => removeCategory(category)}
-                      aria-label={`${t.removeCategory}: ${category}`}
-                      className="flex h-4 w-4 items-center justify-center rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-700"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addCategory()
-                    }
-                  }}
-                  placeholder={t.addCategoryPlaceholder}
-                  aria-label={t.addCategoryPlaceholder}
-                  className={`${inputCls} flex-1`}
-                />
-                <button
-                  type="button"
-                  onClick={addCategory}
-                  className="flex-none rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-                >
-                  {t.addCategory}
-                </button>
-              </div>
-            </div>
-
             <Field label={t.bankOpeningLabel} help={formatINR(toPaise(Number(bankOpeningRupees) || 0))}>
               <input
                 type="number"

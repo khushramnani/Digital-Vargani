@@ -320,10 +320,8 @@ export const strings = {
     upiVpaLabel: 'UPI VPA',
     upiVpaPlaceholder: 'mandal@upi',
     upiQrLabel: 'UPI QR code',
-    categoriesLabel: 'Expense categories',
-    addCategoryPlaceholder: 'Add a category',
-    addCategory: 'Add',
-    removeCategory: 'Remove category',
+    // Expense categories moved to the Expenses tab (plan 2026-08-18 §3); their
+    // copy lives in strings.expenses now.
     bankOpeningLabel: 'Bank opening balance (₹)',
     defaultLangLabel: 'Default receipt language',
     defaultLangHelp: 'Preselected when a volunteer sends a receipt. They can still change it per donation.',

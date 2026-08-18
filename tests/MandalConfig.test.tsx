@@ -72,8 +72,6 @@ describe('MandalConfigScreen', () => {
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
     expect(screen.getByLabelText('UPI VPA')).toHaveValue('mandal@upi')
     expect(screen.getByLabelText('Bank opening balance (₹)')).toHaveValue(5000)
-    expect(screen.getByText('Mandap')).toBeInTheDocument()
-    expect(screen.getByText('Prasad')).toBeInTheDocument()
     // formatINR display alongside the input, proving toRupees/formatINR are
     // both actually wired up (not reimplemented).
     expect(screen.getByText('₹5,000.00')).toBeInTheDocument()
@@ -94,7 +92,6 @@ describe('MandalConfigScreen', () => {
         bank_opening_paise: 500000,
         name: 'Vinayak Mitra Mandal',
         upi_vpa: 'mandal@upi',
-        expense_categories: ['Mandap', 'Prasad'],
       }),
     )
     await waitFor(() => expect(screen.getByText('Settings saved.')).toBeInTheDocument())
@@ -126,25 +123,21 @@ describe('MandalConfigScreen', () => {
     )
   })
 
-  it('adds and removes expense category tags', async () => {
+  // Plan 2026-08-18 §3: expense categories are edited on the Expenses tab now
+  // (tests/ExpensesScreen.test.tsx covers that). Two screens writing one array
+  // meant whichever saved last won, silently — so this screen must not carry a
+  // copy of the editor, and must not send the field at all.
+  it('no longer edits expense categories, and leaves the field untouched on save', async () => {
     render(<MemoryRouter><MandalConfigContent /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByLabelText('Mandal name')).toHaveValue('Vinayak Mitra Mandal'))
 
-    fireEvent.change(screen.getByLabelText('Add a category'), { target: { value: 'Sound' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-    expect(screen.getByText('Sound')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove category: Mandap' }))
+    expect(screen.queryByLabelText('Add a category')).not.toBeInTheDocument()
     expect(screen.queryByText('Mandap')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
-    await waitFor(() =>
-      expect(updateMandal).toHaveBeenCalledWith(
-        MANDAL_ID,
-        expect.objectContaining({ expense_categories: ['Prasad', 'Sound'] }),
-      ),
-    )
+    await waitFor(() => expect(updateMandal).toHaveBeenCalledTimes(1))
+    expect(updateMandal.mock.calls[0][1]).not.toHaveProperty('expense_categories')
   })
 
   it('saves city+state (typeahead), president name, visibility, contacts and hide flag', async () => {
