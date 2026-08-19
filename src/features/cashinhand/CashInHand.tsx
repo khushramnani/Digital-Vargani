@@ -184,7 +184,10 @@ export function CashInHandContent() {
   }
 
   const owing = rows.filter((r) => r.owed > 0)
-  const settled = rows.filter((r) => r.owed <= 0)
+  // Negative cash-in-hand means the mandal owes THEM — a real state (they paid
+  // for something out of their own pocket) and emphatically not "settled".
+  const outOfPocket = rows.filter((r) => r.owed < 0)
+  const settled = rows.filter((r) => r.owed === 0)
   const totalOwed = rows.reduce((sum, r) => sum + r.owed, 0)
   const totalCollected = rows.reduce((sum, r) => sum + r.collected, 0)
   const totalHanded = rows.reduce((sum, r) => sum + r.handed, 0)
@@ -305,7 +308,11 @@ export function CashInHandContent() {
             <div className="flex items-baseline justify-between gap-2.5">
               <h2 className={panelTitle}>{t.volunteersTitle}</h2>
               <span className="text-[11px] font-semibold text-stone-400">
-                {owing.length === 0 ? t.allSettledLabel : t.owingLabel(owing.length)}
+                {owing.length > 0
+                  ? t.owingLabel(owing.length)
+                  : outOfPocket.length > 0
+                    ? t.outOfPocket(outOfPocket.length)
+                    : t.allSettledLabel}
               </span>
             </div>
 
@@ -342,6 +349,30 @@ export function CashInHandContent() {
                     </button>
                   </div>
                 ))}
+
+                {outOfPocket.map((r) => (
+                  <div key={r.id} className="mt-3 flex items-center gap-[11px] border-t border-stone-100 pt-3">
+                    <LetterAvatar name={r.name} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold">{r.name}</p>
+                      <p className="text-[11.5px] font-medium tabular-nums text-stone-400">
+                        {t.collectedPrefix}
+                        {formatINR(r.collected)} · {t.handedPrefix}
+                        {formatINR(r.handed)}
+                      </p>
+                    </div>
+                    <div className="flex-none text-right">
+                      <Money paise={-r.owed} className="text-[14.5px] font-bold tabular-nums text-maroon" />
+                      <p className="text-[10px] font-bold tracking-[0.02em] text-maroon">{t.mandalOwesTag}</p>
+                    </div>
+                  </div>
+                ))}
+                {/* Said once for the group, not repeated per row. */}
+                {outOfPocket.length > 0 && (
+                  <p className="mt-2 text-[11px] leading-relaxed font-medium text-stone-400 text-pretty">
+                    {t.mandalOwesHint}
+                  </p>
+                )}
 
                 {settled.map((r) => (
                   <div key={r.id} className="mt-3 flex items-center gap-[11px] border-t border-stone-100 pt-3">

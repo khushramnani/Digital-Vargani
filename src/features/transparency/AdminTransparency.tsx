@@ -187,8 +187,14 @@ export function AdminTransparencyContent() {
 
       {loading ? (
         <p className="text-stone-400">{strings.auth.loading}</p>
+      ) : totals ? (
+        <TransparencyReport totals={totals} categories={categories} mandalName={mandal?.name} />
       ) : (
-        totals && <TransparencyReport totals={totals} categories={categories} mandalName={mandal?.name} />
+        // Better an explicit line than a "Preview" label over empty space: the
+        // aggregate RPC failing is not the same as a mandal with nothing in it.
+        <p className="rounded-[16px] border border-dashed border-stone-300 bg-white px-4 py-10 text-center text-sm text-stone-400">
+          {t.reportNotAvailable}
+        </p>
       )}
 
       <HowToSheet tab="report" open={howToOpen} onClose={() => setHowToOpen(false)} />

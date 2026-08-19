@@ -15,9 +15,8 @@
   --font-serif: 'Spectral', serif;
   --font-mark: 'Marcellus', serif;
 
-  /* The deep-ink phone frame and the dark hero cards. stone-900 (#1C1917) is
-     visibly warmer and lighter than the design's near-black. */
-  --color-ink: #100c08;
+  /* The dark hero cards. stone-900 (#1C1917) is visibly warmer and lighter than
+     the design's near-black. */
   --color-ink-hero-from: #22201d;
   --color-ink-hero-to: #12100e;
 
@@ -42,8 +41,20 @@
      behind body copy. */
   --color-danger-tint: #fef9f9;
 
-  /* Chart/category slots, rank-ordered. Shared by the expense donut, the source
-     bars and the transparency report so the three read as one system. */
+  /* Sheet backdrops and card reveals. Verbatim from the design's <helmet>.
+     (The sheet's own slide is a transform transition in components/Sheet.tsx —
+     it has to run on mount, which a CSS animation alone can't coordinate with
+     the unmount-on-close lifecycle.) */
+  --animate-dim-in: dimIn 0.2s ease;
+  --animate-fade-up: fadeUp 0.2s ease;
+}
+
+/* Chart/category slots, rank-ordered — see src/lib/chartColors.ts.
+   `static` because nothing in a class string references these: they are read from
+   JS and handed to inline conic-gradient/backgroundColor. Tailwind tree-shakes
+   @theme variables it cannot see used, which silently dropped slots 2–8 and made
+   the expense donut's gradient invalid — the ring disappeared with no error. */
+@theme static {
   --color-slot-1: #e2680f;
   --color-slot-2: #2f7d44;
   --color-slot-3: #dca02c;
@@ -53,22 +64,8 @@
   --color-slot-7: #c96b93;
   --color-slot-8: #8a6d3b;
   --color-slot-rest: #a8998a;
-  /* Bank vs cash in the expense hero split. */
+  /* Bank vs cash in the expense hero split — a fixed pair, not a ranked slot. */
   --color-slot-bank: #3b82a8;
-
-  /* Bottom sheets and card reveals. Verbatim from the design's <helmet>. */
-  --animate-sheet-up: sheetUp 0.3s cubic-bezier(0.22, 0.75, 0.2, 1);
-  --animate-dim-in: dimIn 0.2s ease;
-  --animate-fade-up: fadeUp 0.2s ease;
-}
-
-@keyframes sheetUp {
-  from {
-    transform: translateY(101%);
-  }
-  to {
-    transform: translateY(0);
-  }
 }
 
 @keyframes dimIn {

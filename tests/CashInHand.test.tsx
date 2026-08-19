@@ -191,6 +191,29 @@ describe('CashInHandContent — the Cash tab (admin)', () => {
     await waitFor(() => expect(screen.getByText(t.noHandovers)).toBeInTheDocument())
   })
 
+  // A volunteer whose cash-in-hand is NEGATIVE paid for something out of their
+  // own pocket — the mandal owes them. Filing that under "Settled" would say
+  // "nothing to do" about the one row where the treasurer owes money.
+  it('says the mandal owes a volunteer who is out of pocket, rather than calling them settled', async () => {
+    fetchLedgerRows.mockResolvedValue({
+      donations: [],
+      // v-3 spent ₹400 of their own cash on the mandal and collected nothing.
+      expenses: [{ amountPaise: 40000, paidFrom: 'cash' as const, paidBy: 'v-3', voided: false }],
+      handovers: [],
+    })
+    fetchActiveVolunteers.mockResolvedValue([{ id: 'v-3', name: 'Out Of Pocket' }])
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByText('Out Of Pocket')).toBeInTheDocument())
+    expect(screen.getByText(t.mandalOwesTag)).toBeInTheDocument()
+    expect(screen.queryByText(t.settledTag)).not.toBeInTheDocument()
+    // Shown as what the mandal owes, not as a negative balance.
+    expect(screen.getByText('Out Of Pocket').closest('div')!.parentElement!).toHaveTextContent('₹400.00')
+    expect(screen.getByText(t.outOfPocket(1))).toBeInTheDocument()
+    // And explained once for the group, not repeated on every row.
+    expect(screen.getAllByText(t.mandalOwesHint)).toHaveLength(1)
+  })
+
   it('reports everyone settled rather than a zero owing count', async () => {
     fetchLedgerRows.mockResolvedValue({
       donations: [{ amountPaise: 20000, mode: 'cash' as const, collectedBy: 'v-2', voided: false }],

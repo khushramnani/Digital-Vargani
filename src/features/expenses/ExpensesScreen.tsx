@@ -7,6 +7,8 @@ import { validateExpenseInput, type PaidFrom, type ExpenseValidationErrors } fro
 import { toPaise, formatINR, formatPct } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { isAdminRole } from '../../lib/roles'
+// The expense hero splits by where the money came OUT of, not by category.
+import { SLOT_BANK, SLOT_CASH, slotColor } from '../../lib/chartColors'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Sheet } from '../../components/Sheet'
 import { AppShell } from '../../components/AppShell'
@@ -37,10 +39,6 @@ const t = strings.expenses
 
 const PAID_FROM: PaidFrom[] = ['cash', 'bank']
 const PAID_FROM_LABEL: Record<PaidFrom, string> = { cash: t.paidFromCash, bank: t.paidFromBank }
-const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--color-slot-${n})`)
-// The expense hero splits by where the money came out of, not by category.
-const CASH_COLOR = 'var(--color-slot-1)'
-const BANK_COLOR = 'var(--color-slot-bank)'
 
 // The design shows four category bars and folds the rest into one line.
 const BARS = 4
@@ -248,16 +246,16 @@ export function ExpensesContent() {
         <p className="text-[11.5px] font-medium text-stone-400">{t.summaryLine(live.length, formatINR(average))}</p>
 
         <div aria-hidden="true" className="mt-3 mb-2 flex h-[5px] overflow-hidden rounded-full bg-white/12">
-          <span style={{ width: formatPct(cashPaise, totalPaise), backgroundColor: CASH_COLOR }} />
-          <span style={{ width: formatPct(totalPaise - cashPaise, totalPaise), backgroundColor: BANK_COLOR }} />
+          <span style={{ width: formatPct(cashPaise, totalPaise), backgroundColor: SLOT_CASH }} />
+          <span style={{ width: formatPct(totalPaise - cashPaise, totalPaise), backgroundColor: SLOT_BANK }} />
         </div>
         <div className="flex gap-3.5 text-[10.5px] font-semibold text-stone-400">
           <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: CASH_COLOR }} />
+            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: SLOT_CASH }} />
             {t.paidFromCash} {formatINR(cashPaise)}
           </span>
           <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: BANK_COLOR }} />
+            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: SLOT_BANK }} />
             {t.paidFromBank} {formatINR(totalPaise - cashPaise)}
           </span>
         </div>
@@ -284,7 +282,7 @@ export function ExpensesContent() {
                     className="min-w-[82px] flex-none text-right text-[13.5px] font-bold tabular-nums"
                   />
                 </div>
-                <Bar pct={formatPct(paise, totalPaise)} color={SLOTS[i % SLOTS.length]} height={5} className="mt-1.5" />
+                <Bar pct={formatPct(paise, totalPaise)} color={slotColor(i)} height={5} className="mt-1.5" />
               </div>
             ))}
             {restPaise > 0 && (

@@ -381,7 +381,7 @@ export function MandalConfigContent() {
               setAddress(e.target.value)
               touched()
             }}
-            className={`${consoleField} h-16 resize-none py-2.5`}
+            className={`${consoleField} h-[74px] resize-none py-2.5`}
           />
         </Field>
         {/* v4 §3: E.164 via PhoneInput (its own label + help below, so it's not

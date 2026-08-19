@@ -2,30 +2,21 @@ import type { TransparencyTotals, CategoryBreakdown } from '../../lib/db/transpa
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { FundDonut, type DonutSegment } from '../../components/FundDonut'
+import { SLOT_COLORS, SLOT_REST, slotColor } from '../../lib/chartColors'
 
 const t = strings.transparency
 
-// Warm festival palette for the "how funds were used" donut — reads on the
-// cream paper and stays distinguishable as an ordered set. Slots are assigned
-// by rank (largest category first), never cycled; a 9th+ category folds into
-// "Other" (muted warm gray) rather than growing the palette.
-// ponytail: no colourblind-validator run — the donut is decorative and every
-// slice is also a text+amount legend row (FundDonut), so colour is never the
-// only channel; ≤8 expense categories is the realistic ceiling for one mandal.
-const CATEGORY_COLORS = ['#e2680f', '#2f7d44', '#dca02c', '#c0442e', '#7c4a86', '#2f8a86', '#c96b93', '#8a6d3b']
-const OTHER_COLOR = '#a8998a'
-
 function toSegments(categories: CategoryBreakdown[]): DonutSegment[] {
   const sorted = [...categories].sort((a, b) => b.amountPaise - a.amountPaise)
-  const head = sorted.slice(0, CATEGORY_COLORS.length)
-  const rest = sorted.slice(CATEGORY_COLORS.length)
+  const head = sorted.slice(0, SLOT_COLORS.length)
+  const rest = sorted.slice(SLOT_COLORS.length)
   const segments: DonutSegment[] = head.map((c, i) => ({
     name: c.category,
     value: c.amountPaise,
-    color: CATEGORY_COLORS[i],
+    color: slotColor(i),
   }))
   const otherTotal = rest.reduce((sum, c) => sum + c.amountPaise, 0)
-  if (otherTotal > 0) segments.push({ name: t.otherCategory, value: otherTotal, color: OTHER_COLOR })
+  if (otherTotal > 0) segments.push({ name: t.otherCategory, value: otherTotal, color: SLOT_REST })
   return segments
 }
 

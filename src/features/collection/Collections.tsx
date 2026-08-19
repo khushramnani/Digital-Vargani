@@ -15,6 +15,7 @@ import {
   type WhenFilter,
 } from '../../lib/dayFilter'
 import { matchesSource, sourceFilterOptions, sourceLabel } from '../../lib/sources'
+import { slotColor } from '../../lib/chartColors'
 import { strings } from '../../lib/strings'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Sheet } from '../../components/Sheet'
@@ -47,7 +48,6 @@ const MODE_LABEL: Record<string, string> = {
   bank: strings.collection.modeBank,
 }
 const MODES = ['cash', 'upi', 'bank']
-const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--color-slot-${n})`)
 
 const WHENS: WhenFilter[] = ['all', 'today', 'week', 'month']
 const WHEN_LABEL: Record<WhenFilter, string> = {
@@ -655,7 +655,7 @@ function TotalHero({
         <>
           <div aria-hidden="true" className="mt-3 mb-2 flex h-[5px] overflow-hidden rounded-full bg-white/12">
             {split.map(([name, paise], i) => (
-              <span key={name} style={{ width: formatPct(paise, live), backgroundColor: SLOTS[i % SLOTS.length] }} />
+              <span key={name} style={{ width: formatPct(paise, live), backgroundColor: slotColor(i) }} />
             ))}
           </div>
           <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[10.5px] font-semibold text-stone-400">
@@ -664,7 +664,7 @@ function TotalHero({
                 <span
                   aria-hidden="true"
                   className="h-[7px] w-[7px] rounded-full"
-                  style={{ backgroundColor: SLOTS[i % SLOTS.length] }}
+                  style={{ backgroundColor: slotColor(i) }}
                 />
                 {name} {formatPct(paise, live)}
               </span>

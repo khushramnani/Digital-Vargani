@@ -7,6 +7,7 @@ import { fetchMandalUserNames } from '../../lib/db/users'
 import { daysWithCollections, formatLocalDay, parseLocalDay, summarizeDay, type DaySummary } from '../../lib/dayFilter'
 import { normalizeToE164 } from '../../lib/phone'
 import { sourceFilterOptions, sourceLabel } from '../../lib/sources'
+import { SLOT_COLORS, SLOT_REST, slotColor } from '../../lib/chartColors'
 import {
   totalCollected,
   totalExpenses,
@@ -28,15 +29,6 @@ import { eyebrow, eyebrowOnDark, hero, infoRoundOnDark, moneyHero, panel, panelT
 
 const t = strings.ledger
 
-// Same warm festival palette as the transparency donut so the two pies read as
-// one system. Slots assigned by rank (largest first), a 9th+ category folds
-// into "Other" rather than growing the palette.
-// ponytail: no colourblind-validator run — the donut is decorative and every
-// slice is also a text+amount legend row (FundDonut), so colour is never the
-// only channel; ≤8 expense categories is the realistic ceiling for one mandal.
-const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--color-slot-${n})`)
-const REST_COLOR = 'var(--color-slot-rest)'
-
 // The Ledger drops the expense category (reconcile.ts only needs amount/mode),
 // so the "where the money went" pie is built from the admin-scoped getExpenses
 // rows instead — same RLS scope as the ledger, just carrying the category.
@@ -49,11 +41,11 @@ function toExpenseSegments(expenses: Expense[]): DonutSegment[] {
   const sorted = [...byCategory.entries()]
     .map(([name, value]) => ({ name, value }))
     .sort((x, y) => y.value - x.value)
-  const head = sorted.slice(0, SLOTS.length)
-  const rest = sorted.slice(SLOTS.length)
-  const segments: DonutSegment[] = head.map((c, i) => ({ name: c.name, value: c.value, color: SLOTS[i] }))
+  const head = sorted.slice(0, SLOT_COLORS.length)
+  const rest = sorted.slice(SLOT_COLORS.length)
+  const segments: DonutSegment[] = head.map((c, i) => ({ name: c.name, value: c.value, color: slotColor(i) }))
   const otherTotal = rest.reduce((sum, c) => sum + c.value, 0)
-  if (otherTotal > 0) segments.push({ name: strings.transparency.otherCategory, value: otherTotal, color: REST_COLOR })
+  if (otherTotal > 0) segments.push({ name: strings.transparency.otherCategory, value: otherTotal, color: SLOT_REST })
   return segments
 }
 
@@ -478,7 +470,10 @@ function CashWithVolunteersCard({
   const inactiveRemainder = volunteersTotal - rows.reduce((sum, r) => sum + r.inHand, 0)
 
   const owing = rows.filter((r) => r.inHand > 0)
-  const settled = rows.filter((r) => r.inHand <= 0)
+  // Negative cash-in-hand means the mandal owes THEM (they paid for something
+  // out of pocket), which is not "settled" — it belongs with the open rows.
+  const outOfPocket = rows.filter((r) => r.inHand < 0)
+  const settled = rows.filter((r) => r.inHand === 0)
 
   return (
     <div className={panel}>
@@ -496,7 +491,7 @@ function CashWithVolunteersCard({
         />
       </div>
 
-      {owing.map((r) => (
+      {[...owing, ...outOfPocket].map((r) => (
         <div key={r.id} className="mt-3 flex items-center gap-[11px] border-t border-stone-100 pt-3">
           <LetterAvatar name={r.name} />
           <div className="min-w-0 flex-1">
@@ -508,9 +503,14 @@ function CashWithVolunteersCard({
             </p>
           </div>
           <div className="flex-none text-right">
-            <Money paise={r.inHand} className="text-[14.5px] font-bold tabular-nums" />
-            <p className="text-[10px] font-bold tracking-[0.02em] text-orange-600">
-              {strings.cashInHand.stillOwesTag}
+            <Money
+              paise={r.inHand < 0 ? -r.inHand : r.inHand}
+              className={`text-[14.5px] font-bold tabular-nums ${r.inHand < 0 ? 'text-maroon' : ''}`}
+            />
+            <p
+              className={`text-[10px] font-bold tracking-[0.02em] ${r.inHand < 0 ? 'text-maroon' : 'text-orange-600'}`}
+            >
+              {r.inHand < 0 ? strings.cashInHand.mandalOwesTag : strings.cashInHand.stillOwesTag}
             </p>
           </div>
         </div>
@@ -737,7 +737,7 @@ function DayBreakdown({ summary, names }: { summary: DaySummary; names: Record<s
             <span
               aria-hidden="true"
               className="h-2 w-2 flex-none rounded-full"
-              style={{ backgroundColor: SLOTS[i % SLOTS.length] }}
+              style={{ backgroundColor: slotColor(i) }}
             />
             <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-stone-700">{name}</span>
             <span className="flex-none text-[11px] font-semibold text-stone-400">
@@ -816,7 +816,7 @@ function SourceCard({ donations, sources }: { donations: DonationLite[]; sources
               </div>
               <Bar
                 pct={formatPct(bucket.paise, total)}
-                color={SLOTS[i % SLOTS.length]}
+                color={slotColor(i)}
                 height={5}
                 className="mt-1.5"
               />

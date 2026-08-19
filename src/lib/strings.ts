@@ -305,7 +305,7 @@ export const strings = {
     sectionBrandingHelp: 'Logo and signature stamped onto every receipt.',
     sectionPayments: 'Payments',
     sectionPaymentsHelp: 'How donors pay you online.',
-    sectionBooks: 'Books & receipts',
+    sectionBooks: 'Books',
     nameLabel: 'Mandal name',
     stateLabel: 'State',
     statePlaceholder: 'Select a state',
@@ -870,6 +870,9 @@ export const strings = {
     owingLabel: (n: number) => `${n} owing`,
     settledTag: 'Settled',
     stillOwesTag: 'STILL OWES',
+    mandalOwesTag: 'MANDAL OWES',
+    mandalOwesHint: 'They spent more of their own cash on the mandal than they collected.',
+    outOfPocket: (n: number) => (n === 1 ? '1 volunteer is out of pocket' : `${n} volunteers are out of pocket`),
     markSettled: 'Mark settled',
     settleSheetTitle: 'Mark settled',
     settleSheetHint: (name: string, amount: string) =>
