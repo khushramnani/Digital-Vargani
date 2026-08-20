@@ -11,7 +11,7 @@ const digitsOf = (s: string): string => (s ?? '').replace(/\D/g, '')
 export function toE164(dialCode: string, national: string): string {
   // Strip a national TRUNK prefix. UK, Italy, Russia — and plenty of Indians —
   // quote a mobile the way it's dialled domestically ("oh-seven-nine-one-one…"),
-  // so a volunteer types 07911123456 under 🇬🇧 +44. Concatenating that verbatim
+  // so a volunteer types 07911123456 under GB +44. Concatenating that verbatim
   // yields +4407911123456, which dials nowhere: the receipt silently goes to no
   // one while the donation is still marked sent. The trunk 0 is never part of
   // the international number.
@@ -67,7 +67,7 @@ export function parseE164(e164: string): { dialCode: string; national: string; i
   const national = digits.slice(dialCode.length)
   const sharing = COUNTRIES.filter((c) => c.dialCode === dialCode)
   // Many countries share a dial code (44 → GB/GG/IM/JE, 1 → 20+ NANP). Pick the
-  // one a user actually means first — otherwise alphabetical order puts 🇦🇸
+  // one a user actually means first — otherwise alphabetical order puts
   // American Samoa's flag on every US number — then fall back to whichever
   // known nationalLength fits, then the first listed.
   const preferred = PRIMARY_ISO[dialCode]

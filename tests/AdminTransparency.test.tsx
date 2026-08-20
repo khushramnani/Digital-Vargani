@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
+import { strings } from '../src/lib/strings'
 import { AdminTransparencyContent } from '../src/features/transparency/AdminTransparency'
 
 // The publish toggle now heads the content body (AdminLayout owns the console
@@ -44,6 +45,7 @@ const config: Tables<'mandals'> = {
   upi_vpa: null,
   upi_qr_url: null,
   receipt_prefix: 'VM',
+  donation_sources: ['Society', 'Shop', 'Other'],
   expense_categories: ['Mandap'],
   bank_opening_paise: 0,
   transparency_published: false,
@@ -70,9 +72,15 @@ describe('AdminTransparency', () => {
     renderScreen()
 
     await waitFor(() => expect(screen.getByText('₹1,000.00')).toBeInTheDocument())
-    expect(screen.getByText('Not visible to the public yet.')).toBeInTheDocument()
+    // The redesign states the consequence rather than the flag: until it is
+    // published, only signed-in members can open the link.
+    expect(screen.getByText(strings.transparency.notPublishedTitle)).toBeInTheDocument()
+    expect(screen.getByText(strings.transparency.notPublishedBody)).toBeInTheDocument()
+    // And the preview is labelled as one, so "exactly what they'll see" is true
+    // of what is on screen.
+    expect(screen.getByText(strings.transparency.previewEyebrow)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(screen.getByRole('button', { name: strings.transparency.publishCta }))
 
     await waitFor(() => expect(updateMandal).toHaveBeenCalledWith(MANDAL_ID, { transparency_published: true }))
   })
@@ -97,9 +105,25 @@ describe('AdminTransparency', () => {
 
   // F5: the current transparency_visibility is surfaced as a read-only badge
   // (the picker itself lives in Mandal Settings).
-  it('shows the current transparency visibility as a badge', async () => {
+  it('shows the current transparency visibility as a badge, and says where to change it', async () => {
     renderScreen()
 
-    await waitFor(() => expect(screen.getByText(/Visibility · Anyone with the link/)).toBeInTheDocument())
+    // WHO may open it is a Settings decision; WHETHER it is published is this
+    // tab's. Naming both keeps the two switches from reading as one.
+    await waitFor(() =>
+      expect(screen.getByText(strings.transparencyVisibility.public)).toBeInTheDocument(),
+    )
+    expect(screen.getByText(strings.transparency.changeInSettings)).toBeInTheDocument()
+  })
+
+  it('offers a share action and an unpublish once the report is live', async () => {
+    getMandal.mockResolvedValue({ ...config, transparency_published: true })
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByText(strings.transparency.publishedTitle)).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: strings.app.shareWhatsApp })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: strings.transparency.unpublishButton }))
+
+    await waitFor(() => expect(updateMandal).toHaveBeenCalledWith(MANDAL_ID, { transparency_published: false }))
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/useAuth'
 import {
   fetchMembers,
@@ -14,16 +14,38 @@ import {
   type PendingInvite,
 } from '../../lib/db/members'
 import { strings } from '../../lib/strings'
-import { card, field, label as labelCls, btnPrimary, btnGhost, errorText } from '../../components/ui'
 import { Sheet } from '../../components/Sheet'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PhoneInput } from '../../components/PhoneInput'
+import { LetterAvatar, SearchField, SheetHeader } from '../../components/console'
+import { HowToSheet } from '../admin/HowToSheet'
 import { isOwnerRole, isAdminRole } from '../../lib/roles'
 import { formatInviteCode } from '../../lib/inviteCode'
+import {
+  btnRow,
+  btnRowGreen,
+  choiceButton,
+  consoleField,
+  ctaDanger,
+  ctaInk,
+  ctaMuted,
+  ctaOrange,
+  ctaQuiet,
+  errorText,
+  eyebrow,
+  eyebrowOnDark,
+  hero,
+  infoRoundOnDark,
+  moneyHero,
+  panel,
+  panelTitle,
+  pill,
+} from '../../components/ui'
 
 const t = strings.members
 
 type Filter = 'all' | 'owner' | 'admins' | 'volunteers'
+const FILTERS: Filter[] = ['all', 'owner', 'admins', 'volunteers']
 
 function matchesFilter(role: string, filter: Filter): boolean {
   if (filter === 'all') return true
@@ -46,10 +68,17 @@ function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000)
 }
 
-// Replaces admins.tsx + volunteers.tsx: one list, one invite flow, per
-// v5's "one coherent system" — every action below is additionally gated
-// server-side by the RPC itself (create_invite/set_member_role/etc.), this
-// UI-level gating is only about not offering a button that would fail.
+const roleLabel = (role: string) => (role === 'owner' ? t.roleOwner : role === 'admin' ? t.roleAdmin : t.roleVolunteer)
+
+// Replaces admins.tsx + volunteers.tsx: one list, one invite flow, per v5's "one
+// coherent system" — every action below is additionally gated server-side by the
+// RPC itself (create_invite/set_member_role/etc.), this UI-level gating is only
+// about not offering a button that would fail.
+//
+// Redesign 2026-08-18: the design's Members tab — a team hero, role filter pills,
+// a search box, pending invites in their own warm card, and each member's actions
+// moved off the row and into a sheet, so a list of ten people is a list rather
+// than forty buttons.
 export function ManageMembersContent() {
   const { appUser } = useAuth()
   const myRole = appUser?.role ?? ''
@@ -60,15 +89,19 @@ export function ManageMembersContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
+  const [search, setSearch] = useState('')
 
-  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheet, setSheet] = useState<'invite' | 'howto' | null>(null)
   const [inviteRole, setInviteRole] = useState<'admin' | 'volunteer'>('volunteer')
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePhone, setInvitePhone] = useState('')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [inviteReady, setInviteReady] = useState<ReadyInvite | null>(null)
+  const [copied, setCopied] = useState(false)
 
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [selectedInviteId, setSelectedInviteId] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<PendingInvite | null>(null)
   const [deactivating, setDeactivating] = useState<Member | null>(null)
   const [transferring, setTransferring] = useState<Member | null>(null)
@@ -81,9 +114,8 @@ export function ManageMembersContent() {
   }
 
   useEffect(() => {
-    // RequireRole guarantees appUser is resolved before this screen ever
-    // mounts in production, but guard anyway: reload() now needs
-    // appUser.mandal_id, so wait for it rather than dereferencing null.
+    // RequireRole guarantees appUser is resolved before this screen ever mounts
+    // in production, but guard anyway: reload() needs appUser.mandal_id.
     if (!appUser) return
     let active = true
     reload()
@@ -104,8 +136,7 @@ export function ManageMembersContent() {
     setInviteReady(null)
   }
 
-  async function handleInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function handleInvite() {
     setInviteSubmitting(true)
     setError(null)
     try {
@@ -125,6 +156,7 @@ export function ManageMembersContent() {
     try {
       await revokeInvite(revoking.id)
       setRevoking(null)
+      setSelectedInviteId(null)
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -137,13 +169,14 @@ export function ManageMembersContent() {
     setRowBusy(invite.id)
     setError(null)
     try {
-      // resend_invite revokes the old link server-side and returns the new
-      // raw token exactly once (only its hash is ever stored) — route it
-      // into the same "link ready" sheet the invite-creation flow uses, or
-      // the admin has nothing to share and the old link is already dead.
+      // resend_invite revokes the old link server-side and returns the new raw
+      // token exactly once (only its hash is ever stored) — route it into the
+      // same "link ready" sheet the invite-creation flow uses, or the admin has
+      // nothing to share and the old link is already dead.
       const fresh = await resendInvite(invite.id)
       setInviteReady({ link: inviteLink(fresh.token), code: fresh.code })
-      setSheetOpen(true)
+      setSelectedInviteId(null)
+      setSheet('invite')
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -152,11 +185,11 @@ export function ManageMembersContent() {
     }
   }
 
-  async function handleRoleChange(member: Member, role: 'admin' | 'volunteer') {
-    setRowBusy(member.id)
+  async function withRow<T>(id: string, action: () => Promise<T>) {
+    setRowBusy(id)
     setError(null)
     try {
-      await setMemberRole(member.id, role)
+      await action()
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -165,236 +198,239 @@ export function ManageMembersContent() {
     }
   }
 
-  async function handleTransfer() {
-    if (!transferring) return
-    setRowBusy(transferring.id)
-    try {
-      await transferOwnership(transferring.id)
-      setTransferring(null)
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRowBusy(null)
-    }
+  const q = search.trim().toLowerCase()
+  const matchesSearch = (name: string, email: string | null, phone: string | null) => {
+    if (q === '') return true
+    const digits = q.replace(/\D/g, '')
+    return (
+      name.toLowerCase().includes(q) ||
+      (email ?? '').toLowerCase().includes(q) ||
+      (digits !== '' && (phone ?? '').replace(/\D/g, '').includes(digits))
+    )
   }
 
-  async function handleDeactivate() {
-    if (!deactivating) return
-    setRowBusy(deactivating.id)
-    try {
-      await deactivateMember(deactivating.id)
-      setDeactivating(null)
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRowBusy(null)
-    }
-  }
+  const visibleMembers = members.filter(
+    (m) => matchesFilter(m.role, filter) && matchesSearch(m.name, m.email, m.phone),
+  )
+  // Owner is a single person who is already a member, so the owner filter never
+  // has invites to show.
+  const visibleInvites =
+    filter === 'owner'
+      ? []
+      : invites.filter((i) => matchesFilter(i.role, filter) && matchesSearch(i.name, i.email, i.phone))
 
-  async function handleReactivate(member: Member) {
-    setRowBusy(member.id)
-    setError(null)
-    try {
-      await reactivateMember(member.id)
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRowBusy(null)
-    }
+  const counts = {
+    owner: members.filter((m) => m.role === 'owner').length,
+    admins: members.filter((m) => m.role === 'admin').length,
+    volunteers: members.filter((m) => m.role === 'volunteer').length,
+    off: members.filter((m) => !m.active).length,
   }
+  const teamBits = [
+    ...(counts.owner ? [t.teamBits.owner(counts.owner)] : []),
+    ...(counts.admins ? [t.teamBits.admins(counts.admins)] : []),
+    ...(counts.volunteers ? [t.teamBits.volunteers(counts.volunteers)] : []),
+    ...(counts.off ? [t.teamBits.deactivated(counts.off)] : []),
+  ]
 
-  const visibleMembers = members.filter((m) => matchesFilter(m.role, filter))
-  const visibleInvites = filter === 'all' || filter === 'admins' || filter === 'volunteers'
-    ? invites.filter((i) => filter === 'all' || matchesFilter(i.role, filter))
-    : []
+  const selectedMember = members.find((m) => m.id === selectedMemberId) ?? null
+  const selectedInvite = invites.find((i) => i.id === selectedInviteId) ?? null
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1.5">
-          {(['all', 'owner', 'admins', 'volunteers'] as Filter[]).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
-                filter === f ? 'bg-orange-600 text-white' : 'border border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
-              }`}
-            >
-              {f === 'all' ? t.filterAll : f === 'owner' ? t.filterOwner : f === 'admins' ? t.filterAdmins : t.filterVolunteers}
-            </button>
-          ))}
+      <div className={hero}>
+        <div className="flex items-center gap-2">
+          <span className={eyebrowOnDark}>{t.teamEyebrow}</span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setSheet('howto')}
+            aria-label={strings.admin.howToEyebrow}
+            className={`${infoRoundOnDark} -mt-0.5 h-[26px] w-[26px] text-xs`}
+          >
+            i
+          </button>
         </div>
-        <button type="button" onClick={() => setSheetOpen(true)} className={btnPrimary}>
-          {t.inviteButton}
-        </button>
+        <p className={`${moneyHero} mt-1 mb-0.5`}>
+          {members.length}
+          <span className="text-[17px] font-semibold text-stone-400">{t.inTheMandalSuffix}</span>
+        </p>
+        <p className="text-[11.5px] font-medium text-stone-400">{teamBits.join(' · ')}</p>
       </div>
 
+      <div className="-mx-4 flex gap-[7px] overflow-x-auto px-4 pt-px pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {FILTERS.map((f) => (
+          <button
+            key={f}
+            type="button"
+            aria-pressed={filter === f}
+            onClick={() => setFilter(f)}
+            className={pill(filter === f)}
+          >
+            {f === 'all'
+              ? `${t.filterAll} ${members.length}`
+              : f === 'owner'
+                ? t.filterOwner
+                : f === 'admins'
+                  ? `${t.filterAdmins} ${counts.admins}`
+                  : `${t.filterVolunteers} ${counts.volunteers}`}
+          </button>
+        ))}
+      </div>
+
+      <SearchField value={search} onChange={setSearch} placeholder={t.searchPlaceholder} />
+
+      <button type="button" onClick={() => setSheet('invite')} className={ctaInk}>
+        {t.inviteButton}
+      </button>
+
       {error && (
-        <p role="alert" className={`${errorText} mt-3`}>
+        <p role="alert" className={`rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 ${errorText}`}>
           {error}
         </p>
       )}
 
-      {loading ? (
-        <p className="mt-4 text-stone-400">{strings.auth.loading}</p>
-      ) : visibleMembers.length === 0 && visibleInvites.length === 0 ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
-          {t.empty}
-        </div>
-      ) : (
-        <ul className="mt-4 flex flex-col gap-2.5">
-          {visibleInvites.map((invite) => (
-            <li key={invite.id} className={`${card} p-4`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <span className="font-semibold text-stone-900">{invite.name}</span>
-                  <span className="ml-2 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-500">
-                    {invite.role === 'admin' ? t.roleAdmin : t.roleVolunteer}
+      {visibleInvites.length > 0 && (
+        <div className="rounded-[18px] border border-warm-border bg-warm p-[15px]">
+          <div className="flex items-baseline justify-between gap-2.5">
+            <h2 className={`${panelTitle} text-warm-ink`}>{t.pendingInvitesTitle}</h2>
+            <span className="text-[11px] font-semibold text-warm-muted">{t.waitingCount(visibleInvites.length)}</span>
+          </div>
+          <div className="flex flex-col">
+            {visibleInvites.map((invite) => (
+              <button
+                key={invite.id}
+                type="button"
+                onClick={() => setSelectedInviteId(invite.id)}
+                className="mt-0.5 flex items-center gap-[11px] border-t border-warm-line py-3 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-[7px]">
+                    <span className="text-[13.5px] font-bold text-stone-900">{invite.name}</span>
+                    <span className="rounded-full bg-warm-line px-[7px] py-0.5 text-[10px] font-semibold text-warm-ink">
+                      {roleLabel(invite.role)}
+                    </span>
                   </span>
-                </div>
-                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                  {t.statusInvited} · {t.expiresIn(daysUntil(invite.expiresAt))}
+                  <span className="mt-0.5 block text-[11.5px] font-medium text-warm-muted">
+                    {t.invitedMeta(roleLabel(invite.role), daysUntil(invite.expiresAt))}
+                  </span>
                 </span>
-              </div>
-              {(invite.email || invite.phone) && (
-                <p className="mt-0.5 text-sm text-stone-500">{[invite.email, invite.phone].filter(Boolean).join(' · ')}</p>
-              )}
-              {invite.code && (
-                <p className="mt-1 font-mono text-sm tracking-[0.14em] text-stone-700">{formatInviteCode(invite.code)}</p>
-              )}
-              <div className="mt-3 flex gap-2">
-                {(invite.role === 'volunteer' || iAmOwner) && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleResend(invite)}
-                      disabled={rowBusy === invite.id}
-                      className={`${btnGhost} px-3 py-1.5 text-xs`}
-                    >
-                      {t.resendButton}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRevoking(invite)}
-                      disabled={rowBusy === invite.id}
-                      className="rounded-lg px-2 py-1 text-xs font-semibold text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                    >
-                      {t.revokeButton}
-                    </button>
-                  </>
+                {invite.code && (
+                  <span className="flex-none text-[13px] font-bold tracking-[0.16em] text-warm-ink">
+                    {formatInviteCode(invite.code)}
+                  </span>
                 )}
-              </div>
-            </li>
-          ))}
-
-          {visibleMembers.map((member) => (
-            <li key={member.id} className={`${card} p-4`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <span className="font-semibold text-stone-900">{member.name}</span>
-                  <span className="ml-2 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-500">
-                    {member.role === 'owner' ? t.roleOwner : member.role === 'admin' ? t.roleAdmin : t.roleVolunteer}
-                  </span>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    member.active ? 'bg-green-100 text-green-700' : 'bg-stone-200 text-stone-500'
-                  }`}
-                >
-                  {member.active ? t.statusActive : t.statusDeactivated}
-                </span>
-              </div>
-              {(member.email || member.phone) && (
-                <p className="mt-0.5 text-sm text-stone-500">{[member.email, member.phone].filter(Boolean).join(' · ')}</p>
-              )}
-
-              {iAmOwner && member.role !== 'owner' && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {member.role === 'volunteer' ? (
-                    <button type="button" onClick={() => handleRoleChange(member, 'admin')} disabled={rowBusy === member.id} className={`${btnGhost} px-3 py-1.5 text-xs`}>
-                      {t.makeAdmin}
-                    </button>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => handleRoleChange(member, 'volunteer')} disabled={rowBusy === member.id} className={`${btnGhost} px-3 py-1.5 text-xs`}>
-                        {t.makeVolunteer}
-                      </button>
-                      {member.active && (
-                        <button type="button" onClick={() => setTransferring(member)} disabled={rowBusy === member.id} className={`${btnGhost} px-3 py-1.5 text-xs`}>
-                          {t.makeOwner}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {member.active ? (
-                    <button type="button" onClick={() => setDeactivating(member)} disabled={rowBusy === member.id} className="rounded-lg px-2 py-1 text-xs font-semibold text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600">
-                      {t.deactivate}
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => handleReactivate(member)} disabled={rowBusy === member.id} className={`${btnGhost} px-3 py-1.5 text-xs`}>
-                      {t.reactivate}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {isAdminRole(myRole) && !iAmOwner && member.role === 'volunteer' && (
-                <div className="mt-3">
-                  {member.active ? (
-                    <button type="button" onClick={() => setDeactivating(member)} disabled={rowBusy === member.id} className="rounded-lg px-2 py-1 text-xs font-semibold text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600">
-                      {t.deactivate}
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => handleReactivate(member)} disabled={rowBusy === member.id} className={`${btnGhost} px-3 py-1.5 text-xs`}>
-                      {t.reactivate}
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
-      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} labelledBy="invite-sheet-title">
+      {loading ? (
+        <p className="text-stone-400">{strings.auth.loading}</p>
+      ) : visibleMembers.length === 0 && visibleInvites.length === 0 ? (
+        <div className="rounded-[16px] border border-dashed border-stone-300 bg-white px-4 py-12 text-center text-stone-400">
+          {members.length === 0 ? t.empty : t.noneMatch}
+        </div>
+      ) : (
+        <div className={panel}>
+          <div className="flex flex-col">
+            {visibleMembers.map((member) => (
+              <button
+                key={member.id}
+                type="button"
+                onClick={() => setSelectedMemberId(member.id)}
+                className="flex items-center gap-[11px] border-t border-stone-100 py-3 text-left transition-colors first:border-0 hover:bg-stone-50"
+              >
+                <LetterAvatar name={member.name} muted={!member.active} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-[7px]">
+                    <span
+                      className={`truncate text-sm font-bold ${member.active ? 'text-stone-900' : 'text-stone-400'}`}
+                    >
+                      {member.name}
+                    </span>
+                    <span
+                      className={`flex-none rounded-full bg-stone-100 px-[7px] py-0.5 text-[10px] font-semibold ${
+                        member.active ? 'text-stone-600' : 'text-stone-400'
+                      }`}
+                    >
+                      {roleLabel(member.role)}
+                    </span>
+                  </span>
+                  <span
+                    className={`mt-0.5 block truncate text-[11.5px] font-medium ${member.active ? 'text-stone-400' : 'text-faint'}`}
+                  >
+                    {member.active ? '' : t.deactivatedPrefix}
+                    {[member.email, member.phone].filter(Boolean).join(' · ') || t.noContact}
+                  </span>
+                </span>
+                {member.active && <span aria-hidden="true" className="h-[7px] w-[7px] flex-none rounded-full bg-green-600" />}
+                <span aria-hidden="true" className="flex-none text-base text-stone-300">
+                  ›
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Invite: form, then the one-shot link+code. */}
+      <Sheet
+        open={sheet === 'invite'}
+        onClose={() => {
+          setSheet(null)
+          resetInviteForm()
+        }}
+        labelledBy="invite-sheet-title"
+      >
         {inviteReady ? (
-          <div className="flex flex-col gap-3">
-            <h2 id="invite-sheet-title" className="font-display text-lg font-bold text-stone-900">
-              {t.linkReadyTitle}
-            </h2>
-            <span className={labelCls}>{t.linkLabel}</span>
-            <input readOnly value={inviteReady.link} className={`${field} text-sm`} />
-            <div className="flex gap-2">
+          <>
+            <SheetHeader
+              title={t.linkReadyTitle}
+              titleId="invite-sheet-title"
+              hint={`${t.readyForPrefix}${inviteName || t.roleVolunteer}`}
+              onClose={() => {
+                setSheet(null)
+                resetInviteForm()
+              }}
+              closeLabel={strings.app.close}
+            />
+            <p className="mt-4 rounded-[13px] border border-hairline bg-stone-50 px-[13px] py-3 text-xs font-medium break-all text-stone-600">
+              {inviteReady.link}
+            </p>
+            <div className="mt-2.5 flex gap-2">
               <button
                 type="button"
-                onClick={() => navigator.clipboard.writeText(inviteReady.link)}
-                className={`flex-1 ${btnGhost}`}
+                onClick={() => {
+                  void navigator.clipboard.writeText(inviteReady.link)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }}
+                className={`${btnRow} h-11 flex-1`}
               >
-                {t.copyLink}
+                {copied ? strings.app.copied : t.copyLink}
               </button>
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(inviteReady.link)}`}
                 target="_blank"
                 rel="noreferrer"
-                className={`flex-1 ${btnPrimary} text-center`}
+                className={`${btnRowGreen} flex h-11 flex-1 items-center justify-center`}
               >
                 {t.shareWhatsApp}
               </a>
             </div>
-            <div className="mt-1 rounded-xl border border-stone-200 bg-stone-50 p-4 text-center">
-              <span className={labelCls}>{t.codeLabel}</span>
-              <p className="font-display mt-1 text-2xl font-extrabold tracking-[0.18em] text-stone-900">
+            <div className="mt-3.5 rounded-[14px] border border-hairline bg-stone-50 px-3.5 py-4 text-center">
+              <p className={eyebrow}>{t.orReadCode}</p>
+              <p className="font-display mt-1 text-[26px] font-extrabold tracking-[0.18em] text-stone-900">
                 {formatInviteCode(inviteReady.code)}
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-stone-500">{t.codeHelp}</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed font-medium text-stone-400 text-pretty">
+                {t.codeFootnote}
+              </p>
               <button
                 type="button"
-                onClick={() => navigator.clipboard.writeText(formatInviteCode(inviteReady.code))}
-                className="mt-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
+                onClick={() => void navigator.clipboard.writeText(formatInviteCode(inviteReady.code))}
+                className="mt-2 text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
               >
                 {t.copyCode}
               </button>
@@ -402,60 +438,249 @@ export function ManageMembersContent() {
             <button
               type="button"
               onClick={() => {
-                setSheetOpen(false)
+                setSheet(null)
                 resetInviteForm()
               }}
-              className={btnGhost}
+              className={`mt-4 ${ctaInk}`}
             >
               {t.done}
             </button>
-          </div>
+          </>
         ) : (
-          <form onSubmit={handleInvite} className="flex flex-col gap-3">
-            <h2 id="invite-sheet-title" className="font-display text-lg font-bold text-stone-900">
-              {t.inviteSheetTitle}
-            </h2>
-            <div>
-              <span className={labelCls}>{t.roleLabel}</span>
-              <div className="mt-1.5 flex gap-2">
+          <>
+            <SheetHeader
+              title={t.inviteSheetTitle}
+              titleId="invite-sheet-title"
+              hint={t.inviteHint}
+              onClose={() => setSheet(null)}
+              closeLabel={strings.app.close}
+            />
+
+            <p className={`${eyebrow} mt-[18px] mb-2`}>{t.roleLabel}</p>
+            <div role="group" aria-label={t.roleLabel} className="flex gap-2">
+              <button
+                type="button"
+                aria-pressed={inviteRole === 'volunteer'}
+                onClick={() => setInviteRole('volunteer')}
+                className={choiceButton(inviteRole === 'volunteer')}
+              >
+                {t.roleVolunteer}
+              </button>
+              {/* create_invite only lets an owner mint an admin invite, so an
+                  admin is not offered a role the RPC would refuse. */}
+              {iAmOwner && (
                 <button
                   type="button"
-                  onClick={() => setInviteRole('volunteer')}
-                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    inviteRole === 'volunteer' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-stone-300 text-stone-600'
-                  }`}
+                  aria-pressed={inviteRole === 'admin'}
+                  onClick={() => setInviteRole('admin')}
+                  className={choiceButton(inviteRole === 'admin')}
                 >
-                  {t.roleVolunteer}
+                  {t.roleAdmin}
                 </button>
-                {iAmOwner && (
-                  <button
-                    type="button"
-                    onClick={() => setInviteRole('admin')}
-                    className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold ${
-                      inviteRole === 'admin' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-stone-300 text-stone-600'
-                    }`}
-                  >
-                    {t.roleAdmin}
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-            <label htmlFor="invite-name" className={labelCls}>
+
+            <label htmlFor="invite-name" className={`${eyebrow} mt-4 mb-2 block`}>
               {t.nameLabel}
             </label>
-            <input id="invite-name" required value={inviteName} onChange={(e) => setInviteName(e.target.value)} className={field} />
-            <label htmlFor="invite-email" className={labelCls}>
+            <input
+              id="invite-name"
+              value={inviteName}
+              placeholder={t.namePlaceholder}
+              onChange={(e) => setInviteName(e.target.value)}
+              className={consoleField}
+            />
+
+            <label htmlFor="invite-email" className={`${eyebrow} mt-4 mb-2 block`}>
               {t.emailLabel}
             </label>
-            <input id="invite-email" type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className={field} />
-            <p className="text-xs text-stone-500">{t.emailHelp}</p>
-            <PhoneInput id="invite-phone" label={t.phoneLabel} value={invitePhone} onChange={setInvitePhone} />
-            <button type="submit" disabled={inviteSubmitting} className={btnPrimary}>
+            <input
+              id="invite-email"
+              type="email"
+              value={inviteEmail}
+              placeholder={t.emailPlaceholder}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className={consoleField}
+            />
+            <p className="mt-1.5 text-[11px] leading-relaxed font-medium text-stone-400 text-pretty">{t.emailHelp}</p>
+
+            <div className="mt-4">
+              <PhoneInput
+                id="invite-phone"
+                label={t.phoneOptionalLabel}
+                value={invitePhone}
+                onChange={setInvitePhone}
+                placeholder={t.phonePlaceholder}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleInvite()}
+              disabled={inviteSubmitting || inviteName.trim() === '' || inviteEmail.trim() === ''}
+              className={`mt-[18px] ${inviteName.trim() !== '' && inviteEmail.trim() !== '' && !inviteSubmitting ? ctaOrange : ctaMuted}`}
+            >
               {inviteSubmitting ? t.sending : t.sendButton}
             </button>
-          </form>
+          </>
         )}
       </Sheet>
+
+      {/* A member's actions live here rather than on the row: ten people on a
+          360px screen otherwise means forty buttons. */}
+      {selectedMember && (
+        <Sheet open onClose={() => setSelectedMemberId(null)} labelledBy="member-sheet-title">
+          <SheetHeader
+            title={selectedMember.name}
+            titleId="member-sheet-title"
+            hint={`${roleLabel(selectedMember.role)} · ${selectedMember.active ? t.statusActive : t.statusDeactivated}`}
+            onClose={() => setSelectedMemberId(null)}
+            closeLabel={strings.app.close}
+          >
+            <LetterAvatar name={selectedMember.name} muted={!selectedMember.active} size={44} />
+          </SheetHeader>
+
+          <div className="mt-4 rounded-[14px] border border-hairline bg-stone-50 px-[13px] py-3">
+            <p className="text-[12.5px] font-medium break-all text-stone-700">{selectedMember.email || t.noEmail}</p>
+            <p className="mt-0.5 text-[12.5px] font-medium tabular-nums text-stone-500">
+              {selectedMember.phone || t.noPhone}
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            {selectedMember.role === 'owner' ? (
+              <p className="text-xs leading-relaxed font-medium text-stone-400 text-pretty">{t.ownerRowNote}</p>
+            ) : (
+              <>
+                {iAmOwner && selectedMember.role === 'volunteer' && (
+                  <button
+                    type="button"
+                    disabled={rowBusy === selectedMember.id}
+                    onClick={() =>
+                      void withRow(selectedMember.id, () => setMemberRole(selectedMember.id, 'admin')).then(() =>
+                        setSelectedMemberId(null),
+                      )
+                    }
+                    className={`${ctaQuiet} border border-stone-200 bg-white`}
+                  >
+                    {t.makeAdmin}
+                  </button>
+                )}
+                {iAmOwner && selectedMember.role === 'admin' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={rowBusy === selectedMember.id}
+                      onClick={() =>
+                        void withRow(selectedMember.id, () => setMemberRole(selectedMember.id, 'volunteer')).then(() =>
+                          setSelectedMemberId(null),
+                        )
+                      }
+                      className={`${ctaQuiet} border border-stone-200 bg-white`}
+                    >
+                      {t.makeVolunteer}
+                    </button>
+                    {selectedMember.active && (
+                      <button
+                        type="button"
+                        disabled={rowBusy === selectedMember.id}
+                        onClick={() => {
+                          setTransferring(selectedMember)
+                          setSelectedMemberId(null)
+                        }}
+                        className={`${ctaQuiet} border border-stone-200 bg-white`}
+                      >
+                        {t.makeOwner}
+                      </button>
+                    )}
+                  </>
+                )}
+                {/* An admin may deactivate a volunteer; only the owner may touch
+                    another admin. Both mirror the RPC's own gate. */}
+                {(iAmOwner || (isAdminRole(myRole) && selectedMember.role === 'volunteer')) &&
+                  (selectedMember.active ? (
+                    <button
+                      type="button"
+                      disabled={rowBusy === selectedMember.id}
+                      onClick={() => {
+                        setDeactivating(selectedMember)
+                        setSelectedMemberId(null)
+                      }}
+                      className={ctaDanger}
+                    >
+                      {t.deactivate}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={rowBusy === selectedMember.id}
+                      onClick={() =>
+                        void withRow(selectedMember.id, () => reactivateMember(selectedMember.id)).then(() =>
+                          setSelectedMemberId(null),
+                        )
+                      }
+                      className={ctaInk}
+                    >
+                      {t.reactivate}
+                    </button>
+                  ))}
+              </>
+            )}
+          </div>
+        </Sheet>
+      )}
+
+      {selectedInvite && (
+        <Sheet open onClose={() => setSelectedInviteId(null)} labelledBy="invite-detail-title">
+          <SheetHeader
+            title={selectedInvite.name}
+            titleId="invite-detail-title"
+            hint={t.invitedMeta(roleLabel(selectedInvite.role), daysUntil(selectedInvite.expiresAt))}
+            onClose={() => setSelectedInviteId(null)}
+            closeLabel={strings.app.close}
+          />
+
+          {selectedInvite.code && (
+            <div className="mt-4 rounded-[14px] border border-warm-border bg-warm px-3.5 py-4 text-center">
+              <p className="text-[9.5px] font-bold tracking-[0.14em] text-warm-muted uppercase">{t.codeLabel}</p>
+              <p className="font-display mt-1 text-[26px] font-extrabold tracking-[0.18em] text-warm-ink">
+                {formatInviteCode(selectedInvite.code)}
+              </p>
+            </div>
+          )}
+          <p className="mt-3 text-xs font-medium break-all text-stone-500">
+            {[selectedInvite.email, selectedInvite.phone].filter(Boolean).join(' · ') || t.noContact}
+          </p>
+
+          {/* An admin can only manage a volunteer's invite; an admin invite is
+              the owner's to resend or revoke — same gate as the RPC. */}
+          {(selectedInvite.role === 'volunteer' || iAmOwner) && (
+            <>
+              <button
+                type="button"
+                disabled={rowBusy === selectedInvite.id}
+                onClick={() => void handleResend(selectedInvite)}
+                className={`mt-3.5 ${ctaQuiet} border border-stone-200 bg-white`}
+              >
+                {t.resendLong}
+              </button>
+              <button
+                type="button"
+                disabled={rowBusy === selectedInvite.id}
+                onClick={() => {
+                  setRevoking(selectedInvite)
+                  setSelectedInviteId(null)
+                }}
+                className={`mt-2 ${ctaDanger}`}
+              >
+                {t.revokeButton}
+              </button>
+            </>
+          )}
+        </Sheet>
+      )}
+
+      <HowToSheet tab="members" open={sheet === 'howto'} onClose={() => setSheet(null)} />
 
       <ConfirmDialog
         open={revoking !== null}
@@ -473,7 +698,12 @@ export function ManageMembersContent() {
         body={t.deactivateBody}
         confirmLabel={t.deactivateConfirm}
         cancelLabel={strings.void.cancel}
-        onConfirm={handleDeactivate}
+        onConfirm={() => {
+          const member = deactivating
+          if (!member) return
+          setDeactivating(null)
+          void withRow(member.id, () => deactivateMember(member.id))
+        }}
         onCancel={() => setDeactivating(null)}
         busy={rowBusy === deactivating?.id}
       />
@@ -483,7 +713,12 @@ export function ManageMembersContent() {
         body={t.makeOwnerBody}
         confirmLabel={t.makeOwnerConfirm}
         cancelLabel={strings.void.cancel}
-        onConfirm={handleTransfer}
+        onConfirm={() => {
+          const member = transferring
+          if (!member) return
+          setTransferring(null)
+          void withRow(member.id, () => transferOwnership(member.id))
+        }}
         onCancel={() => setTransferring(null)}
         busy={rowBusy === transferring?.id}
       />

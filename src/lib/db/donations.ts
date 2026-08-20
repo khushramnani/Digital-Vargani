@@ -10,16 +10,21 @@ import type { DonationMode } from '../validation/donation'
 
 export type Donation = Tables<'donations'>
 
-// v4 (§2): where the donation came from. DB column is NOT NULL default
-// 'society' with a CHECK to these three values.
-export type DonationCategory = 'society' | 'shop' | 'other'
+// Where the donation came from. Plan 2026-08-18 §1 made the list per-mandal and
+// renameable, so this is the source NAME as text — not one of three slugs any
+// more. The DB CHECK is now length-only (1..40 chars); rows written before that
+// migration still carry 'society'/'shop'/'other' and display through
+// lib/sources.ts's legacy label map. Kept as a named alias because "a string
+// that is a donation source" is the thing every call site actually means.
+export type DonationCategory = string
 
 export type CreateDonationInput = {
   donorName: string
   donorPhone: string
   amountPaise: number
   mode: DonationMode
-  // v4 (§2): donation source — the form always sends one (defaults 'society').
+  // Donation source — the form always sends one (the mandal's first source, or
+  // the volunteer's remembered pick).
   category: DonationCategory
   // Always the current session's acting user id (appUser.id from useAuth()),
   // never a value the form lets the user pick.
@@ -85,12 +90,18 @@ export async function markSmsSent(donationId: string): Promise<void> {
 
 // Task 8's "Pending send" tray: the given volunteer's own donations that
 // haven't had an SMS sent yet, most recent first.
+//
+// Plan 2026-08-18 §2: a donation logged WITHOUT a phone is excluded outright.
+// There is no number to send a receipt to, so sms_sent_at will never be set and
+// the row otherwise sits in the tray forever — a permanent false "you still owe
+// someone a receipt" (audit #4 only removed the dead buttons from those rows).
 export async function getPendingSendDonations(collectedBy: string): Promise<Donation[]> {
   const { data, error } = await supabase
     .from('donations')
     .select('*')
     .eq('collected_by', collectedBy)
     .is('sms_sent_at', null)
+    .not('donor_phone', 'is', null)
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -157,7 +168,9 @@ export async function getDonationsLite(): Promise<DonationLite[]> {
     const page = data ?? []
     rows.push(...page)
     // A missing count (no Content-Range reached the client) must not end the
-    // loop early — fall through to the empty-page stop instead.
+    // loop early — fall through to the empty-page stop instead. And NOT a
+    // short-page stop: if the project's Max rows is set below LITE_PAGE, every
+    // page is short and stopping there would silently drop the rest.
     if (page.length === 0 || (count !== null && rows.length >= count)) return rows
   }
 }

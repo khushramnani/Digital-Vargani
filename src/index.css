@@ -1,8 +1,96 @@
 @import 'tailwindcss';
 
+/* Design tokens for the 2026-08-18 mobile console redesign
+   (docs/design/admin-dashboard-redesign.dc.html).
+
+   The design was drawn on Tailwind's own stone / orange / amber / green / red
+   ramps, so almost every colour in it is already a utility: #FAFAF9 is
+   stone-50, #EA580C orange-600, #E7E5E4 stone-200, #A8A29E stone-400,
+   #1C1917 stone-900, #FFF7ED orange-50, and so on. Only the handful below have
+   no ramp equivalent, so only those become tokens — SPEC's "no inline hex,
+   Tailwind tokens only" then holds across the whole console. */
 @theme {
   --font-display: 'Bricolage Grotesque', sans-serif;
   --font-body: 'Hanken Grotesk', sans-serif;
   --font-serif: 'Spectral', serif;
   --font-mark: 'Marcellus', serif;
+
+  /* The dark hero cards. stone-900 (#1C1917) is visibly warmer and lighter than
+     the design's near-black. */
+  --color-ink-hero-from: #22201d;
+  --color-ink-hero-to: #12100e;
+
+  /* A divider one step lighter than stone-200 — used inside cards where
+     stone-200 reads as a border rather than a hairline. */
+  --color-hairline: #f0efed;
+  /* Struck-through / disabled figures: between stone-300 and stone-400. */
+  --color-faint: #c3bdb6;
+  /* "Cash still with volunteers" — the one maroon in the design. */
+  --color-maroon: #7a2e2a;
+
+  /* The warm parchment family: the skip-phone notice, pending invites, and the
+     invite-code panel. Tailwind's amber-50/100 are yellower than these. */
+  --color-warm: #fffbf5;
+  --color-warm-border: #fde8c8;
+  --color-warm-line: #f6e7d0;
+  --color-warm-ink: #7c4a12;
+  --color-warm-body: #8a6b3e;
+  --color-warm-muted: #b08247;
+
+  /* Destructive panels sit on this rather than red-50, which is too saturated
+     behind body copy. */
+  --color-danger-tint: #fef9f9;
+
+  /* Sheet backdrops and card reveals. Verbatim from the design's <helmet>.
+     (The sheet's own slide is a transform transition in components/Sheet.tsx —
+     it has to run on mount, which a CSS animation alone can't coordinate with
+     the unmount-on-close lifecycle.) */
+  --animate-dim-in: dimIn 0.2s ease;
+  --animate-fade-up: fadeUp 0.2s ease;
+}
+
+/* Chart/category slots, rank-ordered — see src/lib/chartColors.ts.
+   `static` because nothing in a class string references these: they are read from
+   JS and handed to inline conic-gradient/backgroundColor. Tailwind tree-shakes
+   @theme variables it cannot see used, which silently dropped slots 2–8 and made
+   the expense donut's gradient invalid — the ring disappeared with no error. */
+@theme static {
+  --color-slot-1: #e2680f;
+  --color-slot-2: #2f7d44;
+  --color-slot-3: #dca02c;
+  --color-slot-4: #c0442e;
+  --color-slot-5: #7c4a86;
+  --color-slot-6: #2f8a86;
+  --color-slot-7: #c96b93;
+  --color-slot-8: #8a6d3b;
+  --color-slot-rest: #a8998a;
+  /* Bank vs cash in the expense hero split — a fixed pair, not a ranked slot. */
+  --color-slot-bank: #3b82a8;
+}
+
+@keyframes dimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The design's date inputs show a dimmed native picker glyph rather than the
+   default full-contrast one, which otherwise dominates a 40px-tall chip. */
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+  cursor: pointer;
 }

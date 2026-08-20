@@ -330,6 +330,7 @@ export type Database = {
           created_at: string
           creator_phone: string | null
           default_lang: string
+          donation_sources: string[]
           expense_categories: string[]
           hide_president_contact: boolean
           id: string
@@ -354,6 +355,7 @@ export type Database = {
           created_at?: string
           creator_phone?: string | null
           default_lang?: string
+          donation_sources?: string[]
           expense_categories?: string[]
           hide_president_contact?: boolean
           id?: string
@@ -378,6 +380,7 @@ export type Database = {
           created_at?: string
           creator_phone?: string | null
           default_lang?: string
+          donation_sources?: string[]
           expense_categories?: string[]
           hide_president_contact?: boolean
           id?: string
@@ -447,6 +450,7 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { token: string }; Returns: undefined }
+      add_donation_source: { Args: { p_name: string }; Returns: string[] }
       app_mandal_id: { Args: never; Returns: string }
       app_user_id: { Args: never; Returns: string }
       app_user_role: { Args: never; Returns: string }
@@ -483,6 +487,7 @@ export type Database = {
         }[]
       }
       gen_invite_code: { Args: never; Returns: string }
+      get_donation_sources: { Args: never; Returns: string[] }
       get_expense_categories: { Args: never; Returns: string[] }
       get_mandal_default_lang: { Args: never; Returns: string }
       get_public_receipt: {

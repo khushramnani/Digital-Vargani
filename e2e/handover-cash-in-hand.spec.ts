@@ -12,6 +12,21 @@ const STORAGE_KEY = 'sb-127-auth-token'
 const VOLUNTEER_ID = 'user-volunteer-handover-1'
 const ADMIN_ID = 'user-admin-handover-1'
 
+// PostgREST answers a counted select (`{ count: 'exact' }`) with a Content-Range
+// header, which is how the paging loops in lib/db know they have everything. A
+// double that omits it looks like a server with more pages to give.
+function tableRows(rows: unknown[]) {
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: {
+      'content-range': `0-${Math.max(rows.length - 1, 0)}/${rows.length}`,
+      'access-control-expose-headers': 'content-range',
+    },
+    body: JSON.stringify(rows),
+  }
+}
+
 function fakeStoredSession(userId: string) {
   return {
     access_token: 'fake-access-token',
@@ -41,6 +56,7 @@ test('recording a handover immediately drops that volunteer\'s cash-in-hand by t
     donor_phone: '9000000002',
     amount_paise: 80000, // ₹800
     mode: 'cash',
+    category: 'Society',
     collected_by: VOLUNTEER_ID,
     created_at: new Date().toISOString(),
     voided: false,
@@ -83,17 +99,11 @@ test('recording a handover immediately drops that volunteer\'s cash-in-hand by t
       }),
     }),
   )
-  await page.route(`${SUPABASE_URL}/rest/v1/expenses*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  )
-  await page.route(`${SUPABASE_URL}/rest/v1/donations*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([donation]) }),
-  )
+  await page.route(`${SUPABASE_URL}/rest/v1/expenses*`, (route) => route.fulfill(tableRows([])))
+  await page.route(`${SUPABASE_URL}/rest/v1/donations*`, (route) => route.fulfill(tableRows([donation])))
   await page.route(`${SUPABASE_URL}/rest/v1/handovers*`, (route) => {
     const method = route.request().method()
-    if (method === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(handovers) })
-    }
+    if (method === 'GET') return route.fulfill(tableRows(handovers))
     if (method === 'POST') {
       const body = route.request().postDataJSON() as Record<string, unknown>
       const created = {
@@ -122,9 +132,11 @@ test('recording a handover immediately drops that volunteer\'s cash-in-hand by t
 
   await page.goto('/volunteer/handover')
   await page.getByLabel('Amount (₹)').fill('300')
-  await page.getByLabel('Received by').selectOption(ADMIN_ID)
+  // "Received by" became a pill row rather than a <select> — one tap on a phone
+  // instead of a native picker (redesign 2026-08-18).
+  await page.getByRole('button', { name: 'Admin Treasurer' }).click()
   await page.getByRole('button', { name: 'Log Handover' }).click()
-  await expect(page.getByText('To Admin Treasurer')).toBeVisible()
+  await expect(page.getByText(/To Admin Treasurer/)).toBeVisible()
 
   await page.goto('/volunteer/cash-in-hand')
   await expect(page.getByText('₹500')).toBeVisible()

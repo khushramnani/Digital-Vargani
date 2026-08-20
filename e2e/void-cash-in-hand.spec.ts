@@ -9,6 +9,21 @@ const SUPABASE_URL = 'http://127.0.0.1:54321'
 const STORAGE_KEY = 'sb-127-auth-token'
 const VOLUNTEER_ID = 'user-volunteer-void-1'
 
+// PostgREST answers a counted select (`{ count: 'exact' }`) with a Content-Range
+// header, which is how the paging loops in lib/db know they have everything. A
+// double that omits it looks like a server with more pages to give.
+function tableRows(rows: unknown[]) {
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: {
+      'content-range': `0-${Math.max(rows.length - 1, 0)}/${rows.length}`,
+      'access-control-expose-headers': 'content-range',
+    },
+    body: JSON.stringify(rows),
+  }
+}
+
 function fakeStoredSession(userId: string) {
   return {
     access_token: 'fake-access-token',
@@ -38,6 +53,7 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
     donor_phone: '9000000001',
     amount_paise: 50000, // ₹500
     mode: 'cash',
+    category: 'Society',
     collected_by: VOLUNTEER_ID,
     created_at: new Date().toISOString(),
     voided: false,
@@ -72,17 +88,11 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
       }),
     }),
   )
-  await page.route(`${SUPABASE_URL}/rest/v1/expenses*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  )
-  await page.route(`${SUPABASE_URL}/rest/v1/handovers*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  )
+  await page.route(`${SUPABASE_URL}/rest/v1/expenses*`, (route) => route.fulfill(tableRows([])))
+  await page.route(`${SUPABASE_URL}/rest/v1/handovers*`, (route) => route.fulfill(tableRows([])))
   await page.route(`${SUPABASE_URL}/rest/v1/donations*`, (route) => {
     const method = route.request().method()
-    if (method === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([donation]) })
-    }
+    if (method === 'GET') return route.fulfill(tableRows([donation]))
     return route.continue()
   })
 
@@ -105,28 +115,25 @@ test('voiding a cash donation immediately drops that volunteer\'s cash-in-hand b
   await page.goto('/collect/history')
   await expect(page.getByText('Void Test Donor')).toBeVisible()
 
-  // Two things drifted out from under this spec. The collection row became
-  // a disclosure button that has to be expanded before its actions exist —
-  // and its accessible name starts with "Void", so the old locator matched
-  // the ROW, silently expanding it instead of voiding. Hence exact: true
-  // everywhere below.
-  await page.getByRole('button', { name: /^Void Test Donor/ }).click()
+  // Tapping a row opens its detail sheet (redesign 2026-08-18); the delete
+  // action lives there, and confirming it swaps the sheet for a focus-trapped
+  // ConfirmDialog rather than stacking a second modal over it.
+  // The row's accessible name now leads with its payment-mode mark ("CASH …"),
+  // the design's text-instead-of-icon treatment.
+  await page.getByRole('button', { name: /Void Test Donor/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete donation' }).click()
 
-  // And voiding itself moved from window.prompt to a real focus-trapped
-  // ConfirmDialog (the prompt froze the page and looked unbranded), so the
-  // native `dialog` event this spec waited on no longer fires at all.
-  // The volunteer-facing action is "Delete" now, and the row it marks reads
-  // "Removed — <reason>". The underlying operation is unchanged: still a
-  // reversible void that leaves the row in the books, which is why the
-  // cash-in-hand assertion below is the real subject of this test.
-  await page.getByRole('button', { name: 'Delete', exact: true }).click()
   const voidDialog = page.getByRole('dialog')
   await voidDialog.getByLabel('Reason (optional)').fill('Wrong amount entered')
   await voidDialog.getByRole('button', { name: 'Delete donation', exact: true }).click()
-  // Removed rows moved out of the main list into a collapsed section, so
-  // they stop competing with live collections for the volunteer's attention.
-  await page.getByRole('button', { name: /^Show removed/ }).click()
-  await expect(page.getByText(/Removed — Wrong amount entered/)).toBeVisible()
+
+  // Removed rows are revealed through the filters sheet — a voided donation
+  // stops competing with live collections for the volunteer's attention.
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  const filters = page.getByRole('dialog')
+  await filters.getByRole('button', { name: /Show removed donations/ }).click()
+  await filters.getByRole('button', { name: /^Show \d/ }).click()
+  await expect(page.getByText(/Removed · Wrong amount entered/)).toBeVisible()
 
   await page.goto('/volunteer/cash-in-hand')
   await expect(page.getByText('₹0')).toBeVisible()

@@ -3,13 +3,12 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import type { Tables } from '../src/lib/db/database.types'
 import { strings } from '../src/lib/strings'
-import { formatLocalDay } from '../src/lib/dayFilter'
-import { CollectionsScreen } from '../src/features/collection/Collections'
+import { CollectionsScreen, DonorsContent } from '../src/features/collection/Collections'
 
-// Per the established pattern (ExpensesScreen.test.tsx): mock
-// lib/db/donations.ts and lib/db/void.ts directly, not the raw Supabase
-// client. getDonations feeds the (capped) list, getDonationsLite the
-// (uncapped) totals strip — both mocked, defaulting to the same rows.
+// Per the established pattern (ExpensesScreen.test.tsx): mock lib/db/donations.ts
+// and lib/db/void.ts directly, not the raw Supabase client. getDonations feeds
+// the (capped) list, getDonationsLite the (uncapped) hero total and the donors
+// view — both mocked, defaulting to the same rows.
 const { getDonations, getDonationsLite } = vi.hoisted(() => ({ getDonations: vi.fn(), getDonationsLite: vi.fn() }))
 
 vi.mock('../src/lib/db/donations', () => ({ getDonations, getDonationsLite }))
@@ -25,15 +24,15 @@ const { voidRow, clearAllDonations, purgeDonations } = vi.hoisted(() => ({
 vi.mock('../src/lib/db/void', () => ({ voidRow, clearAllDonations, purgeDonations }))
 
 // collected_by → name lookup (admin-only server-side; mocked here so the
-// "collected by" line resolves in tests regardless of role).
-const { fetchMandalUserNames } = vi.hoisted(() => ({ fetchMandalUserNames: vi.fn() }))
+// "collected by" line resolves in tests regardless of role), and the mandal's
+// donation-source list for the hero split + the Source filter.
+const { fetchMandalUserNames, getDonationSources } = vi.hoisted(() => ({
+  fetchMandalUserNames: vi.fn(),
+  getDonationSources: vi.fn(),
+}))
 
 vi.mock('../src/lib/db/users', () => ({ fetchMandalUserNames }))
-
-// The offline outbox — only the purge('all') path touches it (best-effort clear).
-const { outboxClear } = vi.hoisted(() => ({ outboxClear: vi.fn() }))
-
-vi.mock('../src/lib/queue/db', () => ({ db: { outbox: { clear: outboxClear } } }))
+vi.mock('../src/lib/db/config', () => ({ getDonationSources }))
 
 const volunteer: Tables<'users'> = {
   id: 'volunteer-1',
@@ -47,24 +46,11 @@ const volunteer: Tables<'users'> = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-const admin: Tables<'users'> = {
-  ...volunteer,
-  id: 'admin-1',
-  name: 'Anita Admin',
-  role: 'admin',
-  auth_user_id: 'auth-uid-admin',
-}
-
-const owner: Tables<'users'> = {
-  ...volunteer,
-  id: 'owner-1',
-  name: 'Om Owner',
-  role: 'owner',
-  auth_user_id: 'auth-uid-owner',
-}
+const admin: Tables<'users'> = { ...volunteer, id: 'admin-1', name: 'Anita Admin', role: 'admin', auth_user_id: 'auth-uid-admin' }
+const owner: Tables<'users'> = { ...volunteer, id: 'owner-1', name: 'Om Owner', role: 'owner', auth_user_id: 'auth-uid-owner' }
 
 // Mutable so a single module-level useAuth mock can serve both the default
-// volunteer tests and the admin/owner-only Danger Zone tests.
+// volunteer tests and the admin/owner-only cleanup tests.
 const auth = vi.hoisted(() => ({ appUser: null as Tables<'users'> | null }))
 
 vi.mock('../src/features/auth/useAuth', () => ({
@@ -108,8 +94,8 @@ const voidedDonation: Tables<'donations'> = {
   voided_at: '2026-01-03T00:00:00Z',
 }
 
-// Two more rows for the search / date / totals tests: a shop donation by a
-// second collector, and one logged just now (the only "today" row).
+// A shop donation by a second collector, and one logged just now (the only
+// "today" row).
 const shopDonation: Tables<'donations'> = {
   ...activeDonation,
   id: 'donation-3',
@@ -135,7 +121,6 @@ const todayDonation: Tables<'donations'> = {
   created_at: new Date().toISOString(),
 }
 
-// Loads the given rows into BOTH mocks (list + totals) — the default shape.
 function loadRows(rows: Tables<'donations'>[]) {
   getDonations.mockResolvedValue(rows)
   getDonationsLite.mockResolvedValue(rows)
@@ -147,233 +132,365 @@ beforeEach(() => {
   loadRows([activeDonation, voidedDonation])
   voidRow.mockResolvedValue(undefined)
   fetchMandalUserNames.mockResolvedValue({ 'volunteer-1': 'Sita Volunteer', 'volunteer-2': 'Raju Helper' })
+  getDonationSources.mockResolvedValue(['Society', 'Shop', 'Other'])
 })
 
-describe('CollectionsScreen', () => {
-  it('shows active donations with a Delete action and hides removed ones until toggled', async () => {
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+const renderScreen = () => render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+
+const search = () => screen.getByRole('searchbox')
+const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^Filters/ }))
+const dialog = () => within(screen.getByRole('dialog'))
+const totalHero = () => screen.getByText(t.totalEyebrow).closest('div')!.parentElement!
+
+describe('CollectionsContent — the Collections & donors tab', () => {
+  it('lists active donations and hides removed ones behind a filter toggle', async () => {
+    renderScreen()
 
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    expect(within(screen.getByRole('button', { name: /Ganesh Donor/ })).getByText('₹500.00')).toBeInTheDocument()
-    // A payment-mode icon tile per row (💵 cash / 📱 upi / 🏦 bank).
-    expect(screen.getByText('💵')).toBeInTheDocument()
-    // A voided donation is removed from the current ledger — hidden by default.
-    expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
+    const row = screen.getByRole('button', { name: /Ganesh Donor/ })
+    // The design's mode mark is the mode's own name in uppercase — no emoji.
+    expect(within(row).getByText('CASH')).toBeInTheDocument()
+    expect(within(row).getByText('Society')).toBeInTheDocument()
+    expect(row).toHaveTextContent('₹500.00')
 
-    // Reveal removed rows: struck-through with the reason, and no Delete action.
-    fireEvent.click(screen.getByRole('button', { name: /Show removed/ }))
+    // A voided donation is out of the current ledger — hidden by default.
+    expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
+
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: /Show removed donations/ }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
+
     expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
     expect(screen.getByText(/Entered twice/)).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
   })
 
-  it('expands a row to reveal donor contact, collector and receipt link', async () => {
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+  it('opens a row detail sheet with the donor contact, collector and receipt link', async () => {
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    // Tap the row header (its accessible name contains the donor name).
     fireEvent.click(screen.getByRole('button', { name: /Ganesh Donor/ }))
 
+    const sheet = dialog()
+    expect(sheet.getByRole('heading', { name: 'Ganesh Donor' })).toBeInTheDocument()
     // Phone: legacy 10-digit value normalized to E.164 for tel: + wa.me.
-    const call = await screen.findByRole('link', { name: /Call/ })
-    expect(call).toHaveAttribute('href', 'tel:+919000000009')
-    const whatsApp = screen.getByRole('link', { name: /WhatsApp/ })
-    expect(whatsApp.getAttribute('href')).toContain('wa.me/919000000009')
-
+    expect(sheet.getByRole('link', { name: strings.app.call })).toHaveAttribute('href', 'tel:+919000000009')
+    expect(sheet.getByRole('link', { name: strings.app.whatsApp }).getAttribute('href')).toContain('wa.me/919000000009')
     // Collected-by resolves through the id→name map.
-    expect(screen.getByText('Sita Volunteer')).toBeInTheDocument()
-
+    expect(sheet.getByText('Sita Volunteer')).toBeInTheDocument()
     // Receipt open link uses the /r/<receiptNo>-<token> shape.
-    const open = screen.getByRole('link', { name: /Open receipt/ })
-    expect(open.getAttribute('href')).toContain('/r/7-tok-1')
+    expect(sheet.getByRole('link', { name: t.detailOpenReceipt }).getAttribute('href')).toContain('/r/7-tok-1')
+  })
+
+  it('offers no edit on a donation — the books are append-only', async () => {
+    renderScreen()
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /Ganesh Donor/ }))
+
+    // forbid_financial_edit() refuses an UPDATE on a recorded donation, so an
+    // "edit" affordance would be a button that can only fail.
+    expect(dialog().queryByRole('button', { name: /Edit/i })).not.toBeInTheDocument()
+    expect(dialog().getByRole('button', { name: t.deleteConfirm })).toBeInTheDocument()
   })
 
   it('deletes a donation through the confirm dialog, calling voidRow with the typed reason', async () => {
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    const dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Wrong amount' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete donation' }))
+    fireEvent.click(screen.getByRole('button', { name: /Ganesh Donor/ }))
+    fireEvent.click(dialog().getByRole('button', { name: t.deleteConfirm }))
 
-    await waitFor(() =>
-      expect(voidRow).toHaveBeenCalledWith('donations', 'donation-1', 'Wrong amount'),
-    )
+    // Exactly one modal at a time: the detail sheet closes as the confirm opens.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    fireEvent.change(dialog().getByRole('textbox'), { target: { value: 'Wrong amount' } })
+    fireEvent.click(dialog().getByRole('button', { name: t.deleteConfirm }))
+
+    await waitFor(() => expect(voidRow).toHaveBeenCalledWith('donations', 'donation-1', 'Wrong amount'))
   })
 
   it('does not call voidRow when the confirm dialog is cancelled', async () => {
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: /Ganesh Donor/ }))
+    fireEvent.click(dialog().getByRole('button', { name: t.deleteConfirm }))
+    fireEvent.click(dialog().getByRole('button', { name: strings.void.cancel }))
 
     expect(voidRow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('permanently purges removed donations once the exact phrase is typed (owner only)', async () => {
+  it('keeps the danger zone behind Data cleanup, and the purges owner-only', async () => {
     auth.appUser = owner
     purgeDonations.mockResolvedValue(1)
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Permanently delete removed' }))
-    const dialog = screen.getByRole('dialog')
+    // Nothing destructive is reachable from the list itself any more — it used
+    // to sit one scroll below the rows.
+    expect(screen.queryByRole('button', { name: t.purgeAllButton })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: t.dataCleanup }))
+    fireEvent.click(dialog().getByRole('button', { name: t.purgeRemovedButton }))
 
     // Confirm stays disabled until the exact phrase is typed.
-    const confirm = within(dialog).getByRole('button', { name: 'Delete removed forever' })
-    expect(confirm).toBeDisabled()
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'DELETE FOREVER' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete removed forever' }))
+    expect(dialog().getByRole('button', { name: t.purgeRemovedConfirm })).toBeDisabled()
+    fireEvent.change(dialog().getByRole('textbox'), { target: { value: t.purgePhrase } })
+    fireEvent.click(dialog().getByRole('button', { name: t.purgeRemovedConfirm }))
 
     await waitFor(() => expect(purgeDonations).toHaveBeenCalledWith('removed'))
   })
 
-  it('hides the purge buttons from a plain admin but keeps "clear all" visible', async () => {
+  it('hides the purges from a plain admin but keeps "clear all" in the cleanup sheet', async () => {
     auth.appUser = admin
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
-    // purge_donations() now requires is_owner() server-side; an admin (not
-    // owner) must not even see the buttons for a call that would be rejected.
-    expect(screen.queryByRole('button', { name: 'Permanently delete removed' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Permanently delete ALL history' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Clear all donations' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: t.dataCleanup }))
+
+    // purge_donations() requires is_owner() server-side; an admin must not even
+    // see the buttons for a call that would be rejected.
+    expect(dialog().queryByRole('button', { name: t.purgeRemovedButton })).not.toBeInTheDocument()
+    expect(dialog().queryByRole('button', { name: t.purgeAllButton })).not.toBeInTheDocument()
+    expect(dialog().getByRole('button', { name: t.clearAllButton })).toBeInTheDocument()
   })
 
-  // Plan 2026-08-16 §3a: one search box over name, phone digits, receipt
-  // number and (admin) collector name, AND-ed with the other filters.
-  it('search narrows the list by donor name, phone digits, receipt number and collector name', async () => {
-    loadRows([activeDonation, voidedDonation, shopDonation])
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+  it('keeps Data cleanup away from a volunteer entirely', async () => {
+    auth.appUser = volunteer
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    const search = screen.getByRole('searchbox', { name: t.searchPlaceholder })
+    expect(screen.queryByRole('button', { name: t.dataCleanup })).not.toBeInTheDocument()
+  })
+
+  it('narrows the list by donor name, phone digits, receipt number and collector name', async () => {
+    loadRows([activeDonation, voidedDonation, shopDonation])
+    renderScreen()
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
     // Name (case-insensitive, partial).
-    fireEvent.change(search, { target: { value: 'LAKSH' } })
+    fireEvent.change(search(), { target: { value: 'LAKSH' } })
     expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
     expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
 
     // Phone digits — the legacy 10-digit row matches its own digits.
-    fireEvent.change(search, { target: { value: '9000 0000' } })
+    fireEvent.change(search(), { target: { value: '9000 0000' } })
     expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
     expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
 
     // Receipt number, "#" tolerated; a short digit query is a receipt, not a
-    // phone fragment (so "1" does not match every phone containing a 1).
-    fireEvent.change(search, { target: { value: '#12' } })
+    // phone fragment (so "7" does not match every phone containing a 7).
+    fireEvent.change(search(), { target: { value: '#12' } })
     expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
-    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
-    fireEvent.change(search, { target: { value: '7' } })
+    fireEvent.change(search(), { target: { value: '7' } })
     expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
     expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
 
     // Collector name via the id → name map.
-    fireEvent.change(search, { target: { value: 'raju' } })
+    fireEvent.change(search(), { target: { value: 'raju' } })
     expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
-    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
-
-    // Composes with the source filter (AND): Lakshmi is a shop donation.
-    fireEvent.change(screen.getByRole('combobox', { name: t.detailCategory }), { target: { value: 'society' } })
-    expect(screen.getByText(t.noFilterResults)).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('combobox', { name: t.detailCategory }), { target: { value: 'all' } })
 
     // No match → the filtered-empty copy, never the "no donations yet" one.
-    fireEvent.change(search, { target: { value: 'zzz' } })
-    expect(screen.getByText(t.noFilterResults)).toBeInTheDocument()
+    fireEvent.change(search(), { target: { value: 'zzz' } })
+    expect(screen.getByText(t.noResultsTitle)).toBeInTheDocument()
     expect(screen.queryByText(t.empty)).not.toBeInTheDocument()
   })
 
-  // Plan 2026-08-16 §3b: All / Today / a picked day, decided in the device's
-  // local timezone (lib/dayFilter.ts).
-  it('filters by Today or by a picked date', async () => {
-    loadRows([activeDonation, voidedDonation, todayDonation])
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+  it('ANDs the search with the source filter, and one tap clears the chip', async () => {
+    loadRows([activeDonation, voidedDonation, shopDonation])
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    const dateSelect = screen.getByRole('combobox', { name: t.dateFilterLabel })
 
-    fireEvent.change(dateSelect, { target: { value: 'today' } })
+    fireEvent.change(search(), { target: { value: 'lakshmi' } })
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: 'Society' }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
+
+    // Lakshmi is a shop donation, so Society + "lakshmi" is empty.
+    expect(screen.getByText(t.noResultsTitle)).toBeInTheDocument()
+
+    // The active filter is visible as a chip, and clearing it is one tap.
+    fireEvent.click(screen.getByRole('button', { name: /^Society/ }))
+    expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument()
+  })
+
+  it('folds a legacy slug and its renamed twin into one Source option', async () => {
+    // 'society' predates custom sources; 'Society' is the same source recorded
+    // after the migration. One filter option must cover both.
+    loadRows([activeDonation, { ...shopDonation, id: 'd9', category: 'Society', donor_name: 'New Society Row' }])
+    renderScreen()
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    openFilters()
+    expect(dialog().getAllByRole('button', { name: 'Society' })).toHaveLength(1)
+    fireEvent.click(dialog().getByRole('button', { name: 'Society' }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
+
+    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
+    expect(screen.getByText('New Society Row')).toBeInTheDocument()
+  })
+
+  it('keeps a removed source as a filter option while donations still carry it', async () => {
+    // The mandal has renamed away from Shop; its rupees are still in the books.
+    getDonationSources.mockResolvedValue(['Society', 'Galli'])
+    loadRows([activeDonation, shopDonation])
+    renderScreen()
+    await waitFor(() => expect(screen.getByText('Lakshmi Traders')).toBeInTheDocument())
+
+    openFilters()
+    expect(dialog().getByRole('button', { name: 'Galli' })).toBeInTheDocument()
+    expect(dialog().getByRole('button', { name: 'Shop' })).toBeInTheDocument()
+  })
+
+  it('filters by Today and by a picked day, in the local timezone', async () => {
+    loadRows([activeDonation, voidedDonation, todayDonation])
+    renderScreen()
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: t.whenToday }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
     expect(screen.getByText('Today Donor')).toBeInTheDocument()
     expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
 
-    // "Pick date" reveals a date input pre-set to today; changing it filters
-    // to that (local) day.
-    fireEvent.change(dateSelect, { target: { value: 'pick' } })
-    const dateInput = screen.getByLabelText(t.dateFilterPick)
-    expect(dateInput).toHaveValue(formatLocalDay(new Date()))
+    // "Pick a date" hands off to the shared day picker.
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: t.whenPickDate }))
+    expect(dialog().getByRole('heading', { name: strings.ledger.pickerTitle })).toBeInTheDocument()
+    fireEvent.click(dialog().getByRole('button', { name: strings.ledger.pickerJumpToday }))
     expect(screen.getByText('Today Donor')).toBeInTheDocument()
-    fireEvent.change(dateInput, { target: { value: formatLocalDay(new Date(activeDonation.created_at)) } })
-    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
-    expect(screen.queryByText('Today Donor')).not.toBeInTheDocument()
-
-    // A cleared (or half-edited) date input stays mounted and simply imposes
-    // no day constraint until it holds a full date again.
-    fireEvent.change(dateInput, { target: { value: '' } })
-    expect(screen.getByLabelText(t.dateFilterPick)).toHaveValue('')
-    expect(screen.getByText('Ganesh Donor')).toBeInTheDocument()
-    expect(screen.getByText('Today Donor')).toBeInTheDocument()
-
-    // Back to All dates hides the input; the picked day is remembered.
-    fireEvent.change(dateSelect, { target: { value: 'all' } })
-    expect(screen.queryByLabelText(t.dateFilterPick)).not.toBeInTheDocument()
+    expect(screen.queryByText('Ganesh Donor')).not.toBeInTheDocument()
+    // The chip names the day it narrowed to.
+    expect(screen.getByText(new RegExp(String(new Date().getFullYear())))).toBeInTheDocument()
   })
 
-  it('still shows the list (without a totals strip) when only the lite totals fetch fails', async () => {
-    getDonations.mockResolvedValue([activeDonation, voidedDonation])
-    getDonationsLite.mockRejectedValue(new Error('network down'))
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
-
+  it('sorts by amount and by name', async () => {
+    loadRows([activeDonation, shopDonation])
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.queryByText(t.empty)).not.toBeInTheDocument()
-    expect(screen.queryByText(new RegExp(`^${t.totalPrefix.trim()}`))).not.toBeInTheDocument()
+
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: t.sortAmount }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
+    const byAmount = screen.getAllByRole('button', { name: /Receipt #/ }).map((b) => b.textContent)
+    expect(byAmount[0]).toContain('Lakshmi Traders')
+
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: t.sortName }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
+    const byName = screen.getAllByRole('button', { name: /Receipt #/ }).map((b) => b.textContent)
+    expect(byName[0]).toContain('Ganesh Donor')
   })
 
-  // Plan 2026-08-16 §3c: the totals strip describes the CURRENT filter, counts
-  // non-voided rows only (even with "Show removed" on), and reads from the
-  // uncapped lite rows rather than the capped list.
-  it('shows a totals strip for the filtered view that never counts removed rows', async () => {
+  it('shows a filter-aware total that never counts removed rows', async () => {
     loadRows([activeDonation, voidedDonation, shopDonation])
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
     // Unfiltered: ₹500 + ₹1,200 (the ₹900 removed row does not count).
-    // The strip is one <p> whose text reads "Total: ₹X · N donations".
-    const strip = () => screen.getByText(new RegExp(`^${t.totalPrefix.trim()}`))
-    const reads = (total: string, count: number) => `${t.totalPrefix}${total} · ${count}${t.donationsSuffix}`
-    expect(strip()).toHaveTextContent(reads('₹1,700.00', 2))
+    expect(totalHero()).toHaveTextContent('₹1,700.00')
+    expect(totalHero()).toHaveTextContent(t.donationsUnit(2))
 
-    // Revealing removed rows changes what is listed, not the money.
-    fireEvent.click(screen.getByRole('button', { name: /Show removed/ }))
+    // A filter that leaves only the removed row: listed, but ₹0.
+    fireEvent.change(search(), { target: { value: 'duplicate' } })
+    openFilters()
+    fireEvent.click(dialog().getByRole('button', { name: /Show removed donations/ }))
+    fireEvent.click(dialog().getByRole('button', { name: /^Show \d/ }))
     expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
-    expect(strip()).toHaveTextContent(reads('₹1,700.00', 2))
+    expect(totalHero()).toHaveTextContent('₹0.00')
 
-    // A filter that leaves only the removed row: listed, but ₹0 · 0 donations.
-    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'duplicate' } })
-    expect(screen.getByText('Duplicate Entry')).toBeInTheDocument()
-    expect(strip()).toHaveTextContent(reads('₹0.00', 0))
-
-    // A filter with active rows: the strip follows it.
-    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'lakshmi' } })
-    expect(strip()).toHaveTextContent(reads('₹1,200.00', 1))
-
-    // Filtered to nothing → no strip at all.
-    fireEvent.change(screen.getByRole('searchbox', { name: t.searchPlaceholder }), { target: { value: 'zzz' } })
-    expect(screen.queryByText(new RegExp(`^${t.totalPrefix.trim()}`))).not.toBeInTheDocument()
+    // A filter with active rows: the total follows it.
+    fireEvent.change(search(), { target: { value: 'lakshmi' } })
+    expect(totalHero()).toHaveTextContent('₹1,200.00')
   })
 
-  it('totals come from the uncapped lite rows, so they include donations the capped list dropped', async () => {
+  it('takes the total from the uncapped lite rows, so it includes what the capped list dropped', async () => {
     getDonations.mockResolvedValue([activeDonation])
-    // The lite query returns one more (non-voided) row than the list did.
     getDonationsLite.mockResolvedValue([activeDonation, { ...shopDonation, amount_paise: 100000 }])
-    render(<MemoryRouter><CollectionsScreen /></MemoryRouter>)
+    renderScreen()
     await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
 
     expect(screen.queryByText('Lakshmi Traders')).not.toBeInTheDocument()
-    expect(screen.getByText(new RegExp(`^${t.totalPrefix.trim()}`))).toHaveTextContent(
-      `${t.totalPrefix}₹1,500.00 · 2${t.donationsSuffix}`,
-    )
+    expect(totalHero()).toHaveTextContent('₹1,500.00')
+    expect(totalHero()).toHaveTextContent(t.donationsUnit(2))
+  })
+
+  it('still shows the list (without the total hero) when only the lite fetch fails', async () => {
+    getDonations.mockResolvedValue([activeDonation, voidedDonation])
+    getDonationsLite.mockRejectedValue(new Error('network down'))
+    renderScreen()
+
+    await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(t.totalEyebrow)).not.toBeInTheDocument()
+  })
+
+  // The design merges the old Donors page in as a second view of the same money.
+  describe('donors view', () => {
+    it('groups the same filtered money by person', async () => {
+      loadRows([
+        activeDonation,
+        // Same phone as activeDonation, different spelling of the name — one donor.
+        { ...activeDonation, id: 'd5', receipt_no: 9, donor_name: 'Ganesh D.', amount_paise: 10000, donor_phone: '+919000000009' },
+        shopDonation,
+        // Voided: no donor row, no rupees.
+        voidedDonation,
+      ])
+      renderScreen()
+      await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: /^Donors · / }))
+
+      const rows = screen.getAllByRole('button', { name: /First / })
+      expect(rows).toHaveLength(2)
+      // ₹500 + ₹100 under one donor.
+      expect(rows.map((r) => r.textContent).join(' ')).toContain('₹600.00')
+      expect(screen.queryByText('Duplicate Entry')).not.toBeInTheDocument()
+    })
+
+    it('narrows both views at once, so the total always matches the view', async () => {
+      loadRows([activeDonation, shopDonation])
+      renderScreen()
+      await waitFor(() => expect(screen.getByText('Ganesh Donor')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: /^Donors · / }))
+      fireEvent.change(search(), { target: { value: 'lakshmi' } })
+
+      expect(screen.getAllByRole('button', { name: /First / })).toHaveLength(1)
+      expect(totalHero()).toHaveTextContent('₹1,200.00')
+    })
+
+    it('opens a donor sheet with their total, contact and history', async () => {
+      loadRows([activeDonation, { ...activeDonation, id: 'd5', receipt_no: 9, amount_paise: 10000 }])
+      renderScreen()
+      // Two rows from the same donor, so the name is on screen twice.
+      await waitFor(() => expect(screen.getAllByText('Ganesh Donor')).toHaveLength(2))
+
+      fireEvent.click(screen.getByRole('button', { name: /^Donors · / }))
+      fireEvent.click(screen.getByRole('button', { name: /First / }))
+
+      const sheet = dialog()
+      expect(sheet.getByText(t.donorGivenTotal)).toBeInTheDocument()
+      expect(sheet.getByRole('link', { name: strings.app.whatsApp }).getAttribute('href')).toContain('wa.me/919000000009')
+      expect(sheet.getByText(t.donorHistoryTitle)).toBeInTheDocument()
+      expect(sheet.getAllByText(/Cash · Society/)).toHaveLength(2)
+    })
+
+    it('says so when a donor left no number', async () => {
+      loadRows([todayDonation])
+      renderScreen()
+      await waitFor(() => expect(screen.getByText('Today Donor')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: /^Donors · / }))
+      fireEvent.click(screen.getByRole('button', { name: /First / }))
+
+      expect(dialog().getByText(t.donorNoPhoneNote)).toBeInTheDocument()
+    })
+
+    it('/admin/donors lands straight on the donors view', async () => {
+      loadRows([activeDonation])
+      render(<MemoryRouter><DonorsContent /></MemoryRouter>)
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /First / })).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: /^Donors · / })).toHaveAttribute('aria-pressed', 'true')
+    })
   })
 })

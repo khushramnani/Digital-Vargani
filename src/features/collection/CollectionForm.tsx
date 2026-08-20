@@ -1,49 +1,55 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { getDonations, type Donation, type DonationCategory } from '../../lib/db/donations'
+import { getDonations, type Donation } from '../../lib/db/donations'
+import { getDonationSources, getMandal } from '../../lib/db/config'
+import { DEFAULT_SOURCES, sourceLabel } from '../../lib/sources'
 import { validateDonationInput, type DonationMode, type DonationValidationErrors } from '../../lib/validation/donation'
 import { toPaise, formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { sendReceiptSms, sendReceiptWhatsApp, buildReceiptMessage, receiptUrl } from './send'
 import { LanguagePicker } from './LanguagePicker'
 import { useReceiptLang } from './useReceiptLang'
+import { ModeGlyph } from './ModeGlyph'
+import { SourcesSheet } from './SourcesSheet'
 import { enqueueDonation, syncOutboxItem } from '../../lib/queue/sync'
 import { isAdminRole } from '../../lib/roles'
 import { AppShell } from '../../components/AppShell'
 import { PhoneInput } from '../../components/PhoneInput'
-import { Sheet } from '../../components/Sheet'
 import { VolunteerTabBar } from './VolunteerTabBar'
-import { card, fieldLg, label as labelCls, btnPrimaryLg, errorText } from '../../components/ui'
+import { Money } from '../../components/console'
+import {
+  eyebrow,
+  pill,
+  modeTile,
+  ctaOrange,
+  ctaMuted,
+  ctaInk,
+  consoleFieldTall,
+  errorText,
+  navPill,
+} from '../../components/ui'
 
 const t = strings.collection
 
-const MODE_OPTIONS: { value: DonationMode; label: string; icon: string }[] = [
-  { value: 'cash', label: t.modeCash, icon: '💵' },
-  { value: 'upi', label: t.modeUpi, icon: '📱' },
-  { value: 'bank', label: t.modeBank, icon: '🏦' },
-]
+const MODES: DonationMode[] = ['cash', 'upi', 'bank']
+const MODE_LABEL: Record<DonationMode, string> = { cash: t.modeCash, upi: t.modeUpi, bank: t.modeBank }
 
-// v4 (§2): source category. Remembered per session in localStorage — a
-// volunteer often does a whole lane of shops, so the last pick sticks.
-const CATEGORY_KEY = 'vm:lastCategory'
-const CATEGORY_OPTIONS: { value: DonationCategory; label: string; icon: string }[] = [
-  { value: 'society', label: t.categorySociety, icon: '🏠' },
-  { value: 'shop', label: t.categoryShop, icon: '🏪' },
-  { value: 'other', label: t.categoryOther, icon: '🪔' },
-]
-function readCategory(): DonationCategory {
+// The volunteer's last source pick sticks: they often work a whole lane of shops
+// in one go. The key predates custom sources (v4 stored a slug); it now holds
+// the source NAME, and a name no longer in the mandal's list simply falls back
+// to the first source, so an old slug in storage is self-healing.
+const SOURCE_KEY = 'vm:lastCategory'
+function readRememberedSource(): string {
   try {
-    const v = localStorage.getItem(CATEGORY_KEY)
-    return v === 'shop' || v === 'other' ? v : 'society'
+    return localStorage.getItem(SOURCE_KEY) ?? ''
   } catch {
-    return 'society'
+    return ''
   }
 }
 
 // Auspicious quick-amount chips (design): tapping fills the Amount field.
-const QUICK_AMOUNTS = [101, 251, 501, 1100]
-const WIDE_AMOUNT = 2100
+const QUICK_AMOUNTS = [101, 251, 501, 1100, 2100]
 
 // The volunteer's last-used send channel is remembered so the send card
 // emphasises it as the primary button. Default (and every fresh device) is
@@ -59,37 +65,35 @@ function readChannel(): SendChannel {
   }
 }
 
-// new-issue #1: the quick-nav targets are role-aware. Admins tapping these
-// bounced through /login because expenses/handover/cash-in-hand only exist
-// under /volunteer for volunteers; the /admin equivalents are their routes.
-// pending/history are the shared /collect/* routes for both roles.
-function navFor(role: 'admin' | 'volunteer'): { to: string; label: string }[] {
-  const isAdmin = isAdminRole(role)
-  return [
-    { to: '/collect/pending', label: t.pendingSendLink },
-    { to: '/collect/history', label: t.collectionsLink },
-    { to: isAdmin ? '/admin/expenses' : '/volunteer/expenses', label: t.expensesLink },
-    { to: isAdmin ? '/admin/handovers' : '/volunteer/handover', label: t.handoversLink },
-    { to: isAdmin ? '/admin/cash-in-hand' : '/volunteer/cash-in-hand', label: t.cashInHandLink },
-  ]
-}
-
-// The product's primary screen (SPEC.md): name/phone/amount/mode in, a
-// donation row out. Routed at /collect behind RequireRole role=['admin',
-// 'volunteer'] (src/app/router.tsx) — both an admin and a volunteer collect
-// the same way, so appUser is whichever of the two is signed in. Every submit
-// lands in the Dexie outbox first (src/lib/queue), then an immediate sync
-// either completes right away (online) or leaves it queued (offline).
+// The product's primary screen (SPEC.md): name/phone/amount/mode/source in, a
+// donation row out. Routed at /collect behind RequireRole role=['owner',
+// 'admin', 'volunteer'] (src/app/router.tsx) — both an admin and a volunteer
+// collect the same way. Every submit lands in the Dexie outbox first
+// (src/lib/queue), then an immediate sync either completes right away (online)
+// or leaves it queued (offline).
+//
+// Redesign 2026-08-18: the design's collect screen — eyebrow'd field groups,
+// 86px payment tiles with drawn marks, a source chip row backed by the mandal's
+// own editable list (§1), an explicit "no phone" path (§2), and a full-screen
+// confirmation instead of the old bottom sheet, so a stale filled form is never
+// left sitting behind the send choice.
 export function CollectionForm() {
   const { appUser } = useAuth()
   const [donorName, setDonorName] = useState('')
   const [donorPhone, setDonorPhone] = useState('')
+  const [skipPhone, setSkipPhone] = useState(false)
   const [amountRupees, setAmountRupees] = useState('')
   const [mode, setMode] = useState<DonationMode | ''>('')
-  const [category, setCategory] = useState<DonationCategory>(readCategory)
+  const [sources, setSources] = useState<string[]>([...DEFAULT_SOURCES])
+  // Read once, not on every render: the remembered pick only matters until the
+  // volunteer taps a chip in this session.
+  const [rememberedSource] = useState(readRememberedSource)
+  const [pickedSource, setPickedSource] = useState('')
+  const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [mandalId, setMandalId] = useState<string | null>(null)
   const [errors, setErrors] = useState<DonationValidationErrors>({})
-  // Focus returns here after the send sheet dismisses, so the next entry starts
-  // immediately (§6 — the "+ New collection" loop, without scrolling).
+  // Focus returns here after the confirmation clears, so the next entry starts
+  // immediately (§6 — the "log another" loop, without scrolling).
   const donorNameRef = useRef<HTMLInputElement>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +105,40 @@ export function CollectionForm() {
 
   const isAdmin = isAdminRole(appUser?.role ?? '')
   const isVolunteer = appUser?.role === 'volunteer'
+
+  // The mandal's source list. getDonationSources() is the RPC every role can
+  // call; an admin additionally needs the mandal id, because rename/remove go
+  // through updateMandal (admin-only RLS) rather than through an RPC.
+  useEffect(() => {
+    if (!appUser) return
+    let active = true
+    getDonationSources()
+      .then((list) => {
+        if (active && list.length > 0) setSources(list)
+      })
+      .catch(() => {})
+    if (isAdminRole(appUser.role)) {
+      getMandal()
+        .then((m) => {
+          if (active) setMandalId(m.id)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      active = false
+    }
+  }, [appUser])
+
+  // The selection is DERIVED, not stored: resolve the wanted name against the
+  // live list on every render. That is what keeps it honest through the two
+  // moments the list changes underneath it — the RPC answering (the chip row
+  // starts on DEFAULT_SOURCES so the form is usable immediately) and an admin
+  // renaming or removing a source in the sheet. Either way an unresolvable name
+  // falls back to the first source, so a submit always carries one the mandal
+  // actually has, and no effect has to chase the state.
+  const wantedSource = pickedSource || rememberedSource
+  const source =
+    sources.find((s) => s.toLowerCase() === sourceLabel(wantedSource).toLowerCase()) ?? sources[0] ?? ''
 
   // Personal daily total for the greeting chip — this volunteer's own,
   // non-voided donations dated today. RLS already scopes getDonations to the
@@ -124,13 +162,22 @@ export function CollectionForm() {
     }
   }, [appUser])
 
+  function resetForm() {
+    setDonorName('')
+    setDonorPhone('')
+    setSkipPhone(false)
+    setAmountRupees('')
+    setMode('')
+    setErrors({})
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setLastDonation(null)
     setSavedOffline(false)
 
-    const result = validateDonationInput({ donorName, donorPhone, amountRupees, mode })
+    const result = validateDonationInput({ donorName, donorPhone, amountRupees, mode, skipPhone })
     setErrors(result.errors)
     // collectedBy is never form-editable — it always comes from the session's
     // acting user, resolved once here at submit time.
@@ -142,22 +189,22 @@ export function CollectionForm() {
       // — this is what makes "no data loss with network off" true.
       const { localId } = await enqueueDonation({
         donorName: donorName.trim(),
-        donorPhone: donorPhone.trim(),
+        // §2: a skipped phone is stored as nothing at all, not as whatever was
+        // half-typed before the volunteer flipped the toggle.
+        donorPhone: skipPhone ? '' : donorPhone.trim(),
         amountPaise: toPaise(Number(amountRupees)),
         mode: mode as DonationMode,
-        category,
+        category: source,
         collectedBy: appUser.id,
       })
       // Immediate sync attempt — online this completes in about the time the
       // old direct insert did, so the online-path UX is unchanged.
       const synced = await syncOutboxItem(localId)
       if (synced) {
-        // No auto-fire (audit v3 §2.1): show the send card and let the
+        // No auto-fire (audit v3 §2.1): show the confirmation and let the
         // volunteer tap SMS or WhatsApp. The old auto-open raced the OS
         // composer onto the screen before the choice ever painted, and
-        // marked the donation "sent" even when the composer was cancelled —
-        // dropping it out of the Pending Send tray (the one place the
-        // WhatsApp button persistently lives).
+        // marked the donation "sent" even when the composer was cancelled.
         setLastDonation(synced)
       } else {
         // Offline (or a transient failure) — safely queued in Dexie, will sync
@@ -165,13 +212,7 @@ export function CollectionForm() {
         // there's no public_token until the row has actually synced.
         setSavedOffline(true)
       }
-      // Reset for the next entry in BOTH cases — a volunteer logs many
-      // donations in a row and the entry is never lost (it queues locally).
-      setDonorName('')
-      setDonorPhone('')
-      setAmountRupees('')
-      setMode('')
-      setErrors({})
+      resetForm()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -179,32 +220,34 @@ export function CollectionForm() {
     }
   }
 
-  function selectCategory(c: DonationCategory) {
-    setCategory(c)
+  function selectSource(name: string) {
+    setPickedSource(name)
     try {
-      localStorage.setItem(CATEGORY_KEY, c)
+      localStorage.setItem(SOURCE_KEY, name)
     } catch {
       /* private mode / storage disabled — the pick still applies this session */
     }
   }
 
-  // §6: a send-tap or Skip dismisses the sheet, clears the form, and drops
-  // focus back on the donor-name field for the next entry. The rAF lets the
-  // Sheet finish unmounting (its cleanup restores focus to the opener first)
-  // before we claim focus, so donor-name wins.
-  function handleDismiss() {
+  // §2: flipping the toggle clears the number, so a half-typed value can never
+  // ride along on a donation the volunteer said has no phone.
+  function toggleSkipPhone() {
+    setSkipPhone((s) => !s)
+    setDonorPhone('')
+    setErrors((e) => ({ ...e, donorPhone: undefined }))
+  }
+
+  // Dismissing the confirmation returns to a blank form with focus on
+  // donor-name, so logging five in a row never needs a scroll or a manual clear.
+  function backToForm() {
     setLastDonation(null)
     setSavedOffline(false)
-    setDonorName('')
-    setDonorPhone('')
-    setAmountRupees('')
-    setMode('')
-    setErrors({})
+    resetForm()
     requestAnimationFrame(() => donorNameRef.current?.focus())
   }
 
-  // F1: tapping a channel remembers it, fires that channel's send flow (which
-  // marks the donation sent — tap-only, audit v3), then dismisses the sheet.
+  // Tapping a channel remembers it, fires that channel's send flow (which marks
+  // the donation sent — tap-only, audit v3), then returns to the form.
   function sendVia(ch: SendChannel) {
     if (!lastDonation) return
     try {
@@ -215,23 +258,21 @@ export function CollectionForm() {
     setChannel(ch)
     if (ch === 'whatsapp') sendReceiptWhatsApp(lastDonation, lang)
     else sendReceiptSms(lastDonation, lang)
-    handleDismiss()
+    backToForm()
   }
 
-  // One helper, two channels: the primary (last-used) is the big orange
-  // btnPrimaryLg; the other is a thumb-height ghost (green accent for
-  // WhatsApp) — both easy one-handed taps in the sheet.
-  const sendButton = (ch: SendChannel, primary: boolean) => {
-    const secondary =
-      ch === 'whatsapp'
-        ? 'rounded-xl border border-green-500 bg-white px-4 py-4 text-base font-bold text-green-700 transition-colors hover:bg-green-50'
-        : 'rounded-xl border border-stone-300 bg-white px-4 py-4 text-base font-bold text-stone-700 transition-colors hover:bg-stone-50'
-    return (
-      <button type="button" onClick={() => sendVia(ch)} className={primary ? btnPrimaryLg : secondary}>
-        {ch === 'whatsapp' ? t.sendReceiptWhatsAppButton : t.sendReceiptSmsButton}
-      </button>
-    )
-  }
+  const amountPaise = amountRupees.trim() === '' ? 0 : toPaise(Number(amountRupees))
+  // The design's enablement rule, plus the mode requirement this app keeps:
+  // payment mode drives every volunteer's cash-in-hand, so a UPI donation must
+  // never be bookable as cash by default.
+  const canRecord =
+    donorName.trim() !== '' &&
+    Number.isFinite(amountPaise) &&
+    amountPaise > 0 &&
+    mode !== '' &&
+    (skipPhone || donorPhone.trim() !== '')
+
+  const phoneNote = skipPhone ? t.phoneNoteSkipped : donorPhone.trim() ? t.phoneNoteGood : t.phoneNoteDefault
 
   return (
     <AppShell
@@ -247,254 +288,232 @@ export function CollectionForm() {
         ) : undefined
       }
     >
-      {/* Admins collect from the same screen but navigate by these quick chips
-          (role-aware targets); volunteers use the bottom tab bar instead. */}
-      {isAdmin && (
-        <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {navFor('admin').map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="flex-none rounded-full border border-stone-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-stone-600 transition-colors hover:border-orange-300 hover:text-orange-700"
-            >
-              {item.label}
-            </Link>
-          ))}
+      {/* The design's three collect-flow pills, replacing the old five-chip
+          admin quick-nav. Admin-only: a volunteer reaches the same two places
+          from their bottom tab bar, and two links to one destination on one
+          screen is noise, not navigation. */}
+      {!isVolunteer && (
+        <nav className="-mx-1 flex gap-[7px] overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <span className={navPill(true)}>{t.newDonation}</span>
+          <Link to="/collect/pending" className={navPill(false)}>
+            {t.pendingSendLink}
+          </Link>
+          <Link to="/collect/history" className={navPill(false)}>
+            {t.myCollections}
+          </Link>
         </nav>
       )}
 
-      <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${card} p-5`}>
-        <div className="flex flex-col gap-2">
-          <label htmlFor="donor-name" className={labelCls}>
+      {lastDonation || savedOffline ? (
+        <Confirmation
+          donation={lastDonation}
+          lang={lang}
+          channel={channel}
+          onSend={sendVia}
+          onLogAnother={backToForm}
+          isAdmin={isAdmin}
+        />
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col">
+          <label htmlFor="donor-name" className={`${eyebrow} mb-2`}>
             {t.donorNameLabel}
           </label>
           <input
             id="donor-name"
             ref={donorNameRef}
             value={donorName}
+            placeholder={t.donorNamePlaceholder}
             onChange={(e) => setDonorName(e.target.value)}
-            className={fieldLg}
+            className={consoleFieldTall}
           />
           {errors.donorName && (
-            <p role="alert" className={errorText}>
+            <p role="alert" className={`mt-1.5 ${errorText}`}>
               {errors.donorName}
             </p>
           )}
-        </div>
 
-        <div className="flex flex-col gap-2">
-          {/* v4 §3: E.164 with a visible country code — the old bare field let
-              buildWhatsAppLink silently assume +91 for any 10-digit number. */}
-          <PhoneInput id="donor-phone" value={donorPhone} onChange={setDonorPhone} label={t.donorPhoneLabel} />
-          {errors.donorPhone && (
-            <p role="alert" className={errorText}>
-              {errors.donorPhone}
-            </p>
+          <div className="mt-[18px] mb-2 flex items-baseline gap-2">
+            <span className={eyebrow}>{t.phoneLabel}</span>
+            <span className="flex-1" />
+            <span className="text-[10.5px] font-semibold text-stone-400">{phoneNote}</span>
+          </div>
+
+          {skipPhone ? (
+            <>
+              {/* §2: the design's warm notice. It states what is and isn't lost,
+                  because "no receipt" is the one thing a donor might expect. */}
+              <div className="flex items-start gap-[11px] rounded-[14px] border-[1.5px] border-warm-border bg-warm p-[13px]">
+                <span
+                  aria-hidden="true"
+                  className="font-display flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-warm-border text-[13px] font-bold text-warm-ink"
+                >
+                  !
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold text-warm-ink">{t.skipPhoneTitle}</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-warm-body text-pretty">{t.skipPhoneBody}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={toggleSkipPhone}
+                aria-pressed={true}
+                className="mt-[9px] h-8 self-start rounded-full border border-stone-200 bg-white px-3 text-[11.5px] font-bold text-stone-600 transition-colors hover:border-stone-900 hover:text-stone-900"
+              >
+                {t.unskipPhoneToggle}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* PhoneInput, not the design's fixed "IN +91" box: v4 §3 replaced
+                  exactly that, because a bare field let the WhatsApp link
+                  silently assume +91 for any 10-digit number. */}
+              <PhoneInput
+                id="donor-phone"
+                value={donorPhone}
+                onChange={setDonorPhone}
+                label={t.donorPhoneLabel}
+                placeholder={t.phonePlaceholder}
+                hideLabel
+                tall
+              />
+              <p className="mt-1.5 text-[11px] leading-relaxed text-stone-400 text-pretty">{t.phoneReceiptHint}</p>
+              {errors.donorPhone && (
+                <p role="alert" className={`mt-1.5 ${errorText}`}>
+                  {errors.donorPhone}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={toggleSkipPhone}
+                aria-pressed={false}
+                className="mt-[9px] h-8 self-start rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 text-[11.5px] font-bold text-stone-600 transition-colors hover:border-stone-900 hover:text-stone-900"
+              >
+                {t.skipPhoneToggle}
+              </button>
+            </>
           )}
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <label htmlFor="donor-amount" className={labelCls}>
+          <label htmlFor="donor-amount" className={`${eyebrow} mt-[18px] mb-2`}>
             {t.amountLabel}
           </label>
-          <input
-            id="donor-amount"
-            type="number"
-            step="0.01"
-            min="0"
-            value={amountRupees}
-            onChange={(e) => setAmountRupees(e.target.value)}
-            className={fieldLg}
-          />
+          <div className="flex h-16 items-center rounded-[16px] border-[1.5px] border-stone-200 bg-white px-[15px] focus-within:border-orange-500">
+            <span aria-hidden="true" className="font-display text-[27px] font-extrabold text-stone-900">
+              ₹
+            </span>
+            <input
+              id="donor-amount"
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              value={amountRupees}
+              placeholder="0"
+              onChange={(e) => setAmountRupees(e.target.value)}
+              className="font-display ml-2 min-w-0 flex-1 bg-transparent text-[27px] font-extrabold tabular-nums text-stone-900 outline-none placeholder:text-stone-300"
+            />
+          </div>
           {errors.amountRupees && (
-            <p role="alert" className={errorText}>
+            <p role="alert" className={`mt-1.5 ${errorText}`}>
               {errors.amountRupees}
             </p>
           )}
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-4 mt-[9px] flex gap-[7px] overflow-x-auto px-4 pt-px pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {QUICK_AMOUNTS.map((amt) => (
               <button
                 key={amt}
                 type="button"
                 onClick={() => setAmountRupees(String(amt))}
-                className="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 tabular-nums transition-colors hover:border-orange-400 hover:text-orange-700"
+                className={`${pill(amountRupees === String(amt))} tabular-nums`}
               >
-                ₹{amt}
+                ₹{amt.toLocaleString('en-IN')}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => setAmountRupees(String(WIDE_AMOUNT))}
-              className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 tabular-nums transition-colors hover:border-orange-400 hover:text-orange-700"
-            >
-              ₹{WIDE_AMOUNT}
-            </button>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <span className={labelCls}>{t.modeLabel}</span>
-          <div role="group" aria-label={t.modeLabel} className="grid grid-cols-3 gap-2.5">
-            {MODE_OPTIONS.map((option) => (
+          <span className={`${eyebrow} mt-[18px] mb-2`}>{t.howTheyPaidLabel}</span>
+          <div role="group" aria-label={t.howTheyPaidLabel} className="flex gap-2">
+            {MODES.map((m) => (
               <button
-                key={option.value}
+                key={m}
                 type="button"
-                aria-pressed={mode === option.value}
-                onClick={() => setMode(option.value)}
-                className={`flex flex-col items-center gap-1.5 rounded-xl border px-3 py-4 text-base font-semibold transition-colors ${
-                  mode === option.value
-                    ? 'border-orange-600 bg-orange-50 text-orange-700 shadow-sm'
-                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
-                }`}
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+                className={modeTile(mode === m)}
               >
-                <span aria-hidden="true" className="text-2xl leading-none">
-                  {option.icon}
-                </span>
-                <span>{option.label}</span>
+                <ModeGlyph mode={m} />
+                {MODE_LABEL[m]}
               </button>
             ))}
           </div>
           {errors.mode && (
-            <p role="alert" className={errorText}>
+            <p role="alert" className={`mt-1.5 ${errorText}`}>
               {errors.mode}
             </p>
           )}
-        </div>
 
-        {/* v4 §2: where the money came from. Defaults to Society (the dominant
-            door-to-door case) and remembers the last pick — a volunteer often
-            works a whole lane of shops in one go. Append-only server-side: a
-            wrong source is a void + re-enter, like every other money field. */}
-        <div className="flex flex-col gap-2">
-          <span className={labelCls}>{t.categoryLabel}</span>
-          <div role="group" aria-label={t.categoryLabel} className="grid grid-cols-3 gap-2.5">
-            {CATEGORY_OPTIONS.map((option) => (
+          {/* §1: the mandal's own source list, not a hardcoded three. Renaming
+              or removing one never touches a donation already recorded. */}
+          <div className="mt-[18px] mb-2 flex items-baseline gap-2">
+            <span className={eyebrow}>{strings.sources.label}</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setSourcesOpen(true)}
+              className="text-[11px] font-bold text-amber-700 transition-colors hover:text-orange-600"
+            >
+              {strings.sources.manage}
+            </button>
+          </div>
+          <div role="group" aria-label={strings.sources.label} className="flex flex-wrap gap-[7px]">
+            {sources.map((name) => (
               <button
-                key={option.value}
+                key={name}
                 type="button"
-                aria-pressed={category === option.value}
-                onClick={() => selectCategory(option.value)}
-                className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
-                  category === option.value
-                    ? 'border-orange-600 bg-orange-50 text-orange-700 shadow-sm'
-                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
-                }`}
+                aria-pressed={source === name}
+                onClick={() => selectSource(name)}
+                className={pill(source === name)}
               >
-                <span aria-hidden="true">{option.icon}</span>
-                <span>{option.label}</span>
+                {name}
               </button>
             ))}
           </div>
-        </div>
 
-        <LanguagePicker lang={lang} onChange={setLang} label={t.languageLabel} />
-
-        <button type="submit" disabled={submitting} className={btnPrimaryLg}>
-          {submitting ? t.submitting : t.submitButton}
-        </button>
-        <p className="text-center text-[13px] text-stone-500">{t.offlineMicrocopy}</p>
-
-        {error && (
-          <p role="alert" className={errorText}>
-            {error}
-          </p>
-        )}
-      </form>
-
-      {/* §6: the send step is a bottom sheet over the dimmed form, not a block
-          appended below it. On a phone the old card rendered under the fold —
-          after submit the volunteer saw nothing move — and it left the stale
-          filled form on screen inviting double-submits. Dismissing the sheet
-          (send OR skip) clears the form and refocuses donor-name, so logging
-          five in a row never needs a scroll or a manual clear. Skip leaves the
-          donation in Pending Send: sms_sent_at stays null because v3 marks sent
-          only on an explicit tap. */}
-      <Sheet open={!!lastDonation || savedOffline} onClose={handleDismiss} labelledBy="send-sheet-title">
-        {lastDonation ? (
-          <div className="flex flex-col gap-4">
-            <p id="send-sheet-title" className="flex items-center gap-2 text-base font-bold text-stone-900">
-              <span
-                aria-hidden="true"
-                className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-green-600 text-sm text-white"
-              >
-                ✓
-              </span>
-              <span>
-                {formatINR(lastDonation.amount_paise)}
-                {t.loggedPrefix} — {t.successPrefix}
-                {lastDonation.receipt_no}
-              </span>
-            </p>
-
-            {lastDonation.donor_phone ? (
-              <>
-                <div>
-                  <p className="text-sm font-bold text-stone-800">{t.sendTrayTitle}</p>
-                  <p className="text-[13px] text-stone-500">{t.sendTrayBody}</p>
-                </div>
-                {/* The exact text that goes out — one source of truth (send.ts). */}
-                <div className="rounded-xl bg-stone-100 p-3">
-                  <p className="mb-1 text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
-                    {t.smsPreviewLabel}
-                  </p>
-                  <p className="text-[13px] break-words text-stone-600">{buildReceiptMessage(lastDonation, lang)}</p>
-                </div>
-                {/* Both channels every time; the last-used one is the primary. */}
-                <div className="flex flex-col gap-2.5">
-                  {channel === 'whatsapp' ? (
-                    <>
-                      {sendButton('whatsapp', true)}
-                      {sendButton('sms', false)}
-                    </>
-                  ) : (
-                    <>
-                      {sendButton('sms', true)}
-                      {sendButton('whatsapp', false)}
-                    </>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">
-                {t.noPhoneHint}
-              </p>
-            )}
-
-            {/* Quiet row — neither action sends anything. */}
-            <div className="flex items-center justify-between gap-3 border-t border-stone-200 pt-3">
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(receiptUrl(lastDonation.receipt_no, lastDonation.public_token, lang), '_blank', 'noopener')
-                }
-                className="text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
-              >
-                {t.previewReceiptButton}
-              </button>
-              <button
-                type="button"
-                onClick={handleDismiss}
-                className="text-sm font-semibold text-stone-500 transition-colors hover:text-stone-800"
-              >
-                {t.skipForNow}
-              </button>
+          {/* No number, no receipt to translate — the picker would be choosing a
+              language for a message that is never composed. */}
+          {!skipPhone && (
+            <div className="mt-[18px]">
+              <LanguagePicker lang={lang} onChange={setLang} label={t.languageLabel} />
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <p id="send-sheet-title" className="flex items-center gap-2 text-base font-bold text-stone-900">
-              <span aria-hidden="true" className="h-2.5 w-2.5 flex-none rounded-full bg-amber-500" />
-              {t.savedOnPhone}
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || !canRecord}
+            className={`mt-[22px] ${canRecord && !submitting ? ctaOrange : ctaMuted}`}
+          >
+            {submitting ? t.submitting : skipPhone ? t.submitButtonNoReceipt : t.submitButton}
+          </button>
+          <p className="mt-[9px] text-center text-[11px] leading-relaxed text-stone-400 text-pretty">
+            {skipPhone ? t.submitHintNoReceipt : t.submitHint}
+          </p>
+
+          {error && (
+            <p role="alert" className={`mt-2 ${errorText}`}>
+              {error}
             </p>
-            {/* No receipt number and no send yet — there is no public_token until
-                the row actually syncs; it waits in Pending Send. */}
-            <p className="text-[13px] text-stone-500">{t.savedOffline}</p>
-            <button type="button" onClick={handleDismiss} className={btnPrimaryLg}>
-              {t.closeSheet}
-            </button>
-          </div>
-        )}
-      </Sheet>
+          )}
+        </form>
+      )}
+
+      <SourcesSheet
+        open={sourcesOpen}
+        onClose={() => setSourcesOpen(false)}
+        sources={sources}
+        mandalId={mandalId}
+        canEdit={isAdmin}
+        onChange={setSources}
+      />
 
       {isVolunteer && (
         <>
@@ -503,5 +522,125 @@ export function CollectionForm() {
         </>
       )}
     </AppShell>
+  )
+}
+
+// The design's post-save screen: it REPLACES the form rather than sitting over
+// it, so there is no stale filled form behind the send choice inviting a
+// double-submit (the problem audit v3 §6 solved with a sheet; a full swap solves
+// it outright). `donation` is null only for the offline path, which has no
+// receipt number and nothing to send yet.
+function Confirmation({
+  donation,
+  lang,
+  channel,
+  onSend,
+  onLogAnother,
+  isAdmin,
+}: {
+  donation: Donation | null
+  lang: Parameters<typeof buildReceiptMessage>[1]
+  channel: SendChannel
+  onSend: (ch: SendChannel) => void
+  onLogAnother: () => void
+  isAdmin: boolean
+}) {
+  const hasPhone = !!donation?.donor_phone
+
+  const sendButton = (ch: SendChannel, primary: boolean) => (
+    <button
+      key={ch}
+      type="button"
+      onClick={() => onSend(ch)}
+      className={
+        primary
+          ? 'h-[50px] w-full rounded-[14px] border-[1.5px] border-green-200 bg-green-50 text-sm font-bold text-green-800 transition-colors hover:bg-green-100'
+          : 'h-[46px] w-full rounded-[13px] border border-stone-200 bg-white text-[13px] font-bold text-stone-700 transition-colors hover:border-stone-900'
+      }
+    >
+      {ch === 'whatsapp' ? t.sendReceiptWhatsAppButton : t.sendReceiptSmsButton}
+    </button>
+  )
+
+  return (
+    <div className="animate-fade-up flex flex-col pt-2">
+      <div className="text-center">
+        <div
+          aria-hidden="true"
+          className="mx-auto flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-green-200 bg-green-50 text-2xl font-bold text-green-600"
+        >
+          {donation ? '✓' : '⋯'}
+        </div>
+        <h2 className="font-display mt-3.5 text-[21px] font-extrabold tracking-[-0.02em] text-stone-900">
+          {donation ? `${t.doneTitlePrefix}#${donation.receipt_no}` : t.savedOnPhone}
+        </h2>
+        <p className="mt-1 text-[12.5px] font-medium text-stone-400">
+          {donation
+            ? hasPhone
+              ? `${t.doneReadyPrefix}${donation.donor_phone}`
+              : t.doneNoReceiptSub
+            : t.savedOffline}
+        </p>
+      </div>
+
+      {donation && (
+        <div className="mt-5 rounded-[18px] border border-stone-200 bg-white p-[15px] shadow-[0_1px_2px_rgba(28,25,23,.04)]">
+          <div className="flex items-baseline gap-2.5">
+            <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-stone-900">{donation.donor_name}</span>
+            <Money
+              paise={donation.amount_paise}
+              className="font-display flex-none text-[19px] font-extrabold tabular-nums"
+            />
+          </div>
+          <p className="mt-0.5 text-[11.5px] font-medium text-stone-400">
+            {strings.collection[`mode${donation.mode === 'upi' ? 'Upi' : donation.mode === 'bank' ? 'Bank' : 'Cash'}`]} ·{' '}
+            {sourceLabel(donation.category)}
+          </p>
+        </div>
+      )}
+
+      {donation && hasPhone && (
+        <>
+          {/* The exact text that goes out — one source of truth (send.ts). */}
+          <div className="mt-2.5 rounded-[13px] bg-stone-100 p-3">
+            <p className="mb-1 text-[11px] font-semibold tracking-wide text-stone-400 uppercase">{t.smsPreviewLabel}</p>
+            <p className="text-[13px] break-words text-stone-600">{buildReceiptMessage(donation, lang)}</p>
+          </div>
+          {/* Both channels every time; the last-used one is the primary. */}
+          <div className="mt-2.5 flex flex-col gap-2">
+            {channel === 'whatsapp'
+              ? [sendButton('whatsapp', true), sendButton('sms', false)]
+              : [sendButton('sms', true), sendButton('whatsapp', false)]}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              window.open(receiptUrl(donation.receipt_no, donation.public_token, lang), '_blank', 'noopener')
+            }
+            className="mt-3 text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
+          >
+            {t.previewReceiptButton}
+          </button>
+        </>
+      )}
+
+      {donation && !hasPhone && (
+        <p className="mt-3 rounded-[13px] border border-dashed border-stone-200 bg-stone-50 px-[13px] py-3 text-center text-[11.5px] leading-relaxed text-stone-500 text-pretty">
+          {t.doneNoReceiptNote}
+        </p>
+      )}
+
+      <button type="button" onClick={onLogAnother} className={`mt-3.5 ${ctaInk}`}>
+        {t.logAnother}
+      </button>
+      {isAdmin && (
+        <Link
+          to="/admin"
+          className="mt-2 flex h-11 w-full items-center justify-center text-[13px] font-bold text-stone-500 transition-colors hover:text-stone-900"
+        >
+          {t.backToConsole}
+        </Link>
+      )}
+    </div>
   )
 }

@@ -3170,3 +3170,201 @@ END $$;
 SQL
 
 echo "== all assertions passed =="
+
+echo "== 2026-08-18 assertion: donation_sources defaults, and get_donation_sources is member-scoped =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+DO $$
+BEGIN
+  ASSERT (SELECT donation_sources FROM mandals
+           WHERE id = '11111111-1111-1111-1111-000000000001') = '{Society,Shop,Other}'::text[],
+    'FAIL: donation_sources did not default to the three legacy names';
+  RAISE NOTICE 'PASS: donation_sources defaults to {Society,Shop,Other}';
+END $$;
+
+-- The whole point of the RPC: mandals' select policy is admin-only, so a
+-- volunteer reading the column directly sees nothing and must go through it.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+DO $$
+BEGIN
+  ASSERT (SELECT count(*) FROM mandals) = 0,
+    'FAIL: a volunteer can select mandals directly — the RPC would be pointless';
+  ASSERT get_donation_sources() = '{Society,Shop,Other}'::text[],
+    'FAIL: a volunteer cannot read the source list through get_donation_sources()';
+  RAISE NOTICE 'PASS: a volunteer reads the source list only through get_donation_sources()';
+END $$;
+reset role;
+
+set role anon;
+set request.jwt.claim.sub = '';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM get_donation_sources();
+    RAISE EXCEPTION 'FAIL: anon can call get_donation_sources()';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: get_donation_sources() has no anon grant (%)', SQLERRM;
+  END;
+  BEGIN
+    PERFORM add_donation_source('Anon');
+    RAISE EXCEPTION 'FAIL: anon can call add_donation_source()';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'PASS: add_donation_source() has no anon grant (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== 2026-08-18 assertion: a VOLUNTEER may add a source, but never rename or remove one =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+
+DO $$
+BEGIN
+  ASSERT add_donation_source('  Galli  ') = '{Society,Shop,Other,Galli}'::text[],
+    'FAIL: a volunteer could not add a source (or the name was not trimmed)';
+  RAISE NOTICE 'PASS: a volunteer can add a source, trimmed';
+
+  -- Case-insensitive duplicate.
+  BEGIN
+    PERFORM add_donation_source('gAlLi');
+    RAISE EXCEPTION 'FAIL: a case-variant duplicate source was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%already exists%', format('FAIL: wrong duplicate error: %s', SQLERRM);
+    RAISE NOTICE 'PASS: a case-variant duplicate is rejected (%)', SQLERRM;
+  END;
+
+  -- Blank.
+  BEGIN
+    PERFORM add_donation_source('   ');
+    RAISE EXCEPTION 'FAIL: a blank source name was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%needs a name%', format('FAIL: wrong blank-name error: %s', SQLERRM);
+    RAISE NOTICE 'PASS: a blank source name is rejected';
+  END;
+
+  -- Over 40 characters.
+  BEGIN
+    PERFORM add_donation_source(repeat('x', 41));
+    RAISE EXCEPTION 'FAIL: a 41-character source name was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%at most 40%', format('FAIL: wrong length error: %s', SQLERRM);
+    RAISE NOTICE 'PASS: a 41-character source name is rejected';
+  END;
+
+  -- The cap: 4 exist, so two more fit and the seventh must not.
+  PERFORM add_donation_source('Sponsor');
+  PERFORM add_donation_source('Mandap');
+  BEGIN
+    PERFORM add_donation_source('Seventh');
+    RAISE EXCEPTION 'FAIL: a seventh source was accepted past the cap';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%six donation sources%', format('FAIL: wrong cap error: %s', SQLERRM);
+    RAISE NOTICE 'PASS: the six-source cap holds (%)', SQLERRM;
+  END;
+END $$;
+
+-- add_donation_source is the volunteer's WHOLE write surface: mandals UPDATE
+-- RLS must still refuse them, so rename/remove stay admin-only.
+DO $$
+DECLARE v_rows int;
+BEGIN
+  UPDATE mandals SET donation_sources = '{Hacked}'
+    WHERE id = '11111111-1111-1111-1111-000000000001';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  ASSERT v_rows = 0, 'SECURITY HOLE: a volunteer renamed/removed sources by updating mandals';
+  RAISE NOTICE 'PASS: a volunteer cannot rename or remove sources (mandals UPDATE RLS unchanged)';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'PASS: a volunteer cannot rename or remove sources (%)', SQLERRM;
+END $$;
+reset role;
+
+-- An admin still can, through the same policy that already governed
+-- expense_categories — no new grant was needed.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+update mandals set donation_sources = '{Galli,Shop,Other,Sponsor,Mandap,Renamed}'
+  where id = '11111111-1111-1111-1111-000000000001';
+reset role;
+
+DO $$
+BEGIN
+  ASSERT (SELECT donation_sources FROM mandals WHERE id = '11111111-1111-1111-1111-000000000001')
+         = '{Galli,Shop,Other,Sponsor,Mandap,Renamed}'::text[],
+    'FAIL: an admin could not rename the source list';
+  RAISE NOTICE 'PASS: an admin renames/removes sources through mandals_admin_update';
+END $$;
+SQL
+
+echo "== 2026-08-18 assertion: a caller in NO mandal cannot add a source =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+insert into auth.users (id, email) values ('aaaaaaaa-0000-0000-0000-0000000008a1', 'no-mandal@example.com');
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-0000000008a1';
+set request.jwt.claims = '{"is_anonymous": false}';
+DO $$
+BEGIN
+  BEGIN
+    PERFORM add_donation_source('Trespass');
+    RAISE EXCEPTION 'SECURITY HOLE: a non-member added a donation source';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%no mandal for the current session%',
+      format('FAIL: wrong non-member error: %s', SQLERRM);
+    RAISE NOTICE 'PASS: a non-member cannot add a source (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== 2026-08-18 assertion: the relaxed category CHECK accepts names and still rejects junk =="
+"${PSQL[@]}" -d "$DB_NAME" <<'SQL'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002'; -- Volunteer One
+
+-- A custom source NAME (the new shape) and a legacy slug (what an old client
+-- still sends) must both insert.
+insert into donations (donor_name, amount_paise, mode, category, collected_by)
+  values ('Custom Source Donor', 100, 'cash', 'Galli', '00000000-0000-0000-0000-000000000002');
+insert into donations (donor_name, amount_paise, mode, category, collected_by)
+  values ('Legacy Slug Donor', 100, 'cash', 'society', '00000000-0000-0000-0000-000000000002');
+
+DO $$
+BEGIN
+  BEGIN
+    insert into donations (donor_name, amount_paise, mode, category, collected_by)
+      values ('Blank Source', 100, 'cash', '   ', '00000000-0000-0000-0000-000000000002');
+    RAISE EXCEPTION 'FAIL: a blank category was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: a blank category is still rejected';
+  END;
+  BEGIN
+    insert into donations (donor_name, amount_paise, mode, category, collected_by)
+      values ('Long Source', 100, 'cash', repeat('x', 41), '00000000-0000-0000-0000-000000000002');
+    RAISE EXCEPTION 'FAIL: a 41-character category was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: a 41-character category is still rejected';
+  END;
+END $$;
+reset role;
+
+-- The append-only guard was NOT touched: renaming a source must never be
+-- able to rewrite the category on a donation already in the books.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001'; -- mandal one owner
+DO $$
+BEGIN
+  BEGIN
+    update donations set category = 'Renamed'
+      where donor_name = 'Custom Source Donor';
+    RAISE EXCEPTION 'SECURITY HOLE: a recorded donation category was edited';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM NOT LIKE 'SECURITY HOLE%',
+      format('FAIL: expected the append-only guard, got: %s', SQLERRM);
+    RAISE NOTICE 'PASS: forbid_financial_edit() still blocks a category edit (%)', SQLERRM;
+  END;
+END $$;
+reset role;
+SQL
+
+echo "== all 2026-08-18 source assertions passed =="

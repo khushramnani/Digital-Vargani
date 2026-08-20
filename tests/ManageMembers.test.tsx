@@ -23,9 +23,7 @@ import { strings } from '../src/lib/strings'
 // the only way to prove cross-mandal exclusion behaviourally rather than by
 // just asserting call args. Reset in `from()`, the start of every fresh
 // `.from('users')...` query, so a prior call's filter can't leak into the
-// next one (fetchAppUser's `.eq('auth_user_id'/'active', ...)` calls don't
-// match 'mandal_id' and resolve via the separate `.maybeSingle()` mock
-// anyway, so they're unaffected either way).
+// next one.
 const { getSession, onAuthStateChange, rpc, from, maybeSingle, membersRef, invitesRef } = vi.hoisted(() => {
   const maybeSingle = vi.fn()
   const membersRef: { current: unknown[] } = { current: [] }
@@ -132,28 +130,29 @@ function renderMembers() {
   )
 }
 
-async function openInviteSheet() {
-  fireEvent.click(screen.getByRole('button', { name: t.inviteButton }))
-  return screen.getByRole('dialog')
-}
+const dialog = () => within(screen.getByRole('dialog'))
+const openInviteSheet = () => fireEvent.click(screen.getByRole('button', { name: t.inviteButton }))
+// A member's actions live in a sheet now, opened from their row.
+const openMember = (name: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }))
 
-describe('ManageMembersContent', () => {
-  it('renders both a pending invite row and active member rows', async () => {
+describe('ManageMembersContent — the Members tab', () => {
+  it('leads with the team and lists both pending invites and members', async () => {
     renderMembers()
 
     await waitFor(() => expect(screen.getByText('Ishaan Invitee')).toBeInTheDocument())
+    expect(screen.getByText(t.teamEyebrow)).toBeInTheDocument()
+    expect(screen.getByText(`${t.teamBits.admins(1)} · ${t.teamBits.volunteers(1)}`)).toBeInTheDocument()
+    expect(screen.getByText(t.pendingInvitesTitle)).toBeInTheDocument()
+    expect(screen.getByText(t.waitingCount(1))).toBeInTheDocument()
     expect(screen.getByText('Amit Admin')).toBeInTheDocument()
     expect(screen.getByText('Vera Volunteer')).toBeInTheDocument()
-    expect(screen.getByText(t.statusInvited, { exact: false })).toBeInTheDocument()
-    expect(screen.getAllByText(t.statusActive).length).toBeGreaterThan(0)
   })
 
-  it('narrows visible rows with the filter chips', async () => {
+  it('narrows visible rows with the filter pills', async () => {
     renderMembers()
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
-    expect(screen.getByText('Vera Volunteer')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: t.filterVolunteers }))
+    fireEvent.click(screen.getByRole('button', { name: `${t.filterVolunteers} 1` }))
 
     expect(screen.queryByText('Amit Admin')).not.toBeInTheDocument()
     expect(screen.getByText('Vera Volunteer')).toBeInTheDocument()
@@ -161,34 +160,52 @@ describe('ManageMembersContent', () => {
     expect(screen.getByText('Ishaan Invitee')).toBeInTheDocument()
   })
 
+  it('searches name, email and phone digits', async () => {
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
+    const search = screen.getByRole('searchbox')
+
+    fireEvent.change(search, { target: { value: 'amit@' } })
+    expect(screen.getByText('Amit Admin')).toBeInTheDocument()
+    expect(screen.queryByText('Vera Volunteer')).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '98765' } })
+    expect(screen.getByText('Vera Volunteer')).toBeInTheDocument()
+    expect(screen.queryByText('Amit Admin')).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: 'zzz' } })
+    expect(screen.getByText(t.noneMatch)).toBeInTheDocument()
+  })
+
   it('hides the Admin role option in the invite sheet for a plain admin', async () => {
     setViewer(adminViewer)
     renderMembers()
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
 
-    const dialog = await openInviteSheet()
-    expect(within(dialog).getByRole('button', { name: t.roleVolunteer })).toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: t.roleAdmin })).not.toBeInTheDocument()
+    openInviteSheet()
+    expect(dialog().getByRole('button', { name: t.roleVolunteer })).toBeInTheDocument()
+    // create_invite only lets an owner mint an admin invite.
+    expect(dialog().queryByRole('button', { name: t.roleAdmin })).not.toBeInTheDocument()
   })
 
   it('offers the Admin role option in the invite sheet for the owner', async () => {
     renderMembers() // default viewer is owner
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
 
-    const dialog = await openInviteSheet()
-    expect(within(dialog).getByRole('button', { name: t.roleAdmin })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: t.roleVolunteer })).toBeInTheDocument()
+    openInviteSheet()
+    expect(dialog().getByRole('button', { name: t.roleAdmin })).toBeInTheDocument()
+    expect(dialog().getByRole('button', { name: t.roleVolunteer })).toBeInTheDocument()
   })
 
-  it('submits the invite form, calls create_invite with the right args, and shows the resulting link', async () => {
+  it('submits the invite, calls create_invite with the right args, and shows both halves', async () => {
     renderMembers()
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
 
-    const dialog = await openInviteSheet()
-    fireEvent.click(within(dialog).getByRole('button', { name: t.roleAdmin }))
-    fireEvent.change(within(dialog).getByLabelText(t.nameLabel), { target: { value: 'New Admin Person' } })
-    fireEvent.change(within(dialog).getByLabelText(t.emailLabel), { target: { value: 'newadmin@example.com' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: t.sendButton }))
+    openInviteSheet()
+    fireEvent.click(dialog().getByRole('button', { name: t.roleAdmin }))
+    fireEvent.change(dialog().getByLabelText(t.nameLabel), { target: { value: 'New Admin Person' } })
+    fireEvent.change(dialog().getByLabelText(t.emailLabel), { target: { value: 'newadmin@example.com' } })
+    fireEvent.click(dialog().getByRole('button', { name: t.sendButton }))
 
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith('create_invite', {
@@ -198,52 +215,88 @@ describe('ManageMembersContent', () => {
         phone: undefined,
       }),
     )
-    await waitFor(() => expect(screen.getByDisplayValue(/\/join\/tok-abc123$/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/\/join\/tok-abc123$/)).toBeInTheDocument())
     expect(screen.getByText(t.copyLink)).toBeInTheDocument()
     expect(screen.getByText(t.shareWhatsApp)).toBeInTheDocument()
-    // The typeable half, grouped for reading aloud — the whole reason it
-    // exists is that the link above cannot be dictated over a phone.
+    // The typeable half, grouped for reading aloud — the whole reason it exists
+    // is that the link above cannot be dictated over a phone.
     expect(screen.getByText('K7M29-XPQ4R')).toBeInTheDocument()
   })
 
-  it('lets a plain admin deactivate/reactivate a volunteer but shows no role-change/transfer controls on an admin row', async () => {
+  it('keeps the invite submit inert until a name and an email are both present', async () => {
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
+    openInviteSheet()
+
+    const submit = () => dialog().getByRole('button', { name: t.sendButton })
+    expect(submit()).toBeDisabled()
+    fireEvent.change(dialog().getByLabelText(t.nameLabel), { target: { value: 'Someone' } })
+    expect(submit()).toBeDisabled()
+    // create_invite requires an email — it is how a joiner is recognised when
+    // they sign in without the link.
+    fireEvent.change(dialog().getByLabelText(t.emailLabel), { target: { value: 'someone@example.com' } })
+    expect(submit()).toBeEnabled()
+  })
+
+  it("gives a plain admin the volunteer's deactivate but no controls on an admin", async () => {
     setViewer(adminViewer)
     renderMembers()
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
 
-    const adminLi = screen.getByText('Amit Admin').closest('li')!
-    const volunteerLi = screen.getByText('Vera Volunteer').closest('li')!
+    openMember('Amit Admin')
+    expect(dialog().queryByRole('button', { name: t.makeVolunteer })).not.toBeInTheDocument()
+    expect(dialog().queryByRole('button', { name: t.makeOwner })).not.toBeInTheDocument()
+    expect(dialog().queryByRole('button', { name: t.deactivate })).not.toBeInTheDocument()
+    fireEvent.click(dialog().getByRole('button', { name: strings.app.close }))
 
-    expect(within(adminLi).queryByText(t.makeVolunteer)).not.toBeInTheDocument()
-    expect(within(adminLi).queryByText(t.makeOwner)).not.toBeInTheDocument()
-    expect(within(adminLi).queryByText(t.deactivate)).not.toBeInTheDocument()
-
-    expect(within(volunteerLi).getByText(t.deactivate)).toBeInTheDocument()
+    openMember('Vera Volunteer')
+    expect(dialog().getByRole('button', { name: t.deactivate })).toBeInTheDocument()
   })
 
   it('lets the owner change role and transfer ownership from an admin row', async () => {
     renderMembers() // default viewer is owner
     await waitFor(() => expect(screen.getByText('Amit Admin')).toBeInTheDocument())
 
-    const adminLi = screen.getByText('Amit Admin').closest('li')!
-    expect(within(adminLi).getByText(t.makeVolunteer)).toBeInTheDocument()
-    expect(within(adminLi).getByText(t.makeOwner)).toBeInTheDocument()
+    openMember('Amit Admin')
+    expect(dialog().getByRole('button', { name: t.makeVolunteer })).toBeInTheDocument()
+    expect(dialog().getByRole('button', { name: t.makeOwner })).toBeInTheDocument()
+  })
+
+  it("says the owner's own row cannot be changed from itself", async () => {
+    membersRef.current = [ownerViewer, volunteerRow]
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Ollie Owner')).toBeInTheDocument())
+
+    openMember('Ollie Owner')
+    expect(dialog().getByText(t.ownerRowNote)).toBeInTheDocument()
+    expect(dialog().queryByRole('button', { name: t.deactivate })).not.toBeInTheDocument()
+  })
+
+  it('promotes a volunteer to admin through set_member_role', async () => {
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Vera Volunteer')).toBeInTheDocument())
+
+    openMember('Vera Volunteer')
+    fireEvent.click(dialog().getByRole('button', { name: t.makeAdmin }))
+
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith('set_member_role', { member_id: 'user-vol-1', new_role: 'admin' }),
+    )
   })
 
   it('shows the new link in the same ready-to-share UI after resending an invite', async () => {
     renderMembers()
     await waitFor(() => expect(screen.getByText('Ishaan Invitee')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: t.resendButton }))
+    fireEvent.click(screen.getByRole('button', { name: /Ishaan Invitee/ }))
+    fireEvent.click(dialog().getByRole('button', { name: t.resendLong }))
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('resend_invite', { invite_id: 'invite-1' }))
-    const dialog = await screen.findByRole('dialog')
-    await waitFor(() => expect(within(dialog).getByDisplayValue(/\/join\/tok-resend-999$/)).toBeInTheDocument())
-    expect(within(dialog).getByText(t.copyLink)).toBeInTheDocument()
-    expect(within(dialog).getByText(t.shareWhatsApp)).toBeInTheDocument()
-    // A resend supersedes BOTH halves — showing the old code would send
-    // someone off to type a value the server has just revoked.
-    expect(within(dialog).getByText('B4TXW-8ZDNH')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/\/join\/tok-resend-999$/)).toBeInTheDocument())
+    expect(screen.getByText(t.copyLink)).toBeInTheDocument()
+    // A resend supersedes BOTH halves — showing the old code would send someone
+    // off to type a value the server has just revoked.
+    expect(screen.getByText('B4TXW-8ZDNH')).toBeInTheDocument()
   })
 
   it('excludes a member row belonging to a different mandal from the list', async () => {
@@ -265,23 +318,34 @@ describe('ManageMembersContent', () => {
     renderMembers()
     await waitFor(() => expect(screen.getByText('Ishaan Invitee')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: t.revokeButton }))
-    const dialog = screen.getByRole('dialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: t.revokeConfirm }))
+    fireEvent.click(screen.getByRole('button', { name: /Ishaan Invitee/ }))
+    fireEvent.click(dialog().getByRole('button', { name: t.revokeButton }))
+    // One modal at a time: the detail sheet closes as the confirm opens.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    fireEvent.click(dialog().getByRole('button', { name: t.revokeConfirm }))
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('revoke_invite', { invite_id: 'invite-1' }))
   })
 
   it('confirming the deactivate dialog calls deactivate_member', async () => {
-    renderMembers() // owner viewer, so the volunteer row's deactivate is available
+    renderMembers() // owner viewer, so the volunteer's deactivate is available
     await waitFor(() => expect(screen.getByText('Vera Volunteer')).toBeInTheDocument())
 
-    const volunteerLi = screen.getByText('Vera Volunteer').closest('li')!
-    fireEvent.click(within(volunteerLi).getByText(t.deactivate))
-
-    const dialog = screen.getByRole('dialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: t.deactivateConfirm }))
+    openMember('Vera Volunteer')
+    fireEvent.click(dialog().getByRole('button', { name: t.deactivate }))
+    fireEvent.click(dialog().getByRole('button', { name: t.deactivateConfirm }))
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('deactivate_member', { member_id: 'user-vol-1' }))
+  })
+
+  it('reactivates a deactivated member', async () => {
+    membersRef.current = [makeUser({ ...volunteerRow, active: false })]
+    renderMembers()
+    await waitFor(() => expect(screen.getByText('Vera Volunteer')).toBeInTheDocument())
+
+    openMember('Vera Volunteer')
+    fireEvent.click(dialog().getByRole('button', { name: t.reactivate }))
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('reactivate_member', { member_id: 'user-vol-1' }))
   })
 })

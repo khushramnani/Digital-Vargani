@@ -38,15 +38,24 @@ vi.mock('../src/lib/queue/sync', () => ({
   syncOutboxItem,
 }))
 
-// CollectionForm now presets the language picker from the mandal default.
-// Mock it so the test never touches the real supabase client (this file
-// doesn't mock ../src/lib/db/client), and so the preset is deterministic.
-const { getMandalDefaultLang } = vi.hoisted(() => ({
+// CollectionForm presets the language picker from the mandal default and, since
+// plan 2026-08-18 §1, reads the mandal's own donation-source list through the
+// get_donation_sources RPC. Mocked so the test never touches the real supabase
+// client (this file doesn't mock ../src/lib/db/client) and the list is fixed.
+const { getMandalDefaultLang, getDonationSources, getMandal, addDonationSource, updateMandal } = vi.hoisted(() => ({
   getMandalDefaultLang: vi.fn(),
+  getDonationSources: vi.fn(),
+  getMandal: vi.fn(),
+  addDonationSource: vi.fn(),
+  updateMandal: vi.fn(),
 }))
 
 vi.mock('../src/lib/db/config', () => ({
   getMandalDefaultLang,
+  getDonationSources,
+  getMandal,
+  addDonationSource,
+  updateMandal,
 }))
 
 const volunteer: Tables<'users'> = {
@@ -79,7 +88,7 @@ const createdDonation: Tables<'donations'> = {
   donor_phone: '9876543210',
   amount_paise: 50100,
   mode: 'cash',
-  category: 'society',
+  category: 'Society',
   collected_by: 'volunteer-1',
   created_at: '2026-01-01T00:00:00Z',
   voided: false,
@@ -99,11 +108,13 @@ function renderForm() {
 }
 
 function fillValidForm() {
-  fireEvent.change(screen.getByLabelText('Donor Name'), { target: { value: 'Ramesh Kulkarni' } })
+  fireEvent.change(screen.getByLabelText('Donor name'), { target: { value: 'Ramesh Kulkarni' } })
   fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '9876543210' } })
-  fireEvent.change(screen.getByLabelText('Amount (₹)'), { target: { value: '501' } })
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '501' } })
   fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
 }
+
+const record = () => screen.getByRole('button', { name: /^Record/ })
 
 // window.location.href can't actually be assigned in jsdom without either
 // throwing ("Not implemented: navigation") or leaving the test process on a
@@ -116,13 +127,16 @@ const realLocation = window.location
 beforeEach(() => {
   vi.clearAllMocks()
   // Reset the remembered send channel so each test starts on the SMS default
-  // (a WhatsApp tap in a prior test must not carry over and change auto-send).
+  // (a WhatsApp tap in a prior test must not carry over and change auto-send),
+  // and the remembered source so the chip row starts on the mandal's first.
   localStorage.clear()
   enqueueDonation.mockResolvedValue({ localId: 'local-id-1' })
   syncOutboxItem.mockResolvedValue(createdDonation)
   markSmsSent.mockResolvedValue(undefined)
   getDonations.mockResolvedValue([])
   getMandalDefaultLang.mockResolvedValue('en')
+  getDonationSources.mockResolvedValue(['Society', 'Shop', 'Other'])
+  getMandal.mockRejectedValue(new Error('admin only'))
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { origin: 'https://vinayak-mandal.example', href: 'https://vinayak-mandal.example/volunteer' },
@@ -134,35 +148,43 @@ afterEach(() => {
 })
 
 describe('CollectionForm', () => {
-  it('blocks submission and shows inline errors when the form is empty', () => {
+  it('keeps the submit button inert until name, amount and mode are all present', async () => {
     renderForm()
+    expect(record()).toBeDisabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.change(screen.getByLabelText('Donor name'), { target: { value: 'Ramesh Kulkarni' } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '501' } })
+    fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '9876543210' } })
+    // Payment mode is deliberately NOT defaulted: it drives every volunteer's
+    // cash-in-hand, so a UPI donation must never be bookable as cash by
+    // accident. Until a tile is tapped the form cannot be submitted.
+    expect(record()).toBeDisabled()
 
-    // Name, amount, and mode error on an empty form; phone is optional now
-    // (audit #8), so it does not.
-    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
+    expect(record()).toBeEnabled()
     expect(enqueueDonation).not.toHaveBeenCalled()
   })
 
   it('converts rupees to paise and sends collectedBy from the session, never receipt_no/public_token', async () => {
     renderForm()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Society' })).toBeInTheDocument())
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
     await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
     const payload = enqueueDonation.mock.calls[0][0]
     expect(payload).toEqual({
       donorName: 'Ramesh Kulkarni',
       // v4 §3: PhoneInput stores E.164 — the national digits typed into the
-      // field are combined with the visible country code (default 🇮🇳 +91),
+      // field are combined with the visible country code (default IN +91),
       // replacing the old silent "10 digits must be Indian" guess in send.ts.
       donorPhone: '+919876543210',
       amountPaise: 50100,
       mode: 'cash',
-      // v4 §2: defaults to Society (the door-to-door case) unless re-picked.
-      category: 'society',
+      // Plan 2026-08-18 §1: the mandal's FIRST source name, as text — not the
+      // old 'society' slug.
+      category: 'Society',
       collectedBy: 'volunteer-1',
     })
     expect(payload).not.toHaveProperty('receipt_no')
@@ -173,7 +195,7 @@ describe('CollectionForm', () => {
     renderForm()
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
     await waitFor(() => expect(syncOutboxItem).toHaveBeenCalledWith('local-id-1'))
   })
@@ -182,12 +204,14 @@ describe('CollectionForm', () => {
     renderForm()
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
-    await waitFor(() => expect(screen.getByText(/Receipt #42/)).toBeInTheDocument())
-    expect(screen.getByLabelText('Donor Name')).toHaveValue('')
+    await waitFor(() => expect(screen.getByText(/receipt #42/i)).toBeInTheDocument())
+    // The confirmation replaces the form; going back to it must find it blank.
+    fireEvent.click(screen.getByRole('button', { name: 'Log another donation' }))
+    expect(screen.getByLabelText('Donor name')).toHaveValue('')
     expect(screen.getByLabelText('Phone')).toHaveValue('')
-    expect(screen.getByLabelText('Amount (₹)')).toHaveValue(null)
+    expect(screen.getByLabelText('Amount')).toHaveValue(null)
   })
 
   it('shows an error instead of a success confirmation when enqueueDonation rejects', async () => {
@@ -195,36 +219,38 @@ describe('CollectionForm', () => {
     renderForm()
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network error'))
-    expect(screen.queryByText(/Receipt #/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/receipt #/i)).not.toBeInTheDocument()
   })
 
-  it('shows a "saved offline" confirmation (no receipt number, no SMS attempt) when syncOutboxItem returns null, and still resets the form', async () => {
+  it('shows a "saved offline" confirmation (no receipt number, no SMS attempt) when syncOutboxItem returns null', async () => {
     syncOutboxItem.mockResolvedValue(null)
     renderForm()
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
     await waitFor(() =>
       expect(screen.getByText("Saved — will send once you're back online.")).toBeInTheDocument(),
     )
-    expect(screen.queryByText(/Receipt #/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/receipt #/i)).not.toBeInTheDocument()
     expect(markSmsSent).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Donor Name')).toHaveValue('')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log another donation' }))
+    expect(screen.getByLabelText('Donor name')).toHaveValue('')
     expect(screen.getByLabelText('Phone')).toHaveValue('')
-    expect(screen.getByLabelText('Amount (₹)')).toHaveValue(null)
+    expect(screen.getByLabelText('Amount')).toHaveValue(null)
   })
 
   it('does NOT auto-fire on submit — it shows the send-choice card with both channels and marks nothing sent', async () => {
     renderForm()
     fillValidForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
 
-    await waitFor(() => expect(screen.getByText(/Receipt #42/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/receipt #42/i)).toBeInTheDocument())
     // Nothing sends silently: the OS composer is never navigated to, and the
     // donation is not marked sent, so it stays in Pending Send.
     expect(window.location.href).toBe('https://vinayak-mandal.example/volunteer')
@@ -237,7 +263,7 @@ describe('CollectionForm', () => {
   it('fires the SMS link and marks the donation sent only once "Send via SMS" is tapped', async () => {
     renderForm()
     fillValidForm()
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send via SMS' })).toBeInTheDocument())
 
     // jsdom's default UA isn't an iOS one, so this exercises the Android/
@@ -257,7 +283,7 @@ describe('CollectionForm', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     renderForm()
     fillValidForm()
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
     await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
     markSmsSent.mockClear()
 
@@ -276,22 +302,6 @@ describe('CollectionForm', () => {
     expect(screen.getByRole('link', { name: 'Pending sends' })).toHaveAttribute('href', '/collect/pending')
   })
 
-  it('hides both send buttons and shows the no-phone hint when the donation has no donor phone', async () => {
-    syncOutboxItem.mockResolvedValue({ ...createdDonation, donor_phone: null })
-    renderForm()
-    fireEvent.change(screen.getByLabelText('Donor Name'), { target: { value: 'No Phone Donor' } })
-    fireEvent.change(screen.getByLabelText('Amount (₹)'), { target: { value: '501' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
-
-    await waitFor(() => expect(screen.getByText(/Receipt #42/)).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: 'Send via SMS' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Send via WhatsApp' })).not.toBeInTheDocument()
-    expect(screen.getByText('No phone number given — receipt cannot be sent.')).toBeInTheDocument()
-    // No phone means no auto-send fired either.
-    expect(markSmsSent).not.toHaveBeenCalled()
-  })
-
   it('presets the language picker from the mandal default and sends the receipt in it', async () => {
     getMandalDefaultLang.mockResolvedValue('mr')
     renderForm()
@@ -299,7 +309,7 @@ describe('CollectionForm', () => {
     await waitFor(() => expect(screen.getByRole('radio', { name: 'मराठी' })).toBeChecked())
 
     fillValidForm()
-    fireEvent.click(screen.getByRole('button', { name: 'Record Donation' }))
+    fireEvent.click(record())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send via SMS' })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Send via SMS' }))
 
@@ -308,9 +318,198 @@ describe('CollectionForm', () => {
     const expectedMessage = encodeURIComponent(
       'तुमच्या ₹501 वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: https://vinayak-mandal.example/r/42-tok-abc?lang=mr',
     )
-    // v4: the stored legacy 10-digit phone is normalized to E.164 (+91…) before
-    // the sms: link is built (send.ts / normalizeToE164).
     expect(window.location.href).toBe(`sms:+919876543210?body=${expectedMessage}`)
     expect(markSmsSent).toHaveBeenCalledWith('donation-1')
+  })
+
+  // ── Plan 2026-08-18 §1 — custom donation sources ─────────────────────────
+  describe('donation sources', () => {
+    it('builds the chip row from the mandal RPC, not a hardcoded three', async () => {
+      getDonationSources.mockResolvedValue(['Galli', 'Sponsor'])
+      renderForm()
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Galli' })).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: 'Sponsor' })).toBeInTheDocument()
+      // The old fixed triple is gone — 'Society' is only there if the mandal
+      // still has it.
+      expect(screen.queryByRole('button', { name: 'Society' })).not.toBeInTheDocument()
+      // First source is preselected, so a submit always carries one.
+      expect(screen.getByRole('button', { name: 'Galli' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('submits the picked source NAME as the category', async () => {
+      getDonationSources.mockResolvedValue(['Society', 'Galli'])
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Galli' })).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Galli' }))
+      fillValidForm()
+      fireEvent.click(record())
+
+      await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
+      expect(enqueueDonation.mock.calls[0][0].category).toBe('Galli')
+    })
+
+    it('remembers the last picked source across mounts', async () => {
+      getDonationSources.mockResolvedValue(['Society', 'Galli'])
+      const first = render(
+        <MemoryRouter>
+          <CollectionForm />
+        </MemoryRouter>,
+      )
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Galli' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Galli' }))
+      first.unmount()
+
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Galli' })).toHaveAttribute('aria-pressed', 'true'))
+    })
+
+    it('falls back to the first source when the remembered one is no longer in the list', async () => {
+      // v4 stored the old lowercase slug; a mandal that has since renamed
+      // 'Society' away must not keep submitting a source it no longer has.
+      localStorage.setItem('vm:lastCategory', 'society')
+      getDonationSources.mockResolvedValue(['Galli', 'Sponsor'])
+      renderForm()
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Galli' })).toHaveAttribute('aria-pressed', 'true'))
+    })
+
+    it('still recognises a remembered legacy slug when the mandal kept the name', async () => {
+      localStorage.setItem('vm:lastCategory', 'shop')
+      getDonationSources.mockResolvedValue(['Society', 'Shop', 'Other'])
+      renderForm()
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Shop' })).toHaveAttribute('aria-pressed', 'true'))
+    })
+
+    it("gives a volunteer an add-only sources sheet — no rename or remove", async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Society' })).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+
+      expect(screen.getByRole('heading', { name: 'Donation sources' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Add a source')).toBeInTheDocument()
+      // Rename inputs and remove buttons belong to an admin only — mandals'
+      // UPDATE RLS refuses a volunteer, so the controls simply aren't drawn.
+      expect(screen.queryByLabelText('Source name 1')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Remove source/ })).not.toBeInTheDocument()
+    })
+
+    it("routes a volunteer's add through the RPC and adopts the returned list", async () => {
+      addDonationSource.mockResolvedValue(['Society', 'Shop', 'Other', 'Galli'])
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Society' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+
+      fireEvent.change(screen.getByLabelText('Add a source'), { target: { value: '  Galli  ' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => expect(addDonationSource).toHaveBeenCalledWith('Galli'))
+      // updateMandal is the admin-only rename/remove path and must never be
+      // reached from a volunteer's add.
+      expect(updateMandal).not.toHaveBeenCalled()
+      await waitFor(() => expect(screen.getByText('Sources saved.')).toBeInTheDocument())
+    })
+
+    it('rejects a duplicate name before it ever reaches the server', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Society' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+
+      fireEvent.change(screen.getByLabelText('Add a source'), { target: { value: 'shop' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      expect(screen.getByRole('alert')).toHaveTextContent('You already have a source with that name.')
+      expect(addDonationSource).not.toHaveBeenCalled()
+    })
+
+    it('hides the add row and explains why once six sources exist', async () => {
+      getDonationSources.mockResolvedValue(['One', 'Two', 'Three', 'Four', 'Five', 'Six'])
+      renderForm()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Six' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+
+      expect(screen.queryByLabelText('Add a source')).not.toBeInTheDocument()
+      expect(screen.getByText(/Six is the most the chip row holds/)).toBeInTheDocument()
+    })
+  })
+
+  // ── Plan 2026-08-18 §2 — record without a receipt ────────────────────────
+  describe('skip phone', () => {
+    it('blocks a blank phone until the volunteer says the donor gave none', async () => {
+      renderForm()
+      fireEvent.change(screen.getByLabelText('Donor name'), { target: { value: 'No Phone Donor' } })
+      fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '501' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
+
+      // A silently-blank field used to save as "no phone", so a mistyped number
+      // cost the donor their receipt with nothing on screen explaining why.
+      expect(record()).toBeDisabled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'No phone — log without a receipt' }))
+      expect(record()).toBeEnabled()
+      expect(record()).toHaveTextContent('Record without receipt')
+    })
+
+    it('hides the phone field and the receipt-language picker while skipping', async () => {
+      renderForm()
+      expect(screen.getByLabelText('Phone')).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'No phone — log without a receipt' }))
+
+      expect(screen.queryByLabelText('Phone')).not.toBeInTheDocument()
+      // No number means no message is ever composed, so a language for it would
+      // be a choice with no effect.
+      expect(screen.queryByRole('radio', { name: 'English' })).not.toBeInTheDocument()
+      expect(screen.getByText('Logging without a receipt')).toBeInTheDocument()
+    })
+
+    it('clears a half-typed number when the toggle flips, so it cannot ride along', async () => {
+      renderForm()
+      fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '98765' } })
+      fireEvent.click(screen.getByRole('button', { name: 'No phone — log without a receipt' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add a phone number instead' }))
+
+      expect(screen.getByLabelText('Phone')).toHaveValue('')
+    })
+
+    it('sends an empty phone and shows the no-receipt confirmation', async () => {
+      syncOutboxItem.mockResolvedValue({ ...createdDonation, donor_phone: null })
+      renderForm()
+      fireEvent.change(screen.getByLabelText('Donor name'), { target: { value: 'No Phone Donor' } })
+      fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '501' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
+      fireEvent.click(screen.getByRole('button', { name: 'No phone — log without a receipt' }))
+
+      fireEvent.click(record())
+
+      await waitFor(() => expect(enqueueDonation).toHaveBeenCalledTimes(1))
+      expect(enqueueDonation.mock.calls[0][0].donorPhone).toBe('')
+
+      await waitFor(() => expect(screen.getByText(/receipt #42/i)).toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: 'Send via SMS' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Send via WhatsApp' })).not.toBeInTheDocument()
+      expect(screen.getByText(/It’s in the books all the same/)).toBeInTheDocument()
+      expect(markSmsSent).not.toHaveBeenCalled()
+    })
+
+    it('resets the toggle after a save, so the next donor starts with a phone field', async () => {
+      syncOutboxItem.mockResolvedValue({ ...createdDonation, donor_phone: null })
+      renderForm()
+      fireEvent.change(screen.getByLabelText('Donor name'), { target: { value: 'No Phone Donor' } })
+      fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '501' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Cash' }))
+      fireEvent.click(screen.getByRole('button', { name: 'No phone — log without a receipt' }))
+      fireEvent.click(record())
+
+      await waitFor(() => expect(screen.getByText(/receipt #42/i)).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Log another donation' }))
+
+      expect(screen.getByLabelText('Phone')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'No phone — log without a receipt' })).toBeInTheDocument()
+    })
   })
 })

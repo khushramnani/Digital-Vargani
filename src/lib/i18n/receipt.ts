@@ -55,7 +55,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     inquiryHeading: 'For any questions',
     inquiryForLabel: 'For inquiries',
     footerNote:
-      'This digital receipt is issued in the spirit of the traditional bill-book. A copy has been sent to your phone. May Bappa bless you. 🙏',
+      'This digital receipt is issued in the spirit of the traditional bill-book. A copy has been sent to your phone. May Bappa bless you.',
     smsMessage: (amountRupees, receiptLink) =>
       `Thank you for your ₹${amountRupees} contribution. View your official receipt here: ${receiptLink}`,
     amountInWordsLine: (words) => `Rupees ${words} only`,
@@ -78,7 +78,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     inquiryHeading: 'काही प्रश्नांसाठी संपर्क',
     inquiryForLabel: 'चौकशीसाठी',
     footerNote:
-      'ही डिजिटल पावती पारंपरिक पावती पुस्तकाच्या भावनेने दिली आहे. एक प्रत तुमच्या फोनवर पाठवली आहे. गणपती बाप्पा मोरया. 🙏',
+      'ही डिजिटल पावती पारंपरिक पावती पुस्तकाच्या भावनेने दिली आहे. एक प्रत तुमच्या फोनवर पाठवली आहे. गणपती बाप्पा मोरया.',
     smsMessage: (amountRupees, receiptLink) =>
       `तुमच्या ₹${amountRupees} वर्गणीबद्दल धन्यवाद. तुमची अधिकृत पावती येथे पहा: ${receiptLink}`,
     amountInWordsLine: (words) => `रुपये ${words} फक्त`,
@@ -101,7 +101,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     inquiryHeading: 'किसी भी प्रश्न के लिए',
     inquiryForLabel: 'पूछताछ के लिए',
     footerNote:
-      'यह डिजिटल रसीद पारंपरिक रसीद बही की भावना से जारी की गई है. एक प्रति आपके फ़ोन पर भेजी गई है. गणपति बाप्पा मोरया. 🙏',
+      'यह डिजिटल रसीद पारंपरिक रसीद बही की भावना से जारी की गई है. एक प्रति आपके फ़ोन पर भेजी गई है. गणपति बाप्पा मोरया.',
     smsMessage: (amountRupees, receiptLink) =>
       `आपके ₹${amountRupees} के योगदान के लिए धन्यवाद. अपनी आधिकारिक रसीद यहाँ देखें: ${receiptLink}`,
     amountInWordsLine: (words) => `रुपये ${words} मात्र`,
@@ -124,7 +124,7 @@ export const receiptStrings: Record<Lang, ReceiptStrings> = {
     inquiryHeading: 'કોઈપણ પ્રશ્ન માટે',
     inquiryForLabel: 'પૂછપરછ માટે',
     footerNote:
-      'આ ડિજિટલ રસીદ પરંપરાગત રસીદ ચોપડાની ભાવનાથી આપવામાં આવી છે. એક નકલ તમારા ફોન પર મોકલી છે. ગણપતિ બાપ્પા મોર્યા. 🙏',
+      'આ ડિજિટલ રસીદ પરંપરાગત રસીદ ચોપડાની ભાવનાથી આપવામાં આવી છે. એક નકલ તમારા ફોન પર મોકલી છે. ગણપતિ બાપ્પા મોર્યા.',
     smsMessage: (amountRupees, receiptLink) =>
       `તમારા ₹${amountRupees} ના યોગદાન બદલ આભાર. તમારી અધિકૃત રસીદ અહીં જુઓ: ${receiptLink}`,
     amountInWordsLine: (words) => `રૂપિયા ${words} પૂરા`,

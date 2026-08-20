@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { formatINR } from '../lib/money'
 
 // CSS-only donut (masked conic-gradient) + legend — no chart library, no
@@ -20,25 +21,41 @@ function conicStops(segments: DonutSegment[], total: number): string {
     .join(', ')
 }
 
-export function FundDonut({ segments, size = 176 }: { segments: DonutSegment[]; size?: number }) {
+export function FundDonut({
+  segments,
+  size = 176,
+  center,
+}: {
+  segments: DonutSegment[]
+  size?: number
+  // Optional label inside the ring (the redesign's "of every ₹100, ₹68 is
+  // spent"). Decorative like the ring itself — never the only place a figure
+  // appears, since the legend below carries every one of them.
+  center?: ReactNode
+}) {
   const total = segments.reduce((sum, s) => sum + s.value, 0)
   if (total <= 0) return null
 
   return (
     <div className="flex flex-col items-center gap-5">
-      <div
-        aria-hidden
-        className="rounded-full"
-        style={{
-          width: size,
-          height: size,
-          background: `conic-gradient(from -90deg, ${conicStops(segments, total)})`,
-          // Punch a transparent hole so the paper background shows through —
-          // works on any surface without knowing its colour.
-          WebkitMask: 'radial-gradient(circle, transparent 55%, #000 56%)',
-          mask: 'radial-gradient(circle, transparent 55%, #000 56%)',
-        }}
-      />
+      <div className="relative" style={{ width: size, height: size }}>
+        <div
+          aria-hidden
+          className="rounded-full"
+          style={{
+            width: size,
+            height: size,
+            background: `conic-gradient(from -90deg, ${conicStops(segments, total)})`,
+            // Punch a transparent hole so the paper background shows through —
+            // works on any surface without knowing its colour.
+            WebkitMask: 'radial-gradient(circle, transparent 55%, #000 56%)',
+            mask: 'radial-gradient(circle, transparent 55%, #000 56%)',
+          }}
+        />
+        {center && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{center}</div>
+        )}
+      </div>
       <ul className="flex w-full flex-col gap-2.5">
         {segments.map((s) => {
           const pct = Math.round((s.value / total) * 100)

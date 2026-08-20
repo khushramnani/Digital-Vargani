@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getDonationsLite, LITE_PAGE } from '../src/lib/db/donations'
+import { getDonationsLite, getPendingSendDonations, LITE_PAGE } from '../src/lib/db/donations'
 
 // Same convention as tests/expenses.test.ts: mock the client's `from` chain to
 // prove the query shape, not a live project.
@@ -121,5 +121,40 @@ describe('getDonationsLite', () => {
     from.mockReturnValue({ select: () => ({ order: () => ({ order: () => ({ range }) }) }) })
 
     await expect(getDonationsLite()).rejects.toThrow('rls says no')
+  })
+})
+
+// ── Plan 2026-08-18 §2 — the Pending-send tray excludes phone-less rows ─────
+describe('getPendingSendDonations', () => {
+  it('asks only for unsent donations that actually have a number', async () => {
+    const rows = [{ id: 'd1' }]
+    const order = vi.fn().mockResolvedValue({ data: rows, error: null })
+    const not = vi.fn(() => ({ order }))
+    const is = vi.fn(() => ({ not }))
+    const eq = vi.fn(() => ({ is }))
+    const select = vi.fn(() => ({ eq }))
+    from.mockReturnValue({ select })
+
+    const result = await getPendingSendDonations('v-1')
+
+    expect(from).toHaveBeenCalledWith('donations')
+    expect(eq).toHaveBeenCalledWith('collected_by', 'v-1')
+    expect(is).toHaveBeenCalledWith('sms_sent_at', null)
+    // A donation logged WITHOUT a phone can never be sent, so sms_sent_at stays
+    // null forever and the row would otherwise sit in the tray permanently —
+    // a standing false "you still owe someone a receipt".
+    expect(not).toHaveBeenCalledWith('donor_phone', 'is', null)
+    expect(order).toHaveBeenCalledWith('created_at', { ascending: false })
+    expect(result).toBe(rows)
+  })
+
+  it('returns an empty list rather than null when nothing is pending', async () => {
+    const order = vi.fn().mockResolvedValue({ data: null, error: null })
+    const not = vi.fn(() => ({ order }))
+    const is = vi.fn(() => ({ not }))
+    const eq = vi.fn(() => ({ is }))
+    from.mockReturnValue({ select: vi.fn(() => ({ eq })) })
+
+    await expect(getPendingSendDonations('v-1')).resolves.toEqual([])
   })
 })

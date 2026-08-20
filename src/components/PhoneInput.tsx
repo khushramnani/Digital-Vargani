@@ -2,7 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { COUNTRIES, DEFAULT_COUNTRY_ISO, type Country } from '../lib/countries'
 import { parseE164, toE164 } from '../lib/phone'
 import { strings } from '../lib/strings'
-import { field } from './ui'
+import { field, consoleFieldTall } from './ui'
 
 // v4: a Google-style phone field — a searchable country picker (flag + dial
 // code) chipped to the LEFT of a national-number input, so the +<dialCode>
@@ -19,6 +19,8 @@ export function PhoneInput({
   id,
   required,
   placeholder,
+  hideLabel = false,
+  tall = false,
 }: {
   value: string // E.164, e.g. '+919876543210'
   onChange: (e164: string) => void
@@ -26,6 +28,13 @@ export function PhoneInput({
   id?: string
   required?: boolean
   placeholder?: string
+  // 2026-08-18: on the redesigned collect form the group's own eyebrow already
+  // says "Phone" (next to the skipped/looks-good note), so the label would read
+  // twice. Hidden, not dropped — it stays the input's accessible name.
+  hideLabel?: boolean
+  // Match the 50px fields the redesigned forms use, instead of the 42px `field`
+  // the auth screens are built on.
+  tall?: boolean
 }) {
   const generated = useId()
   const inputId = id ?? generated
@@ -104,7 +113,7 @@ export function PhoneInput({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-sm font-semibold text-stone-700">
+      <label htmlFor={inputId} className={hideLabel ? 'sr-only' : 'text-sm font-semibold text-stone-700'}>
         {label}
         {required && <span className="text-orange-600"> *</span>}
       </label>
@@ -121,7 +130,9 @@ export function PhoneInput({
               setQuery('')
               setActive(0)
             }}
-            className="flex h-full items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 text-[15px] text-stone-900 transition-colors hover:bg-stone-50 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+            className={`flex h-full items-center gap-1.5 border border-stone-300 bg-white px-3 text-[15px] text-stone-900 transition-colors hover:bg-stone-50 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 ${
+              tall ? 'rounded-[14px]' : 'rounded-xl'
+            }`}
           >
             <span className="text-lg leading-none">{country.flag}</span>
             <span className="font-semibold">+{country.dialCode}</span>
@@ -189,7 +200,7 @@ export function PhoneInput({
           value={national}
           placeholder={placeholder}
           onChange={(e) => onNationalChange(e.target.value)}
-          className={`${field} flex-1`}
+          className={`${tall ? consoleFieldTall : field} flex-1`}
         />
       </div>
     </div>

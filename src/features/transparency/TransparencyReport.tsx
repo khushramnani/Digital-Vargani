@@ -2,30 +2,21 @@ import type { TransparencyTotals, CategoryBreakdown } from '../../lib/db/transpa
 import { formatINR } from '../../lib/money'
 import { strings } from '../../lib/strings'
 import { FundDonut, type DonutSegment } from '../../components/FundDonut'
+import { SLOT_COLORS, SLOT_REST, slotColor } from '../../lib/chartColors'
 
 const t = strings.transparency
 
-// Warm festival palette for the "how funds were used" donut — reads on the
-// cream paper and stays distinguishable as an ordered set. Slots are assigned
-// by rank (largest category first), never cycled; a 9th+ category folds into
-// "Other" (muted warm gray) rather than growing the palette.
-// ponytail: no colourblind-validator run — the donut is decorative and every
-// slice is also a text+amount legend row (FundDonut), so colour is never the
-// only channel; ≤8 expense categories is the realistic ceiling for one mandal.
-const CATEGORY_COLORS = ['#e2680f', '#2f7d44', '#dca02c', '#c0442e', '#7c4a86', '#2f8a86', '#c96b93', '#8a6d3b']
-const OTHER_COLOR = '#a8998a'
-
 function toSegments(categories: CategoryBreakdown[]): DonutSegment[] {
   const sorted = [...categories].sort((a, b) => b.amountPaise - a.amountPaise)
-  const head = sorted.slice(0, CATEGORY_COLORS.length)
-  const rest = sorted.slice(CATEGORY_COLORS.length)
+  const head = sorted.slice(0, SLOT_COLORS.length)
+  const rest = sorted.slice(SLOT_COLORS.length)
   const segments: DonutSegment[] = head.map((c, i) => ({
     name: c.category,
     value: c.amountPaise,
-    color: CATEGORY_COLORS[i],
+    color: slotColor(i),
   }))
   const otherTotal = rest.reduce((sum, c) => sum + c.amountPaise, 0)
-  if (otherTotal > 0) segments.push({ name: t.otherCategory, value: otherTotal, color: OTHER_COLOR })
+  if (otherTotal > 0) segments.push({ name: t.otherCategory, value: otherTotal, color: SLOT_REST })
   return segments
 }
 
@@ -48,6 +39,12 @@ export function TransparencyReport({
 }) {
   const segments = toSegments(categories)
   const inHandPaise = totals.totalCollectedPaise - totals.totalExpensesPaise
+  // Whole rupees out of every hundred collected. Zero when nothing has come in
+  // yet, rather than NaN.
+  const spentPerHundred =
+    totals.totalCollectedPaise > 0
+      ? Math.round((totals.totalExpensesPaise / totals.totalCollectedPaise) * 100)
+      : 0
   const familyLine =
     totals.donorCount === 1
       ? `${t.familyPrefix}${totals.donorCount}${t.familySuffix}`
@@ -56,15 +53,20 @@ export function TransparencyReport({
   return (
     <div className="overflow-hidden rounded-3xl border border-amber-200/70 bg-[#f7f0e1] shadow-xl shadow-amber-900/5">
       <div className="flex flex-col gap-8 px-5 py-8 sm:px-8 sm:py-10">
-        {/* Header — mantra + identity */}
+        {/* Header — mantra + identity. The redesign sets the mandal's name in
+            Marcellus (the wordmark face) and separates it from the eyebrow with
+            a drawn rule, so the top of the page reads as a masthead. */}
         <header className="text-center">
           <p className="text-sm tracking-[0.25em] text-amber-700">॥ श्री गणेशाय नमः ॥</p>
           {mandalName && (
-            <h2 className="font-serif mt-2.5 text-3xl leading-tight font-semibold text-stone-800 sm:text-4xl">
-              {mandalName}
-            </h2>
+            <h2 className="font-mark mt-2.5 text-3xl leading-tight text-stone-800 sm:text-4xl">{mandalName}</h2>
           )}
-          <p className="mt-2 text-[11px] font-semibold tracking-[0.22em] text-stone-400 uppercase">
+          <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-2.5">
+            <span className="h-px w-9 bg-amber-300/70" />
+            <span className="text-[7px] text-amber-500">◆</span>
+            <span className="h-px w-9 bg-amber-300/70" />
+          </div>
+          <p className="mt-2.5 text-[11px] font-semibold tracking-[0.22em] text-stone-400 uppercase">
             {t.reportEyebrow}
           </p>
         </header>
@@ -87,7 +89,22 @@ export function TransparencyReport({
             <p className="text-center text-stone-400">{t.noExpenses}</p>
           ) : (
             <>
-              <FundDonut segments={segments} />
+              {/* "Of every ₹100, ₹68 is spent" — the one figure a reader takes
+                  away from a fund report, in the middle of the ring. */}
+              <FundDonut
+                segments={segments}
+                center={
+                  <>
+                    <span className="text-[8.5px] font-semibold tracking-[0.14em] text-stone-400 uppercase">
+                      {t.ofEveryHundred}
+                    </span>
+                    <span className="font-serif mt-0.5 text-xl font-semibold text-stone-800">
+                      ₹{spentPerHundred}
+                    </span>
+                    <span className="text-[9.5px] text-stone-400">{t.isSpent}</span>
+                  </>
+                }
+              />
               {/* Spent vs. still-in-hand — both derive from data already on
                   screen; the honest close to a fund report. */}
               <div className="mt-8 grid grid-cols-2 gap-3">

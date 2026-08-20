@@ -102,13 +102,13 @@ test('submitting a donation shows the SMS/WhatsApp choice and only fires markSms
   await page.goto('/collect')
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
 
-  await page.getByLabel('Donor Name').fill('SMS Donor')
+  await page.getByLabel('Donor name').fill('SMS Donor')
   await page.getByLabel('Phone').fill('9876543210')
-  await page.getByLabel('Amount (₹)').fill('250')
+  await page.getByLabel('Amount').fill('250')
   await page.getByRole('button', { name: 'Cash' }).click()
-  await page.getByRole('button', { name: 'Record Donation' }).click()
+  await page.getByRole('button', { name: 'Record donation' }).click()
 
-  await expect(page.getByText('Receipt #42')).toBeVisible()
+  await expect(page.getByText(/receipt #42/i)).toBeVisible()
   const sendButton = page.getByRole('button', { name: 'Send via SMS' })
   await expect(sendButton).toBeVisible()
   await expect(sendButton).toBeEnabled()
@@ -122,6 +122,8 @@ test('submitting a donation shows the SMS/WhatsApp choice and only fires markSms
   await sendButton.click()
   await expect.poll(() => patchBodies.length).toBeGreaterThan(0)
   expect(patchBodies[0]).toMatchObject({ sms_sent_at: expect.any(String) })
-  // The sms: navigation no-ops in Chromium, so the app is still here.
+  // The sms: navigation no-ops in Chromium, so the app is still here — and
+  // sending returns straight to a blank form, ready for the next donor.
   await expect(page.getByRole('heading', { name: 'Collect Donation' })).toBeVisible()
+  await expect(page.getByLabel('Donor name')).toHaveValue('')
 })

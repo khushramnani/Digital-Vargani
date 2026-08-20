@@ -15,10 +15,12 @@ export interface OutboxDonation {
   donorPhone: string
   amountPaise: number
   mode: DonationMode
-  // v4 (§2): donation source category. Like authUserId, a plain (non-indexed)
-  // property — sync reads it in JS — so no schema/version bump is needed. Rows
-  // queued before this field existed carry it as undefined; sync defaults them
-  // to 'society' (the DB column's own default) rather than stranding them.
+  // Donation source. Like authUserId, a plain (non-indexed) property — sync
+  // reads it in JS — so no schema/version bump is needed, and widening its TYPE
+  // from the old three-slug union to a free-form name (plan 2026-08-18 §1)
+  // doesn't need one either: IndexedDB stores the string either way. Rows queued
+  // before this field existed carry it as undefined; sync defaults them to
+  // 'society' (the DB column's own default) rather than stranding them.
   category: DonationCategory
   collectedBy: string
   queuedAt: string // ISO timestamp, for display/ordering only

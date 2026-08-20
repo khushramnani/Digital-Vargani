@@ -133,5 +133,5 @@ test('a new founder can create a mandal and reach the admin dashboard', async ({
   })
 
   await expect(page).toHaveURL(/\/admin$/)
-  await expect(page.getByRole('heading', { name: 'Admin Dashboard' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()
 })
