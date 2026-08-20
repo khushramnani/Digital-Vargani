@@ -37,6 +37,13 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
+    // The redesigned console screens (2026-08-18) render a whole tab per test —
+    // hero, cards, chip rows and sheets — so a jsdom mount is several times the
+    // work it used to be. Vitest's 5s default was marginal for that: on a loaded
+    // machine a handful of tests would time out, a DIFFERENT handful each run,
+    // while every one of them passed in isolation. That is an untrustworthy
+    // signal, not a slow suite — the whole run still finishes in ~30s.
+    testTimeout: 20_000,
     // Users are in IST and every "which day is this?" decision is made in
     // the device's local zone (lib/dayFilter.ts), so the unit suite runs as an
     // IST device — the day-boundary tests are then facts, not a property of
